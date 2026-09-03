@@ -224,14 +224,63 @@ async function scan(prefix = 'AA_') {
   return result;
 }
 
-function getSubGraphForView(viewName) {
+function getSubGraphForView(viewName, options = {}) {
   if (!latestScan) return null;
-  return extractSubGraph(viewName, latestScan.views, latestScan.dependencies);
+  return extractSubGraph(viewName, latestScan.views, latestScan.dependencies, options);
+}
+
+async function getIndexesForView(viewName) {
+  if (!latestScan) return [];
+  const targetView = latestScan.views.find(v => (v.name || v.view_name).toLowerCase() === String(viewName).toLowerCase());
+  if (!targetView) return [];
+  const tables = targetView.baseTables || [];
+  if (tables.length === 0) return [];
+
+  if (!db.status().connected) {
+    return tables.map(tbl => ({
+      schema_name: 'dbo',
+      table_name: tbl,
+      index_name: `PK_${tbl}`,
+      index_id: 1,
+      type_desc: 'CLUSTERED',
+      is_unique: true,
+      is_primary_key: true,
+      is_disabled: false,
+      key_columns: tbl === 'STOK_HAREKETLERI' ? 'sth_recno' : 'sto_recno',
+      included_columns: null
+    }));
+  }
+
+  const inList = tables.map(t => `'${t.replace(/'/g, "''")}'`).join(', ');
+  const sql = `
+    SELECT
+      s.name AS schema_name,
+      t.name AS table_name,
+      i.name AS index_name,
+      i.index_id,
+      i.type_desc,
+      i.is_unique,
+      i.is_primary_key,
+      i.is_disabled,
+      STRING_AGG(CASE WHEN ic.is_included_column = 0 THEN c.name END, ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS key_columns,
+      STRING_AGG(CASE WHEN ic.is_included_column = 1 THEN c.name END, ', ') AS included_columns
+    FROM sys.tables t
+    JOIN sys.schemas s ON s.schema_id = t.schema_id
+    JOIN sys.indexes i ON i.object_id = t.object_id
+    LEFT JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+    LEFT JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+    WHERE t.name IN (${inList})
+    GROUP BY s.name, t.name, i.name, i.index_id, i.type_desc, i.is_unique, i.is_primary_key, i.is_disabled
+    ORDER BY t.name, i.index_id;
+  `;
+  const res = await db.query(sql);
+  return res.recordset || [];
 }
 
 module.exports = {
   scan,
   getDefinition,
   getLatestScanData,
-  getSubGraphForView
+  getSubGraphForView,
+  getIndexesForView
 };

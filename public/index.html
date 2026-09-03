@@ -26,6 +26,7 @@
         <button class="nav-item" data-page="runtime"><span class="nav-icon">∿</span><span>Runtime & Regresyon</span><span class="status-dot danger"></span></button>
         <button class="nav-item" data-page="refactor"><span class="nav-icon">✦</span><span>AI Refactor</span></button>
         <button class="nav-item" data-page="validation"><span class="nav-icon">✓</span><span>Validation Lab</span></button>
+        <button class="nav-item" data-page="workbench"><span class="nav-icon">⚡</span><span>SQL Workbench</span></button>
       </nav>
 
       <div class="sidebar-section">
@@ -154,7 +155,18 @@
               <div><span class="object-type">VIEW</span><h2 id="detailViewName">AA_URETIM_MALZEME_PLANLAMA</h2><p id="detailViewMeta">dbo · modify 03.09.2026 16:47</p></div>
               <div class="detail-score"><div class="score-ring"><strong id="detailHealth">38</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">CRITICAL · 92</strong></div></div>
             </div>
-            <div class="detail-tabs"><button class="active" data-detail-tab="overview">Overview</button><button data-detail-tab="sql">SQL</button><button data-detail-tab="dependencies">Dependencies</button><button data-detail-tab="plans">Execution Plans</button><button data-detail-tab="problems">Problems <span id="tabProblemCount">6</span></button></div>
+            <div class="detail-tabs">
+              <button class="active" data-detail-tab="overview">Overview</button>
+              <button data-detail-tab="sql">SQL</button>
+              <button data-detail-tab="dependencies">Dependencies</button>
+              <button data-detail-tab="runtime">Runtime</button>
+              <button data-detail-tab="plans">Execution Plans</button>
+              <button data-detail-tab="indexes">Indexes</button>
+              <button data-detail-tab="problems">Problems <span id="tabProblemCount">6</span></button>
+              <button data-detail-tab="ai">AI Refactor</button>
+              <button data-detail-tab="history">History</button>
+            </div>
+
             <div class="detail-tab active" id="detail-tab-overview">
               <div class="stat-strip">
                 <div><span>Depth</span><strong id="statDepth">6</strong><small id="statDepthWarn">⚠ &gt; 3</small></div><div><span>Base Tables</span><strong id="statTables">9</strong><small id="statTablesWarn">3 repeated</small></div><div><span>Dependents</span><strong id="statDependents">27</strong><small>Blast radius</small></div><div><span>24h Reads</span><strong id="statReads">4.1B</strong><small id="statReadsDelta">+186%</small></div><div><span>Median</span><strong id="statMedian">284s</strong><small id="statMedianDelta">was 0.94s</small></div>
@@ -174,51 +186,157 @@
                 <div class="impact-chain" id="impactChain"><span>AA_GENEL_PLAN</span><i>→</i><span>AA_PLANLAMA_EKRANI</span><i>→</i><b>AA_URETIM_MALZEME_PLANLAMA</b><i>→</i><span>4 rapor</span><i>+</i><span>23 view</span></div>
               </section>
             </div>
+
             <div class="detail-tab" id="detail-tab-sql">
-              <div class="code-toolbar"><span id="sqlToolbarName">dbo.AA_URETIM_MALZEME_PLANLAMA.sql</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="refactor">✦ AI Refactor</button></div></div>
+              <div class="code-toolbar"><span id="sqlToolbarName">dbo.AA_URETIM_MALZEME_PLANLAMA.sql</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="workbench" id="btnOpenSqlInWorkbench">⚡ Workbench'te Aç</button></div></div>
               <pre class="code-editor"><code id="sqlCode"></code></pre>
             </div>
+
             <div class="detail-tab" id="detail-tab-dependencies">
               <div id="dependenciesContent">
                 <div class="empty-state"><div class="empty-icon">⌁</div><h3>Dependency Graph hazır</h3><p>Seçili view'ın upstream ve downstream ilişkilerini interaktif haritada incele.</p><button class="button primary" data-goto="graph">Haritayı Aç</button></div>
               </div>
             </div>
-            <div class="detail-tab" id="detail-tab-plans"><div class="plan-list" id="planList"></div></div>
+
+            <div class="detail-tab" id="detail-tab-runtime">
+              <div id="runtimeDetailContent">
+                <div class="setting-card">
+                  <div><strong>Runtime Attribution & Kanıt Derecesi</strong><p id="detailRuntimeEvidenceText">Calling queries son 24 saatte toplam 4.1B logical reads üretti (Evidence Grade B).</p></div>
+                  <span class="connected-pill" style="color:var(--yellow);border-color:rgba(247,200,106,0.25)">GRADE B (Plan Cache / DMV)</span>
+                </div>
+                <div style="margin-top:14px">
+                  <h4 style="font-size:14px;margin-bottom:10px">İlişkili Calling Queries & Stored Procedures</h4>
+                  <div class="full-problem-list" id="detailCallingQueriesList">
+                    <div class="full-problem">
+                      <div>
+                        <h4>sp_GunlukUretimRaporu (Line 42)</h4>
+                        <p>SELECT * FROM dbo.AA_URETIM_MALZEME_PLANLAMA WHERE sth_tarih >= DATEADD(day, -1, GETDATE())</p>
+                        <small style="color:var(--text-muted)">Günde ~180 execution · 3.2B total logical reads · 12,400 ms avg CPU</small>
+                      </div>
+                      <span class="severity-pill critical">HOT CALLER</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-tab" id="detail-tab-plans">
+              <div class="plan-list" id="planList">
+                <div class="permission-box" style="margin-bottom:14px">
+                  <strong>Plan Cache / Query Store Plan Özeti</strong>
+                  <p style="margin-top:4px">View doğrudan tek başına derlenmez; çağıran sorgunun derleme planında Clustered Index Scan ve Hash Join ağırlığı tespit edildi.</p>
+                </div>
+                <div class="wb-op-card" style="margin-bottom:8px">
+                  <div class="wb-op-title">
+                    <span class="node-badge">SCAN</span>
+                    <div><strong>Clustered Index Scan (PK_STOK_HAREKETLERI)</strong><small style="color:var(--text-muted)">STOK_HAREKETLERI · %68 plan maliyeti</small></div>
+                  </div>
+                  <button class="button ghost small" data-goto="workbench">Workbench'te İncele</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-tab" id="detail-tab-indexes">
+              <div id="indexesDetailContent">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                  <h4 style="font-size:14px">Base Tablo İndeksleri & Kapsama Oranı</h4>
+                  <button class="button ghost small" id="btnRefreshIndexes">İndeksleri Sorgula</button>
+                </div>
+                <div id="detailIndexTableWrap">
+                  <table class="wb-stats-table">
+                    <thead><tr><th>Tablo</th><th>İndeks Adı</th><th>Tip</th><th>Anahtar Kolonlar</th><th>Included</th></tr></thead>
+                    <tbody id="detailIndexTableBody">
+                      <tr><td>STOK_HAREKETLERI</td><td>PK_STOK_HAREKETLERI</td><td>CLUSTERED (PK)</td><td>sth_recno</td><td>—</td></tr>
+                      <tr><td>STOK_HAREKETLERI</td><td>IX_STOK_HAREKETLERI_1</td><td>NONCLUSTERED</td><td>sth_stok_kod, sth_tarih</td><td>sth_miktar, sth_tip</td></tr>
+                      <tr><td>STOKLAR</td><td>PK_STOKLAR</td><td>CLUSTERED (PK)</td><td>sto_recno</td><td>—</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
             <div class="detail-tab" id="detail-tab-problems"><div class="full-problem-list" id="fullProblemList"></div></div>
+
+            <div class="detail-tab" id="detail-tab-ai">
+              <div class="permission-box" style="margin-bottom:14px">
+                <strong>AI Refactoring Context Pack</strong>
+                <p style="margin-top:4px">Seçili view için metadata, kolon tipleri, SARGable kuralları ve plan bulguları hazırlandı.</p>
+              </div>
+              <button class="button primary" data-goto="refactor">✦ AI Refactor Sayfasına Git</button>
+            </div>
+
+            <div class="detail-tab" id="detail-tab-history">
+              <div class="permission-box">
+                <strong>Query Store Değişiklik Tarihçesi</strong>
+                <p style="margin-top:4px">Son 30 günde 2 plan değişikliği saptandı. 01.03.2026 tarihindeki indeks değişikliği sonrası ortalama süre 0.94 sn'den 284 sn'ye sıçradı.</p>
+              </div>
+            </div>
           </section>
         </div>
       </section>
 
       <section class="page" id="page-graph">
         <div class="graph-toolbar">
-          <div class="search-box graph-search"><span>⌕</span><input id="graphSearchInput" value="AA_URETIM_MALZEME_PLANLAMA" placeholder="View veya tablo ara..." /></div>
-          <div class="graph-legend"><span><i class="legend-dot target"></i>Hedef View</span><span><i class="legend-dot view"></i>View</span><span><i class="legend-dot table"></i>Table</span><span><i class="legend-dot function"></i>Function</span></div>
-          <div class="toolbar-group"><button class="icon-button" id="graphZoomOut" title="Uzaklaş">−</button><button class="icon-button" id="graphZoomIn" title="Yaklaş">＋</button><button class="icon-button" id="graphResetZoom" title="Sıfırla">⊙</button><button class="button ghost small" id="graphDirectionBtn">Upstream + Downstream</button></div>
+          <div class="graph-search-wrap">
+            <div class="search-box graph-search">
+              <span>⌕</span>
+              <input id="graphSearchInput" value="AA_URETIM_MALZEME_PLANLAMA" placeholder="View, tablo veya fonksiyon ara..." autocomplete="off" />
+            </div>
+            <div class="autocomplete-dropdown hidden" id="graphSearchDropdown"></div>
+          </div>
+          <div class="graph-legend">
+            <span><i class="legend-dot target"></i>Hedef View</span>
+            <span><i class="legend-dot view"></i>Dependent View</span>
+            <span><i class="legend-dot table"></i>Base Table</span>
+            <span><i class="legend-dot function"></i>Function</span>
+          </div>
+          <div class="toolbar-group">
+            <select id="graphDepthSelect" class="setting-input select-styled" style="width:110px" title="Bağımlılık Derinliği">
+              <option value="1">Derinlik: 1</option>
+              <option value="2" selected>Derinlik: 2</option>
+              <option value="3">Derinlik: 3</option>
+              <option value="all">Tüm Yol</option>
+            </select>
+            <select id="graphDirectionSelect" class="setting-input select-styled" style="width:160px" title="Bağımlılık Yönü">
+              <option value="both" selected>Upstream + Downstream</option>
+              <option value="downstream">Yalnız Downstream</option>
+              <option value="upstream">Yalnız Upstream</option>
+            </select>
+            <button class="icon-button" id="graphZoomOut" title="Uzaklaş (−)">−</button>
+            <button class="icon-button" id="graphZoomIn" title="Yaklaş (＋)">＋</button>
+            <button class="icon-button" id="graphFitToView" title="Görünümü Sığdır (Fit)">⊡</button>
+            <button class="icon-button" id="graphResetLayout" title="Düzeni Sıfırla (Reset Layout)">↻</button>
+            <button class="icon-button" id="graphCenterSelected" title="Seçileni Ortala">⊙</button>
+          </div>
         </div>
         <div class="graph-stage" id="graphStage">
-          <svg class="graph-lines" id="graphSvg" viewBox="0 0 1200 680" preserveAspectRatio="none">
-            <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4e5264"/></marker></defs>
-            <g class="edge-lines" id="graphEdgeLines">
-              <path d="M600 330 C490 300, 430 250, 332 205"/><path d="M600 330 C520 350, 440 390, 338 430"/><path d="M600 330 C725 290, 800 242, 905 188"/><path d="M600 330 C720 345, 800 390, 910 430"/><path d="M332 205 C245 205, 196 165, 120 134"/><path d="M332 205 C250 232, 200 268, 126 300"/><path d="M338 430 C250 430, 205 455, 125 490"/><path d="M905 188 C1000 188, 1055 160, 1120 130"/><path d="M910 430 C1010 430, 1055 462, 1120 505"/>
-            </g>
-          </svg>
-          <div id="graphNodesContainer">
-            <div class="graph-node target-node" style="left:50%;top:48%" data-node="AA_URETIM_MALZEME_PLANLAMA"><span class="node-badge">VIEW</span><strong>AA_URETIM_<br/>MALZEME_PLANLAMA</strong><small>Health 38 · Critical</small></div>
-            <div class="graph-node view-node" style="left:27%;top:29%"><span class="node-badge">VIEW</span><strong>AA_ISEMRI_<br/>MALZEME_DURUMLARI</strong><small>Health 44</small></div>
-            <div class="graph-node view-node" style="left:27%;top:62%"><span class="node-badge">VIEW</span><strong>AA_STOK_<br/>DURUMU</strong><small>Health 58</small></div>
-            <div class="graph-node view-node" style="left:76%;top:27%"><span class="node-badge">VIEW</span><strong>AA_SIPARIS_<br/>KALAN</strong><small>Health 71</small></div>
-            <div class="graph-node view-node" style="left:76%;top:62%"><span class="node-badge">VIEW</span><strong>AA_URETIM_<br/>EMIRLERI</strong><small>Health 67</small></div>
-            <div class="graph-node table-node hot" style="left:10%;top:17%"><span class="node-badge">TABLE</span><strong>STOK_HAREKETLERI</strong><small>4 access paths</small></div>
-            <div class="graph-node table-node" style="left:10%;top:42%"><span class="node-badge">TABLE</span><strong>STOKLAR</strong><small>183 dependents</small></div>
-            <div class="graph-node table-node" style="left:10%;top:72%"><span class="node-badge">TABLE</span><strong>ISEMIRLERI</strong><small>74 dependents</small></div>
-            <div class="graph-node table-node" style="left:93%;top:16%"><span class="node-badge">TABLE</span><strong>SIPARISLER</strong><small>96 dependents</small></div>
-            <div class="graph-node function-node" style="left:93%;top:74%"><span class="node-badge">FUNCTION</span><strong>fn_DepodakiMiktar</strong><small>Scalar call</small></div>
+          <div class="graph-viewport" id="graphViewport">
+            <svg class="graph-lines" id="graphSvg" width="2400" height="1600">
+              <defs>
+                <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4.5" orient="auto">
+                  <path d="M0,0 L9,4.5 L0,9 z" fill="#66708c"/>
+                </marker>
+              </defs>
+              <g class="edge-lines" id="graphEdgeLines"></g>
+            </svg>
+            <div class="graph-nodes" id="graphNodesContainer"></div>
           </div>
           <aside class="graph-inspector" id="graphInspector">
-            <span class="panel-kicker">SELECTED NODE</span><h3 id="inspectorNodeName">STOK_HAREKETLERI</h3><span class="object-pill" id="inspectorNodeType">BASE TABLE</span>
-            <div class="inspector-metric"><span>Referenced by AA_%</span><strong id="inspectorMetricRefs">183</strong></div><div class="inspector-metric"><span>Dependency paths</span><strong id="inspectorMetricPaths">647</strong></div><div class="inspector-metric"><span>Critical consumers</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>
-            <div class="inspector-warning" id="inspectorWarningBox"><b>⇄ Repeated access</b><p id="inspectorWarningText">Hedef graph içinde 4 farklı logical path üzerinden erişiliyor.</p></div>
-            <button class="button primary full" id="inspectorActionBtn" data-goto="tables">Pressure Map'i Aç</button>
+            <span class="panel-kicker">SELECTED NODE</span>
+            <h3 id="inspectorNodeName">STOK_HAREKETLERI</h3>
+            <span class="object-pill" id="inspectorNodeType">BASE TABLE</span>
+            <div class="inspector-metric"><span>Referenced by AA_%</span><strong id="inspectorMetricRefs">183</strong></div>
+            <div class="inspector-metric"><span>Dependency paths</span><strong id="inspectorMetricPaths">647</strong></div>
+            <div class="inspector-metric"><span>Critical consumers</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>
+            <div class="inspector-warning" id="inspectorWarningBox">
+              <b>⇄ Repeated access path</b>
+              <p id="inspectorWarningText">Hedef graph içinde birden fazla bağımsız dependency dalı üzerinden erişiliyor (CTE physical materialization sağlamaz).</p>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:14px">
+              <button class="button primary small full" id="btnInspOpenView">View Detayını Aç</button>
+              <button class="button ghost small full" id="btnInspOpenSql">SQL Kodunu İncele</button>
+              <button class="button ghost small full" id="btnInspOpenPressure">Pressure Map'te Gör</button>
+            </div>
           </aside>
         </div>
       </section>
@@ -248,48 +366,327 @@ SELECT
     a.[Ürün Kodu],
     ISNULL(i.[Kalan Miktar], 0) AS [Kalan Miktar],
     u.upl_kodu AS [Tüketim Kod],
-    s.sto_isim AS [Tüketim Ad]
-FROM dbo.AA_URETIM_AGACI a
-LEFT JOIN dbo.AA_ISEMRI_MALZEME_DURUMLARI i ON ...
-LEFT JOIN dbo.URETIM_MALZEME_PLANLAMA u ON ...
-LEFT JOIN dbo.STOKLAR s ON ...
--- 6-level dependency context loaded...</code></pre>
+    s.sto_isim AS [Stok Adı],
+    ISNULL(sh.ToplamGiris, 0) - ISNULL(sh.ToplamCikis, 0) AS [Mevcut Stok]
+FROM dbo.ISEMIRLERI a
+LEFT JOIN dbo.AA_ISEMRI_MALZEME_DURUMLARI i ON i.[İş Kodu] = a.[İş Kodu]
+LEFT JOIN dbo.URUN_RECETELERI u ON u.upl_ana_kod = a.[Ürün Kodu]
+LEFT JOIN dbo.STOKLAR s ON s.sto_kod = u.upl_kodu
+OUTER APPLY (
+    SELECT
+        SUM(CASE WHEN sth_tip = 0 THEN sth_miktar ELSE 0 END) AS ToplamGiris,
+        SUM(CASE WHEN sth_tip = 1 THEN sth_miktar ELSE 0 END) AS ToplamCikis
+    FROM dbo.STOK_HAREKETLERI
+    WHERE sth_stok_kod = u.upl_kodu
+) sh;</code></pre>
           </section>
-          <section class="refactor-control">
-            <div class="ai-head"><div class="ai-orb">✦</div><div><span class="panel-kicker">AI REFACTOR ENGINE</span><h3>Conservative Optimize</h3></div><span class="provider-pill">DeepSeek</span></div>
-            <div class="guardrail"><span>✓</span><div><strong>Semantic Preservation Guardrail</strong><p>Column order, types, NULL behavior, multiplicity ve filtre semantiği korunmadan aday “safe” sayılmaz.</p></div></div>
-            <div class="refactor-options"><label><input type="checkbox" checked> Dependency flattening</label><label><input type="checkbox" checked> Repeated scan reduction</label><label><input type="checkbox" checked> SARGability rewrite</label><label><input type="checkbox" checked> Index suggestions</label><label><input type="checkbox" checked> Validation query pack</label><label><input type="checkbox"> Aggressive rewrite</label></div>
-            <div class="ai-warning"><strong>AI deploy etmez.</strong><p>Üretilen SQL yalnızca candidate olarak kaydedilir. Validation tamamlanmadan CREATE OR ALTER VIEW sunulmaz.</p></div>
-            <button class="button ai-button full" id="runRefactor"><span>✦</span> Refactor Candidate Üret</button>
-            <div class="ai-progress hidden" id="aiProgress"><div class="progress-head"><span>Context hazırlanıyor...</span><b>18%</b></div><div class="progress-track"><i></i></div><small>Dependency definitions + index metadata + plan findings</small></div>
-          </section>
-        </div>
-        <section class="candidate-panel hidden" id="candidatePanel">
-          <div class="panel-header"><div><span class="panel-kicker">CANDIDATE V2</span><h3>Refactor sonucu</h3></div><div class="candidate-stats"><span>Expected reads <b>−78%</b></span><span>Complexity <b>6 → 3</b></span><span class="needs-validation">● NEEDS VALIDATION</span></div></div>
-          <div class="diff-grid"><pre class="code-editor"><code>-- BEFORE
-LEFT JOIN AA_ISEMRI_MALZEME_DURUMLARI i ...
-LEFT JOIN AA_STOK_DURUMU sd ...
-LEFT JOIN AA_HAREKET_OZET ho ...
 
--- STOK_HAREKETLERI reached by 4 branches</code></pre><pre class="code-editor candidate"><code>-- CANDIDATE
+          <section class="refactor-control">
+            <div class="ai-head"><div class="ai-orb">✦</div><div><span class="panel-kicker">AI ENGINE</span><h3>Refactoring Assistant</h3></div><span class="provider-pill">DeepSeek V3</span></div>
+            <div class="guardrail"><span>🛡</span><div><strong>Semantik Guardrail Aktif</strong><p>Sütun isimleri, tipleri, duplicate multiplicity ve NULL davranışları zorunlu korunur. Deploy kararı asla otomatik verilmez.</p></div></div>
+            <div class="refactor-options"><label><input type="checkbox" checked> Repeated table branch inline et</label><label><input type="checkbox" checked> OUTER APPLY skalar toplanmasını set-based yap</label><label><input type="checkbox"> Missing covering index öner</label><label><input type="checkbox" checked> Output column sırasını ve isimlerini kilitle</label></div>
+            <div class="ai-warning"><p>CTE materialize olmaz. Tekrar eden tablonun yalnız execution plan doğrulamasıyla tek taramaya indiği iddia edilebilir.</p></div>
+            <button class="button primary full ai-button" id="runRefactor">✦ Candidate Oluştur</button>
+            <div class="ai-progress hidden" id="aiProgress"><div class="progress-head"><span>AI candidate üretiliyor...</span><b>64%</b></div><div class="progress-track"><i></i></div><small>Sözleşme kuralları denetleniyor</small></div>
+
+            <div class="candidate-panel hidden" id="candidatePanel">
+              <div class="candidate-stats"><span>Status: <b class="needs-validation">UNVALIDATED</b></span><span>Tahmini IO: <b>−84%</b></span></div>
+              <div class="diff-grid" style="margin-top:10px">
+                <textarea class="code-editor" id="candidateSqlText" readonly>-- Candidate V2:
+-- Repeated STOK_HAREKETLERI aggregated before outer join
 WITH StockAgg AS (
   SELECT sth_stok_kod,
-         SUM(CASE WHEN ... THEN sth_miktar END) AS ...
-  FROM dbo.STOK_HAREKETLERI
-  WHERE sth_tarih >= @Boundary
-  GROUP BY sth_stok_kod
+    SUM(CASE WHEN sth_tip = 0 THEN sth_miktar ELSE 0 END) AS Giris,
+    SUM(CASE WHEN sth_tip = 1 THEN sth_miktar ELSE 0 END) AS Cikis
+  FROM dbo.STOK_HAREKETLERI GROUP BY sth_stok_kod
 )
-SELECT ...
--- shared aggregation replaces repeated paths</code></pre></div>
-          <div class="candidate-actions"><button class="button ghost">Diff'i Aç</button><button class="button ghost">İndeks Önerileri (3)</button><button class="button primary" data-goto="validation">Validation Lab'e Gönder →</button></div>
-        </section>
+SELECT 
+  s.sto_kod,
+  s.sto_isim,
+  COALESCE(sa.Giris, 0) AS GirisMiktar,
+  COALESCE(sa.Cikis, 0) AS CikisMiktar,
+  (COALESCE(sa.Giris, 0) - COALESCE(sa.Cikis, 0)) AS NetMiktar
+FROM dbo.STOKLAR s WITH (NOLOCK)
+LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
+                <div class="code-editor candidate">-- Guardrail Checks:
+-- [PASS] Column count: 5/5
+-- [PASS] Data types match (int, varchar, numeric)
+-- [WARN] Multiplicity requires validation lab proof (EXCEPT + GROUP BY)
+-- [GUARD] No mutation, output strictly isolated</div>
+              </div>
+              <div class="candidate-actions" style="display:flex;gap:10px">
+                <button class="button primary small" id="btnOpenCandidateInWorkbench">⚡ Workbench'te Aç</button>
+                <button class="button ghost small" data-detail-tab-jump="validation">Validation Lab'a Gönder</button>
+              </div>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="page" id="page-validation">
-        <div class="validation-hero"><div><span class="hero-kicker">NO TRUST WITHOUT PROOF</span><h2>Optimize edilmiş olması yetmez. <em>Aynı sonucu verdiğini kanıtla.</em></h2><p>Validation Lab eski ve yeni sorguyu kontrollü şekilde karşılaştırır. Ağır benchmark yalnızca açık kullanıcı eylemiyle çalışır.</p></div><div class="validation-badge"><span>Candidate</span><strong>V2</strong><small>not deployed</small></div></div>
+        <div class="section-intro">
+          <div>
+            <span class="hero-kicker">SEMANTIC EQUIVALENCE & BENCHMARK</span>
+            <h2>Tahmin yetmez; <em>kanıtla</em>.</h2>
+            <p>Refactoring önerisi semantik doğruluk ve kontrollü IO benchmark testlerinden geçmeden production adayı olamaz.</p>
+          </div>
+          <div class="validation-badge">
+            <span>Proof Verdict</span>
+            <strong id="valVerdictText">UNVALIDATED</strong>
+            <small id="valVerdictSub">Pending validation lab</small>
+          </div>
+        </div>
+
         <div class="validation-grid">
-          <section class="panel span-8"><div class="panel-header"><div><span class="panel-kicker">VALIDATION PIPELINE</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill warning">PENDING</span></div><div class="validation-steps"><div class="validation-step done"><span>1</span><div><strong>Schema compatibility</strong><p>Column order, names, SQL types</p></div><b>PASS</b></div><div class="validation-step done"><span>2</span><div><strong>Static semantic checks</strong><p>JOIN/filter/grouping invariants</p></div><b>PASS</b></div><div class="validation-step"><span>3</span><div><strong>Result equivalence</strong><p>EXCEPT both directions + row count</p></div><b>READY</b></div><div class="validation-step"><span>4</span><div><strong>Performance benchmark</strong><p>STATISTICS IO/TIME · controlled run</p></div><b>LOCKED</b></div></div><div class="validation-actions"><label class="ack"><input type="checkbox" id="validationAck"> Kontrollü karşılaştırma sorgusunun çalıştırılmasını onaylıyorum.</label><button class="button primary" id="validateButton" disabled>Validation Çalıştır</button></div></section>
-          <section class="panel span-4"><div class="panel-header"><div><span class="panel-kicker">EXPECTED RESULT</span><h3>Benchmark Target</h3></div></div><div class="benchmark-compare"><div><span>Logical Reads</span><strong>3.48M</strong><i>→</i><b>~760K</b></div><div><span>Median Duration</span><strong>284s</strong><i>→</i><b>~8–25s</b></div><div><span>Dependency Depth</span><strong>6</strong><i>→</i><b>3</b></div><div><span>Repeated scans</span><strong>4</strong><i>→</i><b>1–2</b></div></div><div class="safe-note"><strong>Bu değerler tahmindir.</strong><p>Gerçek kazanç yalnız benchmark sonrasında gösterilir.</p></div></section>
+          <!-- Left: Query Compare Inputs -->
+          <section class="panel span-12" style="margin-bottom:14px">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">SIDE-BY-SIDE QUERY COMPARE</span>
+                <h3>Orijinal vs Aday Sorgu Karşılaştırması</h3>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="button ghost small" id="btnValLoadSample">Örnek Sorguları Yükle</button>
+                <button class="button primary small" id="btnValRunBoth">İki Sorguyu Karşılaştır</button>
+              </div>
+            </div>
+            <div class="diff-grid" style="margin-top:10px">
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <span class="panel-kicker">ORİJİNAL SORGU (V1)</span>
+                  <span class="object-pill" id="valOrigPill">Original SQL</span>
+                </div>
+                <textarea id="valOrigSql" class="code-editor" style="height:180px;font-size:13px;line-height:20px" spellcheck="false" placeholder="-- Orijinal View veya Sorgu metni..."></textarea>
+              </div>
+              <div>
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                  <span class="panel-kicker" style="color:var(--accent)">REFACTORED ADAY (V2)</span>
+                  <span class="object-pill" style="border-color:rgba(124,92,255,0.4);color:var(--accent)">Candidate SQL</span>
+                </div>
+                <textarea id="valCandSql" class="code-editor candidate" style="height:180px;font-size:13px;line-height:20px" spellcheck="false" placeholder="-- AI veya optimize edilmiş aday sorgu metni..."></textarea>
+              </div>
+            </div>
+          </section>
+
+          <!-- Middle Left: 4-Tier Proof Pipeline -->
+          <section class="panel span-7">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">PROOF PIPELINE</span>
+                <h3 id="valPipelineTitle">AA_URETIM_MALZEME_PLANLAMA</h3>
+              </div>
+              <span class="status-pill" id="valPipelineStatus">HAZIR</span>
+            </div>
+            <div class="validation-steps" id="valStepList">
+              <div class="validation-step" id="valStep-schema">
+                <span>1</span>
+                <div>
+                  <strong>1. Metadata & Schema Test (sp_describe_first_result_set)</strong>
+                  <p id="valStepDesc-schema">Kolon sayısı, adları, ordinal sıralama ve SQL veri tipleri denetimi.</p>
+                </div>
+                <b id="valStepStatus-schema">BEKLİYOR</b>
+              </div>
+              <div class="validation-step" id="valStep-rowCount">
+                <span>2</span>
+                <div>
+                  <strong>2. Row Count Match</strong>
+                  <p id="valStepDesc-rowCount">Belirlenen sınır altında toplam dönen satır adedi karşılaştırması.</p>
+                </div>
+                <b id="valStepStatus-rowCount">BEKLİYOR</b>
+              </div>
+              <div class="validation-step" id="valStep-setMatch">
+                <span>3</span>
+                <div>
+                  <strong>3. Bounded Dual EXCEPT Set Comparison</strong>
+                  <p id="valStepDesc-setMatch">A EXCEPT B = 0 ve B EXCEPT A = 0 küme farkı denetimi.</p>
+                </div>
+                <b id="valStepStatus-setMatch">BEKLİYOR</b>
+              </div>
+              <div class="validation-step" id="valStep-multiplicity">
+                <span>4</span>
+                <div>
+                  <strong>4. Row Multiplicity Proof (GROUP BY + COUNT_BIG)</strong>
+                  <p id="valStepDesc-multiplicity">Duplicate satır sayısı ve frekanslarının korunumu kanıtı (EXCEPT yetmez).</p>
+                </div>
+                <b id="valStepStatus-multiplicity">BEKLİYOR</b>
+              </div>
+            </div>
+            <div class="validation-actions">
+              <label class="ack"><input type="checkbox" id="validationAck" checked> Üretim veritabanında kontrollü test çalıştırma riskini anladım</label>
+              <button class="button primary" id="validateButton">✦ Validation Lab'ı Başlat</button>
+            </div>
+          </section>
+
+          <!-- Middle Right: Benchmark Projection -->
+          <section class="panel span-5">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">BENCHMARK PROJECTION</span>
+                <h3>Mevcut vs Aday Performansı</h3>
+              </div>
+            </div>
+            <div class="benchmark-compare">
+              <div>
+                <span>Logical Reads</span>
+                <strong id="valReadsBefore">4.1B</strong><i>→</i><b id="valReadsAfter">620K</b>
+              </div>
+              <div>
+                <span>CPU Time</span>
+                <strong id="valCpuBefore">18,400 ms</strong><i>→</i><b id="valCpuAfter">1,140 ms</b>
+              </div>
+              <div>
+                <span>Elapsed Time</span>
+                <strong id="valTimeBefore">24.2 s</strong><i>→</i><b id="valTimeAfter">1.4 s</b>
+              </div>
+              <div>
+                <span>Row Multiplicity</span>
+                <strong id="valMultBefore">187,431</strong><i>→</i><b id="valMultAfter" style="color:var(--green)">187,431 ✓</b>
+              </div>
+              <div>
+                <span>Estimated Rows</span>
+                <strong id="valEstBefore">1 (CE Error)</strong><i>→</i><b id="valEstAfter">187,431</b>
+              </div>
+            </div>
+            <div class="safe-note">
+              <strong>Guardrail: Duplicate Row Safety</strong>
+              <p>Old EXCEPT New / New EXCEPT Old tek başına "Exact Match" kanıtı sayılmaz. Duplicate multiplicity GROUP BY + COUNT_BIG(*) ile ispatlanmalıdır.</p>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="page-workbench">
+        <div class="workbench-toolbar">
+          <div class="wb-toolbar-left">
+            <span class="panel-kicker">SQL WORKBENCH</span>
+            <span class="status-pill status-ready" id="wbStatusPill">● READY</span>
+            <span class="wb-db-tag" id="wbDbTag">MikroDB_V16_TEST</span>
+          </div>
+          <div class="wb-toolbar-center">
+            <button class="button primary small" id="btnWbRun" title="Çalıştır (Ctrl+Enter / F5)">
+              <span>▶</span> Çalıştır
+            </button>
+            <button class="button danger small" id="btnWbStop" disabled title="Çalışan sorguyu iptal et">
+              <span>■</span> İptal
+            </button>
+            <button class="button ghost small" id="btnWbEstPlan" title="Estimated Execution Plan (Ctrl+L - sorguyu çalıştırmaz)">
+              <span>⌁</span> Estimated Plan
+            </button>
+            <button class="button ghost small" id="btnWbActPlan" title="Actual Execution Plan (Sorguyu çalıştırarak gerçek planı çeker)">
+              <span>◈</span> Actual Plan
+            </button>
+            <div class="wb-benchmark-group">
+              <button class="button ghost small" id="btnWbBenchmark" title="Benchmark Modu">
+                <span>∿</span> Benchmark
+              </button>
+              <select id="wbBenchmarkRuns" class="select-styled mini-select" title="Benchmark tekrar sayısı">
+                <option value="3" selected>3 Run (Default)</option>
+                <option value="5">5 Run</option>
+                <option value="10">10 Run</option>
+              </select>
+            </div>
+            <button class="button ghost small" id="btnWbFormat" title="SQL Kodunu Formatla">
+              <span>⚡</span> Format
+            </button>
+          </div>
+          <div class="wb-toolbar-right">
+            <div class="wb-timeout-wrap">
+              <label for="wbTimeoutSelect">Timeout:</label>
+              <select id="wbTimeoutSelect" class="select-styled mini-select">
+                <option value="5000">5s</option>
+                <option value="15000">15s</option>
+                <option value="30000" selected>30s</option>
+                <option value="60000">60s</option>
+                <option value="120000">120s</option>
+              </select>
+            </div>
+            <button class="button ghost small icon-only" id="btnWbClear" title="Editörü Temizle">✕</button>
+          </div>
+        </div>
+
+        <div class="workbench-split">
+          <div class="workbench-editor-section">
+            <div class="editor-gutter-wrap">
+              <div class="editor-line-numbers" id="wbLineNumbers">1</div>
+              <textarea id="wbSqlInput" class="workbench-textarea" spellcheck="false" placeholder="-- T-SQL SELECT veya WITH ... SELECT sorgunuzu buraya yazın...
+-- Örnek:
+SELECT TOP 50 
+    sth_stok_kod,
+    COUNT_BIG(*) AS IslemAdedi,
+    SUM(sth_miktar) AS ToplamMiktar
+FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
+GROUP BY sth_stok_kod
+ORDER BY IslemAdedi DESC;"></textarea>
+            </div>
+          </div>
+
+          <div class="workbench-metrics-strip" id="wbMetricsStrip">
+            <div class="wb-metric-card">
+              <span>Süre (Duration)</span>
+              <strong id="wbMetricDuration">—</strong>
+            </div>
+            <div class="wb-metric-card">
+              <span>CPU Süresi</span>
+              <strong id="wbMetricCpu">—</strong>
+            </div>
+            <div class="wb-metric-card">
+              <span>Logical Reads</span>
+              <strong id="wbMetricReads">—</strong>
+            </div>
+            <div class="wb-metric-card">
+              <span>Dönen Satır</span>
+              <strong id="wbMetricRows">—</strong>
+            </div>
+            <div class="wb-metric-card">
+              <span>Kanıt / Durum</span>
+              <span class="wb-evidence-pill" id="wbMetricEvidence">Hazır</span>
+            </div>
+          </div>
+
+          <div class="workbench-results-section">
+            <div class="wb-tab-bar">
+              <button class="wb-tab-btn active" data-wb-tab="results">Sonuçlar <span class="tab-badge" id="wbResultBadge">0</span></button>
+              <button class="wb-tab-btn" data-wb-tab="messages">Mesajlar <span class="tab-badge" id="wbMessageBadge">0</span></button>
+              <button class="wb-tab-btn" data-wb-tab="statistics">Statistics IO / Time</button>
+              <button class="wb-tab-btn" data-wb-tab="plan">Execution Plan <span class="tab-badge" id="wbPlanBadge" style="display:none">●</span></button>
+              <button class="wb-tab-btn" data-wb-tab="history">Geçmiş</button>
+            </div>
+
+            <div class="wb-tab-pane active" id="wbPane-results">
+              <div class="wb-results-toolbar">
+                <span id="wbResultsCountText">0 satır</span>
+                <div class="wb-results-actions">
+                  <button class="button ghost small" id="btnWbCopyTable">Kopyala</button>
+                  <button class="button ghost small" id="btnWbExportCsv">CSV İndir</button>
+                </div>
+              </div>
+              <div class="wb-table-wrap" id="wbTableWrap">
+                <div class="empty-state" style="padding:40px 10px"><p>Sorgu çalıştırmak için <b>Çalıştır (Ctrl+Enter)</b> butonuna tıklayın.</p></div>
+              </div>
+            </div>
+
+            <div class="wb-tab-pane" id="wbPane-messages">
+              <pre class="wb-terminal" id="wbMessagesTerminal">Sorgu henüz çalıştırılmadı.</pre>
+            </div>
+
+            <div class="wb-tab-pane" id="wbPane-statistics">
+              <div id="wbStatisticsContent">
+                <div class="empty-state" style="padding:40px 10px"><p>Statistics IO ve CPU/Elapsed süresi sorgu çalıştırıldığında burada detaylandırılır.</p></div>
+              </div>
+            </div>
+
+            <div class="wb-tab-pane" id="wbPane-plan">
+              <div id="wbPlanContent">
+                <div class="empty-state" style="padding:40px 10px"><p>Plan analizi için <b>Estimated Plan</b> veya <b>Actual Plan</b> butonunu kullanın.</p></div>
+              </div>
+            </div>
+
+            <div class="wb-tab-pane" id="wbPane-history">
+              <div class="wb-history-list" id="wbHistoryList">
+                <div class="empty-state" style="padding:40px 10px"><p>Bu oturumda henüz sorgu çalıştırılmadı.</p></div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -305,20 +702,278 @@ SELECT ...
 
       <section class="page" id="page-settings">
         <div class="settings-layout">
-          <section class="settings-nav"><button class="active">Database Connection</button><button>AI Provider</button><button>Risk Scoring</button><button>Runtime Evidence</button><button>Safety & Permissions</button><button>Appearance</button></section>
-          <section class="settings-content">
-            <span class="panel-kicker">DATABASE CONNECTION</span>
-            <h2>Bağlantı & Yetki</h2>
-            <p class="settings-lead">Varsayılan çalışma şekli read-only'dir. SQL parolası ve AI key'i tarayıcı localStorage'a yazılmaz.</p>
-            <div class="setting-card"><div><strong id="settingsActiveDb">Demo Modu</strong><p id="settingsActiveHost">Mock dataset aktif · Bağlantı yok</p></div><span class="connected-pill" id="settingsConnStatusPill" style="color:var(--yellow);border-color:rgba(247,200,106,.2)">○ DEMO MODE</span></div>
-            <div class="setting-card"><div><strong>View prefix</strong><p>Analize dahil edilecek nesne öneki (varsayılan: AA_)</p></div><input class="setting-input" id="settingViewPrefix" value="AA_"/></div>
-            <div class="setting-card"><div><strong>Query Store</strong><p id="settingsQsDesc">Runtime regression için tercih edilen kanıt kaynağı</p></div><span class="connected-pill" id="settingsQsPill" style="color:var(--subtle);border-color:#2a3040">● OFF / DEMO</span></div>
-            <div class="setting-card" id="settingsCapRow" style="display:none"><div><strong id="settingsVersionText">SQL Server</strong><p id="settingsCompatText">Compat Level</p></div><span class="connected-pill" id="settingsEditionPill">EDITION</span></div>
-            <div class="permission-box"><strong>SQL İzinleri & Güvenlik</strong><code id="settingsPermText">VIEW DEFINITION · VIEW DATABASE STATE · SELECT Query Store metadata</code><p>Uygulama ilk sürümde CREATE / ALTER / DROP yetkisi istemez. Tüm operasyonlar salt-okunur (read-only) meta-sorgulardır.</p></div>
+          <section class="settings-nav">
+            <button class="active" data-settings-tab="connection">Database Connection</button>
+            <button data-settings-tab="ai">AI Provider</button>
+            <button data-settings-tab="scoring">Risk Scoring</button>
+            <button data-settings-tab="runtime">Runtime Evidence</button>
+            <button data-settings-tab="safety">Safety & Permissions</button>
+            <button data-settings-tab="appearance">Appearance</button>
+          </section>
+
+          <section class="settings-content-wrap">
+            <div class="settings-panel active" id="settings-panel-connection">
+              <span class="panel-kicker">DATABASE CONNECTION</span>
+              <h2>Bağlantı & Yetki</h2>
+              <p class="settings-lead">Varsayılan çalışma şekli read-only'dir. SQL parolası ve AI anahtarı tarayıcı depolamasına yazılmaz.</p>
+              
+              <div class="setting-card">
+                <div><strong id="settingsActiveDb">Demo Modu</strong><p id="settingsActiveHost">Mock dataset aktif · Bağlantı yok</p></div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span class="connected-pill" id="settingsConnStatusPill" style="color:var(--yellow);border-color:rgba(247,200,106,.2)">○ DEMO MODE</span>
+                  <button class="button ghost small" id="btnSettingsOpenModal">Bağlantıyı Değiştir</button>
+                </div>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>View Prefix</strong><p>Taramaya dahil edilecek view öneki (varsayılan: AA_)</p></div>
+                <div style="display:flex;gap:8px">
+                  <input class="setting-input" id="settingViewPrefix" value="AA_" />
+                  <button class="button primary small" id="btnApplyPrefix">Uygula & Tara</button>
+                </div>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Query Store Durumu</strong><p id="settingsQsDesc">Runtime regresyon ve maliyet analizi için temel kanıt kaynağı</p></div>
+                <span class="connected-pill" id="settingsQsPill">● OFF / DEMO</span>
+              </div>
+
+              <div class="setting-card" id="settingsCapRow" style="display:none">
+                <div><strong id="settingsVersionText">SQL Server</strong><p id="settingsCompatText">Compat Level</p></div>
+                <span class="connected-pill" id="settingsEditionPill">EDITION</span>
+              </div>
+
+              <div class="permission-box">
+                <strong>SQL Yetkileri & Güvenlik Politikası</strong>
+                <code id="settingsPermText">VIEW DEFINITION · VIEW DATABASE STATE · SELECT Query Store metadata</code>
+                <p>Uygulama hiçbir zaman DDL/DML çalıştırmaz. Tüm operasyonlar salt-okunur (read-only) meta-sorgulardır.</p>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-ai">
+              <span class="panel-kicker">AI PROVIDER CONFIGURATION</span>
+              <h2>AI Motoru & API Bağlantısı</h2>
+              <p class="settings-lead">AI anahtarı yalnızca Node.js süreç belleğinde tutulur; tarayıcı depolamasına veya loglara kesinlikle yazılmaz.</p>
+              
+              <div class="setting-card">
+                <div><strong>Provider</strong><p>Kullanılacak AI model sağlayıcısı</p></div>
+                <select id="settingAiProvider" class="setting-input wide select-styled">
+                  <option value="deepseek" selected>DeepSeek (Önerilen)</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="custom">OpenAI-Compatible / Custom Endpoint</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>API Base URL</strong><p>Sağlayıcı API uç noktası</p></div>
+                <input id="settingAiBaseUrl" class="setting-input wide" value="https://api.deepseek.com/v1" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>API Key</strong><p>Kimlik doğrulama anahtarı (Bellekte saklanır)</p></div>
+                <input id="settingAiKey" type="password" class="setting-input wide" placeholder="••••••••••••••••••••••••••••••••" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Model Name</strong><p>Kullanılacak spesifik model adı</p></div>
+                <input id="settingAiModel" class="setting-input wide" value="deepseek-coder" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Temperature</strong><p>Deterministik SQL refactoring için düşük değer önerilir (0.0 - 0.3)</p></div>
+                <input id="settingAiTemp" type="number" step="0.05" min="0" max="1" class="setting-input" value="0.15" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Max Tokens</strong><p>Maksimum yanıt belirteç sayısı</p></div>
+                <input id="settingAiTokens" type="number" class="setting-input" value="4096" />
+              </div>
+
+              <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+                <button class="button primary" id="btnTestAi">✦ Test AI Connection</button>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-scoring">
+              <span class="panel-kicker">SCORING WEIGHTS</span>
+              <h2>Health & Risk Puanlama Ağırlıkları</h2>
+              <p class="settings-lead">docs/03-SCORING.md standardına uygun ağırlık katsayıları. View'ların önceliklendirilmesini belirler.</p>
+
+              <div class="setting-card">
+                <div><strong>Runtime Cost Weight</strong><p>Query Store / DMV mantıksal okuma yüzdelik dilim ağırlığı</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightRuntime" value="35" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Active Regression Weight</strong><p>Tespit edilen süre/okuma regresyon şiddeti ağırlığı</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightRegression" value="25" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Repeated Base-Table Access</strong><p>Aynı base tabloya birden çok dal üzerinden erişim cezası</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightRepeated" value="15" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Dependency Depth</strong><p>İç içe view derinliği (depth > 3) yapısal ceza ağırlığı</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightDepth" value="10" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Non-SARGable Predicates</strong><p>WHERE/ON filtrelerinde indeks kullanımını bozan fonksiyon cezası</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightSargable" value="10" />
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Blast Radius (Upstream Dependents)</strong><p>Bu view'ı çağıran üst view ve rapor sayısı etki ağırlığı</p></div>
+                <input type="number" min="0" max="100" class="setting-input" id="weightBlast" value="5" />
+              </div>
+
+              <div style="display:flex;justify-content:space-between;margin-top:22px">
+                <button class="button ghost" id="btnResetScoring">Reset to Recommended Defaults</button>
+                <button class="button primary" id="btnSaveScoring">Ağırlıkları Kaydet & Yeniden Puanla</button>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-runtime">
+              <span class="panel-kicker">EVIDENCE SOURCES</span>
+              <h2>Runtime Kanıt & Zaman Aralığı</h2>
+              <p class="settings-lead">View bağımsız executable bir nesne değildir. Runtime maliyeti calling queries üzerinden korelasyonla hesaplanır.</p>
+
+              <div class="setting-card">
+                <div><strong>Tercih Edilen Kanıt Kaynağı</strong><p>Query Store varsa birincil, yoksa Plan Cache DMV kullanılır</p></div>
+                <select id="settingRuntimePref" class="setting-input wide select-styled">
+                  <option value="auto" selected>Otomatik (Query Store öncelikli)</option>
+                  <option value="query_store">Yalnızca Query Store (Strict)</option>
+                  <option value="plan_cache">Plan Cache DMV (sys.dm_exec_query_stats)</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Analiz Zaman Penceresi</strong><p>Query Store'dan çekilecek runtime geçmişi derinliği</p></div>
+                <select id="settingRuntimeWindow" class="setting-input wide select-styled">
+                  <option value="1h">Son 1 Saat (Anlık Darboğaz)</option>
+                  <option value="24h" selected>Son 24 Saat (Günlük Tipik Çalışma)</option>
+                  <option value="7d">Son 7 Gün (Haftalık Tepe Noktaları)</option>
+                  <option value="30d">Son 30 Gün (Aylık Kapanış Yükleri)</option>
+                </select>
+              </div>
+
+              <div class="permission-box" style="margin-top:16px">
+                <strong>Evidence Grade Standartları</strong>
+                <p style="margin-top:6px"><b>Grade A:</b> Query Store onaylı runtime metrikleri (Gerçek süre, IO, Plan ID geçmişi).</p>
+                <p style="margin-top:4px"><b>Grade B:</b> Plan cache DMV verisi (Restart veya memory pressure ile temizlenebilir volatile veri).</p>
+                <p style="margin-top:4px"><b>Grade D:</b> Yalnızca statik SQL sözdizimi ve bağımlılık heuristiği (Runtime kanıtı yok).</p>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-safety">
+              <span class="panel-kicker">SECURITY POLICY</span>
+              <h2>Güvenlik Kalkanı & İzin Matrisi</h2>
+              <p class="settings-lead">Stüdyo sıfır veritabanı değişikliği (zero DB mutation) ilkesiyle çalışır.</p>
+
+              <div class="setting-card">
+                <div><strong>DDL Koruma Kalkanı</strong><p>CREATE, ALTER, DROP, TRUNCATE komutları kesinlikle engellenir</p></div>
+                <span class="severity-pill critical">● BLOCKED</span>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>DML Koruma Kalkanı</strong><p>INSERT, UPDATE, DELETE, MERGE komutları kesinlikle engellenir</p></div>
+                <span class="severity-pill critical">● BLOCKED</span>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>SELECT Sorguları</strong><p>Salt-okunur veri ve metadata okumalarına izin verilir</p></div>
+                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● ALLOWED (READ-ONLY)</span>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Sys Katalogları & DMVs</strong><p>sys.views, sys.sql_expression_dependencies, Query Store metadata</p></div>
+                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● ALLOWED (METADATA)</span>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Query Benchmark & Plan X-Ray</strong><p>Yalnızca kullanıcı açıkça butonla talep ettiğinde kontrollü çalışır</p></div>
+                <span class="severity-pill warning">● USER CONTROLLED</span>
+              </div>
+            </div>
+
+            <div class="settings-panel" id="settings-panel-appearance">
+              <span class="panel-kicker">STUDIO ERGONOMICS</span>
+              <h2>Görünüm & Tipografi Standartları</h2>
+              <p class="settings-lead">1920x1080 referans ekranında uzun süre yorulmadan analiz yapabilmeniz için optimize edilmiş geliştirici teması.</p>
+
+              <div class="setting-card">
+                <div><strong>Tema (Color Theme)</strong><p>Arayüz renk paleti</p></div>
+                <select id="settingTheme" class="setting-input select-styled">
+                  <option value="dark" selected>Dark (Standart)</option>
+                  <option value="midnight">Midnight (OLED Deep Black)</option>
+                  <option value="system">Sistem Teması</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Arayüz Yoğunluğu (Density)</strong><p>Satır ve kart boşluklarını ayarlar (Yazı boyutunu küçültmez)</p></div>
+                <select id="settingDensity" class="setting-input select-styled">
+                  <option value="comfortable" selected>Comfortable (~44px satır)</option>
+                  <option value="compact">Compact (~38px satır)</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Yazı Boyutu Ölçeği (Font Scale)</strong><p>12px taban korumalı kontrollü semantik tipografi ölçeği</p></div>
+                <select id="settingFontScale" class="setting-input select-styled">
+                  <option value="compact">Compact Text (90%)</option>
+                  <option value="default" selected>Default (100% — Önerilen)</option>
+                  <option value="large">Large (110%)</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Monaco / SQL Editor Font Size</strong><p>Sorgu editörü ve kod pencereleri için bağımsız font boyutu</p></div>
+                <select id="settingEditorFontSize" class="setting-input select-styled">
+                  <option value="12">12px</option>
+                  <option value="13">13px</option>
+                  <option value="14" selected>14px (Önerilen)</option>
+                  <option value="15">15px</option>
+                  <option value="16">16px</option>
+                  <option value="18">18px</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Dependency Graph Grid</strong><p>Bağımlılık haritası arka plan ızgarası</p></div>
+                <select id="settingGraphGrid" class="setting-input select-styled">
+                  <option value="on" selected>Açık (Izgara Görünür)</option>
+                  <option value="off">Kapalı</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Animasyonlar</strong><p>Arayüz geçiş efektleri</p></div>
+                <select id="settingAnimations" class="setting-input select-styled">
+                  <option value="on" selected>Açık (Standart)</option>
+                  <option value="reduced">Azaltılmış (Reduced Motion)</option>
+                </select>
+              </div>
+            </div>
           </section>
         </div>
       </section>
     </main>
+  </div>
+
+  <!-- Global Command Palette Modal (Ctrl+K) -->
+  <div class="modal-backdrop hidden" id="commandPaletteModal">
+    <div class="cmd-palette-box">
+      <div class="cmd-palette-header">
+        <span>⌕</span>
+        <input type="text" id="cmdPaletteInput" placeholder="View, tablo, sayfa veya stüdyo komutu ara... (↑↓ gezin, Enter seç)" autocomplete="off" />
+        <kbd>ESC</kbd>
+      </div>
+      <div class="cmd-palette-results" id="cmdPaletteResults"></div>
+    </div>
   </div>
 
   <div class="modal-backdrop hidden" id="connectionModal">

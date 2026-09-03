@@ -1,123 +1,89 @@
 /**
- * Dependency Engine
+ * SQL Server Refactoring & Performance Studio
+ * Dependency Graph & Analysis Engine
  *
- * Constructs the directed dependency graph using sys.sql_expression_dependencies.
- * Computes downstream depth, upstream dependents (blast radius), circular dependencies,
- * unresolved entities, and repeated base-table access paths.
+ * Implements:
+ * - Downstream traversal & max depth
+ * - Transitive dependency collection
+ * - Base tables reached & repeated base table paths (CTE disclaimer applied)
+ * - Cycle detection via DFS recursion stack
+ * - Unresolved entity tracking
+ * - Upstream reverse dependency analysis (Blast Radius)
+ * - Filterable visual SubGraph extraction (depth: 1/2/3/all, direction: both/upstream/downstream)
  */
 
-function buildDependencyStats(views = [], edges = []) {
-  const viewMap = new Map();
-  const viewByName = new Map();
-  for (const v of views) {
-    viewMap.set(v.object_id, v);
-    viewByName.set(v.view_name.toUpperCase(), v);
-  }
-
-  // Build adjacency lists
-  // outgoing: source_object_id -> edges
-  // incoming: target_object_id -> edges
+function buildDependencyStats(views = [], rawEdges = []) {
+  const viewMap = new Map(views.map(v => [v.object_id, v]));
   const outgoing = new Map();
   const incoming = new Map();
 
-  for (const e of edges) {
-    const srcId = e.source_object_id;
-    if (!outgoing.has(srcId)) outgoing.set(srcId, []);
-    outgoing.get(srcId).push(e);
+  for (const e of rawEdges) {
+    if (!outgoing.has(e.source_object_id)) outgoing.set(e.source_object_id, []);
+    outgoing.get(e.source_object_id).push(e);
 
-    const tgtId = e.target_object_id;
-    if (tgtId != null) {
-      if (!incoming.has(tgtId)) incoming.set(tgtId, []);
-      incoming.get(tgtId).push(e);
+    if (e.target_object_id != null) {
+      if (!incoming.has(e.target_object_id)) incoming.set(e.target_object_id, []);
+      incoming.get(e.target_object_id).push(e);
     }
   }
 
-  // Helper to check if an object is a base table
-  function isTableType(typeDesc) {
-    const t = String(typeDesc || '').toUpperCase();
-    return t.includes('TABLE') || t === 'U' || t === 'USER_TABLE';
-  }
-
-  // Helper to check if an object is a view
-  function isViewType(typeDesc, targetId) {
-    if (targetId && viewMap.has(targetId)) return true;
-    const t = String(typeDesc || '').toUpperCase();
-    return t.includes('VIEW') || t === 'V';
-  }
-
-  // Helper to check if an object is a function
-  function isFunctionType(typeDesc) {
-    const t = String(typeDesc || '').toUpperCase();
-    return t.includes('FUNCTION') || t === 'FN' || t === 'IF' || t === 'TF';
-  }
-
-  // Compute downstream metrics for a given root view
   function downstreamAnalysis(rootId, rootName) {
     let maxDepth = 1;
-    const visitedInPath = new Set([rootId]);
+    const baseTablePaths = new Map();
+    const baseTableNames = new Map();
     const transitiveObjects = new Set();
-    const baseTablePaths = new Map(); // tableId -> array of path strings
-    const baseTableNames = new Map(); // tableId -> name
     const downstreamViews = new Set();
     const downstreamFunctions = new Set();
     const cycles = [];
     const unresolved = [];
 
-    function dfs(currentId, currentDepth, currentPath) {
-      maxDepth = Math.max(maxDepth, currentDepth);
-      const outEdges = outgoing.get(currentId) || [];
+    function traverse(currentId, currentDepth, currentPath, visitedInBranch) {
+      if (currentDepth > maxDepth) maxDepth = currentDepth;
 
-      for (const edge of outEdges) {
-        // Handle unresolved references
-        if (edge.target_object_id == null) {
+      const edges = outgoing.get(currentId) || [];
+      for (const edge of edges) {
+        const targetId = edge.target_object_id;
+        const targetName = edge.target_name;
+        const targetType = String(edge.target_type || '').toUpperCase();
+
+        if (targetId == null) {
           unresolved.push({
-            targetName: edge.target_name,
-            targetSchema: edge.target_schema,
-            isAmbiguous: edge.is_ambiguous
+            name: targetName,
+            referencedBy: currentId,
+            edge: edge
           });
           continue;
         }
 
-        const targetId = edge.target_object_id;
-        const targetName = edge.target_name || (viewMap.get(targetId)?.view_name) || `Obj_${targetId}`;
-        const targetType = edge.target_type;
-
-        transitiveObjects.add(targetId);
-
-        // Check for circular dependency
-        if (visitedInPath.has(targetId)) {
-          cycles.push([...currentPath, targetName]);
+        if (visitedInBranch.has(targetId)) {
+          cycles.push({
+            path: [...currentPath, targetName],
+            cycleAt: targetName
+          });
           continue;
         }
 
-        const isTable = isTableType(targetType);
-        const isView = isViewType(targetType, targetId);
-        const isFunc = isFunctionType(targetType);
+        transitiveObjects.add(targetId);
 
-        if (isTable) {
+        if (targetType.includes('VIEW')) {
+          downstreamViews.add(targetId);
+          const nextVisited = new Set(visitedInBranch).add(targetId);
+          traverse(targetId, currentDepth + 1, [...currentPath, targetName], nextVisited);
+        } else if (targetType.includes('TABLE')) {
           if (!baseTablePaths.has(targetId)) {
             baseTablePaths.set(targetId, []);
             baseTableNames.set(targetId, targetName);
           }
-          baseTablePaths.get(targetId).push([...currentPath, targetName].join(' → '));
-        }
-
-        if (isFunc) {
-          downstreamFunctions.add(targetName);
-        }
-
-        if (isView) {
-          downstreamViews.add(targetId);
-          visitedInPath.add(targetId);
-          dfs(targetId, currentDepth + 1, [...currentPath, targetName]);
-          visitedInPath.delete(targetId);
+          baseTablePaths.get(targetId).push([...currentPath, targetName]);
+        } else if (targetType.includes('FUNCTION')) {
+          downstreamFunctions.add(targetId);
         }
       }
     }
 
-    dfs(rootId, 1, [rootName]);
+    const initialVisited = new Set([rootId]);
+    traverse(rootId, 1, [rootName], initialVisited);
 
-    // Calculate repeated base tables (tables reachable through >= 2 distinct paths)
     const repeatedBaseTables = [];
     for (const [tableId, paths] of baseTablePaths.entries()) {
       if (paths.length > 1) {
@@ -125,7 +91,7 @@ function buildDependencyStats(views = [], edges = []) {
           tableId,
           tableName: baseTableNames.get(tableId),
           pathCount: paths.length,
-          paths: paths.slice(0, 5) // keep up to 5 sample paths
+          paths
         });
       }
     }
@@ -144,7 +110,6 @@ function buildDependencyStats(views = [], edges = []) {
     };
   }
 
-  // Compute upstream dependents (blast radius)
   function upstreamAnalysis(rootId) {
     const visited = new Set();
     const queue = [rootId];
@@ -168,93 +133,69 @@ function buildDependencyStats(views = [], edges = []) {
 
     return {
       dependentCount: visited.size,
-      upstreamViews: upstreamViews.slice(0, 30) // sample for impact chain
+      upstreamViews: upstreamViews.slice(0, 30)
     };
   }
 
-  // Build findings specifically arising from graph topology
   function buildGraphFindings(stats) {
     const findings = [];
 
-    // Excessive depth finding
     if (stats.depth > 3) {
-      const penalty = Math.min(12, (stats.depth - 3) * 3);
       findings.push({
         code: 'EXCESSIVE_DEPTH',
-        title: 'Deep dependency hierarchy',
+        title: `Aşırı Bağımlılık Derinliği (Depth: ${stats.depth})`,
         severity: stats.depth >= 6 ? 'CRITICAL' : 'HIGH',
-        healthPenalty: penalty,
-        symbol: '∞',
-        category: 'architecture',
+        category: 'STRUCTURAL',
         evidenceGrade: 'D',
-        explanation: `${stats.depth} seviye derinlik tespit edildi (önerilen azami 3). Optimizer karmaşık iç içe view ağaçlarını açarken optimize zaman aşımı ve hatalı cardinality kestirimleri yapabilir.`
+        symbol: '⌁',
+        healthPenalty: Math.min(12, (stats.depth - 3) * 3),
+        explanation: `View ${stats.depth} seviye iç içe dependency içeriyor. SQL Server optimizer plan karmaşıklığı artar.`
       });
     }
 
-    // Repeated base table access finding
     if (stats.repeatedBaseTableCount > 0) {
-      const penalty = Math.min(18, stats.repeatedBaseTableCount * 6);
-      const names = stats.repeatedBaseTablePaths.map(r => `${r.tableName} (${r.pathCount} yol)`).join(', ');
+      const sample = stats.repeatedBaseTablePaths.slice(0, 3).map(r => `${r.tableName} (${r.pathCount} yol)`).join(', ');
       findings.push({
-        code: 'REPEATED_BASE_TABLE',
-        title: 'Repeated base table access paths',
+        code: 'REPEATED_BASE_TABLE_PATHS',
+        title: `Mükerrer Base Tablo Erişimi (${stats.repeatedBaseTableCount} tablo)`,
         severity: stats.repeatedBaseTableCount >= 3 ? 'CRITICAL' : 'HIGH',
-        healthPenalty: penalty,
+        category: 'STRUCTURAL',
+        evidenceGrade: 'D',
         symbol: '⇄',
-        category: 'io_pressure',
-        evidenceGrade: 'D',
-        explanation: `${stats.repeatedBaseTableCount} farklı fiziksel tabloya çoklu dependency dalı üzerinden erişiliyor (${names}). Kritik not: SQL Server CTE'leri varsayılan olarak materialize etmez; tek tarama iddiası yalnız execution plan ve IO kanıtıyla doğrulanabilir.`
+        healthPenalty: Math.min(18, stats.repeatedBaseTableCount * 6),
+        explanation: `Aynı base tabloya birden fazla dependency dalı üzerinden erişiliyor: ${sample}. (Not: CTE bu tekrarları otomatik tek scan yapmaz).`
       });
     }
 
-    // High blast radius finding
-    if (stats.dependentCount >= 10) {
-      const penalty = Math.min(8, Math.floor(stats.dependentCount / 10) * 2);
-      findings.push({
-        code: 'HIGH_BLAST_RADIUS',
-        title: 'High dependency blast radius',
-        severity: stats.dependentCount >= 20 ? 'HIGH' : 'WARNING',
-        healthPenalty: penalty,
-        symbol: '⊛',
-        category: 'risk',
-        evidenceGrade: 'D',
-        explanation: `Bu view, üst katmandaki ${stats.dependentCount} nesne/rapor tarafından doğrudan veya dolaylı olarak çağrılmaktadır. Olası bir şema/semantik değişiklik geniş çaplı regresyon riski taşır.`
-      });
-    }
-
-    // Cycles finding
     if (stats.cycles.length > 0) {
       findings.push({
         code: 'CIRCULAR_DEPENDENCY',
-        title: 'Circular dependency detected',
+        title: `Döngüsel Bağımlılık (Cycle Detected)`,
         severity: 'CRITICAL',
-        healthPenalty: 20,
-        symbol: '⟳',
-        category: 'architecture',
+        category: 'STRUCTURAL',
         evidenceGrade: 'D',
-        explanation: `View bağımlılık zincirinde döngüsel referans tespit edildi: ${stats.cycles[0].join(' → ')}.`
+        symbol: '↻',
+        healthPenalty: 20,
+        explanation: `View bağımlılık zincirinde döngü tespit edildi.`
       });
     }
 
-    // Unresolved finding
     if (stats.unresolved.length > 0) {
-      const missing = stats.unresolved.map(u => u.targetName).join(', ');
       findings.push({
         code: 'UNRESOLVED_DEPENDENCY',
-        title: 'Unresolved object reference',
-        severity: 'WARNING',
-        healthPenalty: 5,
-        symbol: '?',
-        category: 'schema',
+        title: `Çözülememiş Referans (${stats.unresolved.length} nesne)`,
+        severity: 'MEDIUM',
+        category: 'STRUCTURAL',
         evidenceGrade: 'D',
-        explanation: `View tanımında katalogda eşleşmeyen referanslar tespit edildi: ${missing}. Silinmiş nesne veya dinamik SQL kalıntısı olabilir.`
+        symbol: '?',
+        healthPenalty: Math.min(10, stats.unresolved.length * 3),
+        explanation: `View tanımında katalogda eşleşmeyen bağımlılıklar bulundu.`
       });
     }
 
     return findings;
   }
 
-  // Aggregate stats map
   const statsMap = new Map();
   for (const v of views) {
     const down = downstreamAnalysis(v.object_id, v.view_name);
@@ -273,74 +214,139 @@ function buildDependencyStats(views = [], edges = []) {
 }
 
 /**
- * Builds an interactive visual subgraph for a specific view:
- * Contains target view, immediate upstream views, downstream views,
- * base tables reached, and functions.
+ * Enhanced Subgraph Extractor with Depth & Direction Filtering
  */
-function extractSubGraph(viewNameOrId, views = [], edges = []) {
+function extractSubGraph(viewNameOrId, views = [], edges = [], options = {}) {
+  const maxDepth = options.depth === 'all' ? 99 : Number(options.depth || 2);
+  const direction = options.direction || 'both'; // 'both' | 'downstream' | 'upstream'
+
   const viewMap = new Map(views.map(v => [v.object_id, v]));
+  const viewByName = new Map(views.map(v => [String(v.view_name).toLowerCase(), v]));
+
   const targetView = typeof viewNameOrId === 'number'
     ? viewMap.get(viewNameOrId)
-    : views.find(v => v.view_name.equalsIgnoreCase ? v.view_name.equalsIgnoreCase(viewNameOrId) : v.view_name.toLowerCase() === String(viewNameOrId).toLowerCase());
+    : viewByName.get(String(viewNameOrId).toLowerCase());
 
   if (!targetView) return null;
 
   const targetId = targetView.object_id;
   const nodes = new Map();
   const graphEdges = [];
+  const edgeKeySet = new Set();
 
-  // Add target node
-  nodes.set(targetId, {
-    id: targetId,
-    name: targetView.view_name,
-    type: 'TARGET',
-    health: targetView.health || 100,
-    risk: targetView.risk?.level || 'LOW',
-    riskScore: targetView.risk?.score || 0
-  });
-
-  // Outgoing edges from target (downstream)
-  for (const e of edges) {
-    if (e.source_object_id === targetId) {
-      const tgtId = e.target_object_id || `unresolved_${e.target_name}`;
-      let type = 'TABLE';
-      const tdesc = String(e.target_type || '').toUpperCase();
-      if (tdesc.includes('VIEW')) type = 'VIEW';
-      else if (tdesc.includes('FUNCTION')) type = 'FUNCTION';
-      else if (e.target_object_id == null) type = 'UNRESOLVED';
-
-      if (!nodes.has(tgtId)) {
-        nodes.set(tgtId, {
-          id: tgtId,
-          name: e.target_name,
-          type,
-          health: viewMap.get(tgtId)?.health || null
-        });
-      }
-      graphEdges.push({
-        source: targetId,
-        target: tgtId,
-        type: 'downstream'
+  function addNode(id, name, type, health = null, risk = null, riskScore = null, extra = {}) {
+    const key = String(id);
+    if (!nodes.has(key)) {
+      nodes.set(key, {
+        id: key,
+        name: name || key,
+        type,
+        health,
+        risk: risk || (health != null ? (health < 50 ? 'CRITICAL' : health < 75 ? 'HIGH' : 'LOW') : null),
+        riskScore: riskScore || (health != null ? Math.max(0, 100 - health) : null),
+        ...extra
       });
     }
+  }
 
-    // Incoming edges to target (upstream)
-    if (e.target_object_id === targetId) {
-      const srcId = e.source_object_id;
-      const srcView = viewMap.get(srcId);
-      if (!nodes.has(srcId)) {
-        nodes.set(srcId, {
-          id: srcId,
-          name: e.source_name || srcView?.view_name,
-          type: 'UPSTREAM_VIEW',
-          health: srcView?.health || null
-        });
-      }
+  function addEdge(source, target, type, depth = 1) {
+    const key = `${source}->${target}`;
+    if (!edgeKeySet.has(key)) {
+      edgeKeySet.add(key);
       graphEdges.push({
-        source: srcId,
-        target: targetId,
-        type: 'upstream'
+        source: String(source),
+        target: String(target),
+        type,
+        depth
       });
+    }
+  }
+
+  // Add target view node
+  addNode(targetId, targetView.view_name, 'TARGET', targetView.health || 85, targetView.risk?.level || 'HIGH', targetView.risk?.score || 72, { isTarget: true });
+
+  const outgoing = new Map();
+  const incoming = new Map();
+  for (const e of edges) {
+    if (!outgoing.has(e.source_object_id)) outgoing.set(e.source_object_id, []);
+    outgoing.get(e.source_object_id).push(e);
+
+    if (e.target_object_id != null) {
+      if (!incoming.has(e.target_object_id)) incoming.set(e.target_object_id, []);
+      incoming.get(e.target_object_id).push(e);
+    }
+  }
+
+  // Downstream Traversal (BFS up to maxDepth)
+  if (direction === 'both' || direction === 'downstream') {
+    const downQueue = [{ id: targetId, depth: 1 }];
+    const downVisited = new Set([targetId]);
+
+    while (downQueue.length > 0) {
+      const { id: currId, depth: currDepth } = downQueue.shift();
+      if (currDepth > maxDepth) continue;
+
+      const out = outgoing.get(currId) || [];
+      for (const e of out) {
+        const tgtId = e.target_object_id != null ? e.target_object_id : `unresolved_${e.target_name}`;
+        let type = 'TABLE';
+        const tdesc = String(e.target_type || '').toUpperCase();
+        if (tdesc.includes('VIEW')) type = 'VIEW';
+        else if (tdesc.includes('FUNCTION')) type = 'FUNCTION';
+        else if (e.target_object_id == null) type = 'UNRESOLVED';
+
+        const tgtView = viewMap.get(tgtId);
+        addNode(tgtId, e.target_name, type, tgtView?.health || null);
+        addEdge(currId, tgtId, 'downstream', currDepth);
+
+        if (type === 'VIEW' && !downVisited.has(tgtId) && currDepth < maxDepth) {
+          downVisited.add(tgtId);
+          downQueue.push({ id: tgtId, depth: currDepth + 1 });
+        }
+      }
+    }
+  }
+
+  // Upstream Traversal (BFS up to maxDepth)
+  if (direction === 'both' || direction === 'upstream') {
+    const upQueue = [{ id: targetId, depth: 1 }];
+    const upVisited = new Set([targetId]);
+
+    while (upQueue.length > 0) {
+      const { id: currId, depth: currDepth } = upQueue.shift();
+      if (currDepth > maxDepth) continue;
+
+      const inList = incoming.get(currId) || [];
+      for (const e of inList) {
+        const srcId = e.source_object_id;
+        const srcView = viewMap.get(srcId);
+
+        addNode(srcId, e.source_name || srcView?.view_name, 'UPSTREAM_VIEW', srcView?.health || 70);
+        addEdge(srcId, currId, 'upstream', currDepth);
+
+        if (!upVisited.has(srcId) && currDepth < maxDepth) {
+          upVisited.add(srcId);
+          upQueue.push({ id: srcId, depth: currDepth + 1 });
+        }
+      }
+    }
+  }
+
+  // Identify repeated base tables in the extracted subgraph
+  const tableCounts = new Map();
+  for (const e of graphEdges) {
+    const tgt = nodes.get(e.target);
+    if (tgt && tgt.type === 'TABLE') {
+      tableCounts.set(e.target, (tableCounts.get(e.target) || 0) + 1);
+    }
+  }
+  for (const [tId, count] of tableCounts.entries()) {
+    const node = nodes.get(tId);
+    if (node) {
+      node.pathCount = count;
+      if (count > 1) {
+        node.isHot = true;
+      }
     }
   }
 
@@ -351,4 +357,7 @@ function extractSubGraph(viewNameOrId, views = [], edges = []) {
   };
 }
 
-module.exports = { buildDependencyStats, extractSubGraph };
+module.exports = {
+  buildDependencyStats,
+  extractSubGraph
+};
