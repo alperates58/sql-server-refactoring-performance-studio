@@ -1,53 +1,35 @@
 /**
  * SQL Server Refactoring & Performance Studio
- * SQL Workbench Execution & Benchmark Engine
+ * SQL Workbench Execution Engine (Phase 2.5 Multi-Database)
  *
- * Guardrails:
- * - Strict Read-Only Validation on all queries before execution
- * - Clean try/finally cleanup of session states (SET SHOWPLAN_XML, SET STATISTICS IO/TIME/XML)
- * - True query cancellation via active driver request handles
- * - Strict separation of planType: ESTIMATED vs planType: ACTUAL
- * - Benchmark mode with warm-up tracking and statistical metrics (Median, P95, Min, Max)
- * - In-memory session history (passwords/API keys never recorded)
+ * Guardrail Enforcement:
+ * - NO "USE [db] + restore" on pooled connections.
+ * - Queries execute directly against the selected database's dedicated ConnectionPool.
+ * - try/finally unconditional session cleanup:
+ *    SET STATISTICS IO, TIME, XML OFF; SET SHOWPLAN_XML OFF;
+ * - Concurrency: DB_A and DB_B queries run on distinct pools in parallel without mixing.
+ * - Active cancellation via request.cancel().
  */
 
-const crypto = require('crypto');
 const db = require('./sqlServer');
 const { validateReadOnly } = require('./sqlValidator');
 
-// In-memory active requests for cancellation
-const activeRequests = new Map();
-
-// In-memory session query history
+const activeRequests = new Map(); // requestId -> sql.Request
 const sessionHistory = [];
 
-/**
- * Parses raw STATISTICS IO and TIME string messages returned by SQL Server.
- */
-function parseStatistics(infoMessages = []) {
+function parseStatisticsIo(rawMessages = []) {
   const tableStats = [];
-  let cpuTime = 0;
-  let elapsedTime = 0;
+  const ioRegex = /Table '([^']+)'.*?Scan count (\d+), logical reads (\d+), physical reads (\d+)/gi;
 
-  for (const msg of infoMessages) {
-    const text = msg.message || String(msg);
-
-    // Table 'STOK_HAREKETLERI'. Scan count 4, logical reads 18422, physical reads 0...
-    const tableMatch = text.match(/Table\s+'([^']+)'\.\s+Scan\s+count\s+(\d+),\s+logical\s+reads\s+(\d+),\s+physical\s+reads\s+(\d+)/i);
-    if (tableMatch) {
+  for (const msg of rawMessages) {
+    let match;
+    while ((match = ioRegex.exec(msg)) !== null) {
       tableStats.push({
-        table: tableMatch[1],
-        scanCount: Number(tableMatch[2]),
-        logicalReads: Number(tableMatch[3]),
-        physicalReads: Number(tableMatch[4])
+        table: match[1],
+        scanCount: parseInt(match[2], 10),
+        logicalReads: parseInt(match[3], 10),
+        physicalReads: parseInt(match[4], 10)
       });
-    }
-
-    // SQL Server Execution Times: CPU time = 530 ms, elapsed time = 842 ms.
-    const timeMatch = text.match(/CPU\s+time\s*=\s*(\d+)\s*ms,\s*elapsed\s+time\s*=\s*(\d+)\s*ms/i);
-    if (timeMatch) {
-      cpuTime += Number(timeMatch[1]);
-      elapsedTime += Number(timeMatch[2]);
     }
   }
 
@@ -55,246 +37,331 @@ function parseStatistics(infoMessages = []) {
   const totalPhysicalReads = tableStats.reduce((acc, t) => acc + t.physicalReads, 0);
 
   return {
-    tables: tableStats,
+    tableStats,
     totalLogicalReads,
-    totalPhysicalReads,
-    cpuTimeMs: cpuTime,
-    elapsedTimeMs: elapsedTime
+    totalPhysicalReads
   };
 }
 
-/**
- * Executes a user SELECT query in read-only mode with statistics and cancellation support.
- */
-async function executeQuery({ sql, timeoutMs = 30000, requestId = crypto.randomUUID() }) {
-  // 1. Guardrail: Validate Read-Only
-  const valRes = validateReadOnly(sql);
-  if (!valRes.valid) {
-    throw new Error(valRes.reason);
-  }
+function parseStatisticsTime(rawMessages = []) {
+  let cpuMs = 0;
+  let elapsedMs = 0;
+  const timeRegex = /CPU time = (\d+) ms,?\s+elapsed time = (\d+) ms/gi;
 
-  if (!db.status().connected) {
-    throw new Error('Aktif SQL Server bağlantısı yok. Lütfen önce bağlanın.');
-  }
-
-  const pool = db.getPool();
-  if (!pool) throw new Error('Veritabanı bağlantı havuzu hazır değil.');
-
-  const request = pool.request();
-  request.timeout = timeoutMs;
-  activeRequests.set(requestId, request);
-
-  const infoMessages = [];
-  request.on('info', info => {
-    if (info && info.message) infoMessages.push(info);
-  });
-
-  const startTime = Date.now();
-  let result = null;
-
-  try {
-    // Enable Statistics IO and TIME
-    await pool.request().batch('SET STATISTICS IO ON; SET STATISTICS TIME ON;');
-
-    result = await request.query(sql);
-  } finally {
-    activeRequests.delete(requestId);
-    // 2. Guardrail: Clean up session state unconditionally
-    try {
-      await pool.request().batch('SET STATISTICS IO OFF; SET STATISTICS TIME OFF;');
-    } catch (_) {
-      // Ignore cleanup error on connection close
+  for (const msg of rawMessages) {
+    let match;
+    while ((match = timeRegex.exec(msg)) !== null) {
+      cpuMs += parseInt(match[1], 10);
+      elapsedMs += parseInt(match[2], 10);
     }
   }
 
-  const endTime = Date.now();
-  const elapsedMs = endTime - startTime;
-  const parsedStats = parseStatistics(infoMessages);
-
-  // If SQL Server didn't report elapsed time in message, use wall clock
-  if (!parsedStats.elapsedTimeMs) parsedStats.elapsedTimeMs = elapsedMs;
-
-  const rows = result.recordset || [];
-  const columns = result.recordset?.columns ? Object.keys(result.recordset.columns) : (rows[0] ? Object.keys(rows[0]) : []);
-
-  const executionRecord = {
-    id: requestId,
-    query: sql.slice(0, 160),
-    durationMs: elapsedMs,
-    cpuMs: parsedStats.cpuTimeMs,
-    logicalReads: parsedStats.totalLogicalReads,
-    rowsCount: rows.length,
-    status: 'SUCCESS',
-    timestamp: new Date().toISOString(),
-    database: db.status().connection?.database || ''
-  };
-
-  sessionHistory.unshift(executionRecord);
-  if (sessionHistory.length > 50) sessionHistory.pop();
-
-  return {
-    ok: true,
-    requestId,
-    metrics: {
-      durationMs: elapsedMs,
-      cpuMs: parsedStats.cpuTimeMs,
-      logicalReads: parsedStats.totalLogicalReads,
-      physicalReads: parsedStats.totalPhysicalReads,
-      rowsReturned: rows.length,
-      evidence: 'Actual execution'
-    },
-    columns,
-    rows: rows.slice(0, 500), // capped for frontend transfer safety
-    totalRows: rows.length,
-    statistics: parsedStats,
-    messages: infoMessages.map(m => m.message || String(m))
-  };
+  return { cpuMs, elapsedMs };
 }
 
 /**
- * Cancels a running query.
+ * Execute query against the selected database's dedicated pool.
  */
-function cancelQuery(requestId) {
-  if (activeRequests.has(requestId)) {
-    const req = activeRequests.get(requestId);
+async function execute({
+  sql,
+  database = null,
+  timeoutMs = 30000,
+  maxRows = 500,
+  requestId = null
+}) {
+  const validation = validateReadOnly(sql);
+  if (!validation.valid) {
+    throw new Error(`Read-only safety policy blocked this statement: ${validation.reason}`);
+  }
+
+  const targetDb = database || db.status().primaryDatabase;
+  const pool = db.getPool(targetDb);
+  if (!pool) throw new Error(`"${targetDb}" veritabanı bağlantı havuzu bulunamadı.`);
+
+  const messages = [];
+  const reqId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+  const request = pool.request();
+  activeRequests.set(reqId, request);
+
+  request.setTimeout(Math.min(120000, Math.max(1000, Number(timeoutMs) || 30000)));
+
+  const startTime = process.hrtime.bigint();
+
+  try {
+    const wrappedBatch = `
+      SET NOCOUNT ON;
+      SET STATISTICS IO ON;
+      SET STATISTICS TIME ON;
+      ${sql};
+    `;
+
+    const result = await request.batch(wrappedBatch);
+    const endTime = process.hrtime.bigint();
+    const durationMs = Number((endTime - startTime) / 1000000n);
+
+    if (result.recordsets && result.recordsets.length > 0) {
+      for (const rs of result.recordsets) {
+        if (rs.messages) {
+          for (const m of rs.messages) messages.push(m.message);
+        }
+      }
+    }
+
+    const ioStats = parseStatisticsIo(messages);
+    const timeStats = parseStatisticsTime(messages);
+
+    const primaryRecordset = (result.recordsets && result.recordsets.length > 0)
+      ? result.recordsets[0]
+      : [];
+
+    const truncatedRows = primaryRecordset.slice(0, maxRows);
+    const columns = truncatedRows.length > 0 ? Object.keys(truncatedRows[0]) : [];
+
+    const response = {
+      ok: true,
+      requestId: reqId,
+      database: targetDb,
+      columns,
+      rows: truncatedRows,
+      totalRows: primaryRecordset.length,
+      truncated: primaryRecordset.length > maxRows,
+      metrics: {
+        durationMs,
+        cpuMs: timeStats.cpuMs,
+        elapsedMs: timeStats.elapsedMs,
+        logicalReads: ioStats.totalLogicalReads,
+        physicalReads: ioStats.totalPhysicalReads,
+        tableStats: ioStats.tableStats
+      },
+      messages
+    };
+
+    sessionHistory.unshift({
+      id: reqId,
+      time: new Date().toISOString(),
+      database: targetDb,
+      sql: sql.slice(0, 160),
+      durationMs,
+      logicalReads: ioStats.totalLogicalReads,
+      rowCount: primaryRecordset.length
+    });
+    if (sessionHistory.length > 50) sessionHistory.pop();
+
+    return response;
+  } catch (err) {
+    throw db.sanitizeError(err);
+  } finally {
+    activeRequests.delete(reqId);
+    // Unconditional session state cleanup on this database's pool
+    try {
+      await pool.request().batch('SET STATISTICS IO OFF; SET STATISTICS TIME OFF; SET NOCOUNT OFF;');
+    } catch (_) {}
+  }
+}
+
+/**
+ * Cancel an ongoing request by requestId.
+ */
+function cancelRequest(requestId) {
+  const req = activeRequests.get(requestId);
+  if (req) {
     try {
       req.cancel();
       activeRequests.delete(requestId);
-      return { ok: true, message: 'Sorgu başarıyla iptal edildi.' };
+      return { ok: true, message: `Request ${requestId} iptal edildi.` };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   }
-  return { ok: false, message: 'İptal edilecek aktif sorgu bulunamadı.' };
+  return { ok: false, error: `Request ${requestId} bulunamadı veya tamamlandı.` };
 }
 
 /**
- * Obtains Estimated Plan (SET SHOWPLAN_XML ON - compiles, NEVER executes)
- * OR Actual Plan (SET STATISTICS XML ON - executes and gathers actual runtime XML).
+ * Execute ShowPlan XML on the selected database's pool.
  */
-async function getExecutionPlan({ sql, mode = 'estimated', timeoutMs = 30000 }) {
-  // 1. Guardrail: Validate Read-Only
-  const valRes = validateReadOnly(sql);
-  if (!valRes.valid) throw new Error(valRes.reason);
-
-  if (!db.status().connected) {
-    throw new Error('Aktif SQL Server bağlantısı yok. Lütfen önce bağlanın.');
+async function executePlan({
+  sql,
+  database = null,
+  mode = 'estimated',
+  timeoutMs = 15000,
+  requestId = null
+}) {
+  const validation = validateReadOnly(sql);
+  if (!validation.valid) {
+    throw new Error(`Read-only safety policy: ${validation.reason}`);
   }
 
-  const pool = db.getPool();
-  if (!pool) throw new Error('Veritabanı havuzu hazır değil.');
+  const targetDb = database || db.status().primaryDatabase;
+  const pool = db.getPool(targetDb);
+  if (!pool) throw new Error(`"${targetDb}" veritabanı bağlantı havuzu bulunamadı.`);
 
-  const planType = mode === 'actual' ? 'ACTUAL' : 'ESTIMATED';
-  let planXml = null;
+  const reqId = requestId || `plan_${Date.now()}`;
+  const request = pool.request();
+  activeRequests.set(reqId, request);
+  request.setTimeout(Math.min(60000, Math.max(1000, Number(timeoutMs) || 15000)));
+
+  const isActual = mode.toLowerCase() === 'actual';
 
   try {
-    if (mode === 'actual') {
-      // ACTUAL PLAN: Executes query with STATISTICS XML ON
-      await pool.request().batch('SET STATISTICS XML ON;');
-      const req = pool.request();
-      req.timeout = timeoutMs;
-      const res = await req.query(sql);
-
-      // Search for XML Showplan column
-      for (const set of [res.recordset, ...(res.recordsets || [])]) {
-        if (set && set[0]) {
-          const colName = Object.keys(set[0]).find(k => k.toLowerCase().includes('showplan') || k.toLowerCase().includes('xml'));
-          if (colName && set[0][colName]) {
-            planXml = set[0][colName];
-            break;
+    let rawXml = '';
+    if (isActual) {
+      const actualBatch = `
+        SET STATISTICS XML ON;
+        ${sql};
+      `;
+      const result = await request.batch(actualBatch);
+      if (result.recordsets) {
+        for (const rs of result.recordsets) {
+          for (const row of rs) {
+            const key = Object.keys(row).find(k => k.toLowerCase().includes('showplan') || k.toLowerCase().includes('xml'));
+            if (key && row[key]) {
+              rawXml = row[key];
+              break;
+            }
           }
+          if (rawXml) break;
         }
       }
     } else {
-      // ESTIMATED PLAN: Compiles query without executing (SET SHOWPLAN_XML ON)
       await pool.request().batch('SET SHOWPLAN_XML ON;');
-      const req = pool.request();
-      req.timeout = timeoutMs;
-      const res = await req.query(sql);
-
-      if (res.recordset && res.recordset[0]) {
-        const col = Object.keys(res.recordset[0])[0];
-        planXml = res.recordset[0][col];
+      try {
+        const estResult = await request.batch(sql);
+        if (estResult.recordset && estResult.recordset.length > 0) {
+          const row = estResult.recordset[0];
+          const key = Object.keys(row)[0];
+          rawXml = row[key];
+        }
+      } finally {
+        await pool.request().batch('SET SHOWPLAN_XML OFF;');
       }
     }
+
+    return {
+      ok: true,
+      requestId: reqId,
+      database: targetDb,
+      planType: isActual ? 'ACTUAL' : 'ESTIMATED',
+      rawXml: rawXml || ''
+    };
+  } catch (err) {
+    throw db.sanitizeError(err);
   } finally {
-    // 2. Guardrail: Clean up session state unconditionally
+    activeRequests.delete(reqId);
     try {
-      await pool.request().batch('SET SHOWPLAN_XML OFF; SET STATISTICS XML OFF;');
-    } catch (_) {
-      // Ignore
-    }
+      await pool.request().batch('SET STATISTICS XML OFF; SET SHOWPLAN_XML OFF;');
+    } catch (_) {}
   }
-
-  if (!planXml) {
-    throw new Error(`${planType} plan XML verisi SQL Server tarafından döndürülemedi.`);
-  }
-
-  return {
-    ok: true,
-    planType, // STRICT GUARANTEE: 'ESTIMATED' or 'ACTUAL'
-    rawXml: planXml
-  };
 }
 
 /**
- * Benchmark Mode: Executes query N times (default 3, max 10) with statistics.
+ * Execute Benchmark on the selected database's pool.
  */
-async function executeBenchmark({ sql, runs = 3, warmUp = true, timeoutMs = 30000, benchmarkId = crypto.randomUUID() }) {
-  const valRes = validateReadOnly(sql);
-  if (!valRes.valid) throw new Error(valRes.reason);
-
-  const iterations = Math.min(10, Math.max(1, Number(runs) || 3));
-  const runResults = [];
-
-  for (let i = 0; i < iterations; i++) {
-    const isWarmUpRun = warmUp && i === 0;
-    const reqId = `${benchmarkId}_run_${i}`;
-
-    const res = await executeQuery({ sql, timeoutMs, requestId: reqId });
-    runResults.push({
-      iteration: i + 1,
-      isWarmUp: isWarmUpRun,
-      durationMs: res.metrics.durationMs,
-      cpuMs: res.metrics.cpuMs,
-      logicalReads: res.metrics.logicalReads,
-      rows: res.metrics.rowsReturned
-    });
-
-    // Brief inter-iteration yield to permit event-loop checks
-    await new Promise(r => setTimeout(r, 60));
+async function executeBenchmark({
+  sql,
+  database = null,
+  runs = 3,
+  warmUp = true,
+  timeoutMs = 30000,
+  benchmarkId = null
+}) {
+  const validation = validateReadOnly(sql);
+  if (!validation.valid) {
+    throw new Error(`Read-only benchmark blocked: ${validation.reason}`);
   }
 
-  // Statistical calculations (optionally exclude warmup if iterations > 1)
-  const measured = (warmUp && iterations > 1) ? runResults.slice(1) : runResults;
-  const durations = measured.map(r => r.durationMs).sort((a, b) => a - b);
-  const reads = measured.map(r => r.logicalReads).sort((a, b) => a - b);
-  const cpus = measured.map(r => r.cpuMs).sort((a, b) => a - b);
+  const targetDb = database || db.status().primaryDatabase;
+  const pool = db.getPool(targetDb);
+  if (!pool) throw new Error(`"${targetDb}" veritabanı bağlantı havuzu bulunamadı.`);
 
-  const min = durations[0];
-  const max = durations[durations.length - 1];
-  const median = durations[Math.floor(durations.length / 2)];
-  const p95 = durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))];
-  const avg = Math.round(durations.reduce((a, b) => a + b, 0) / durations.length);
+  const bId = benchmarkId || `bench_${Date.now()}`;
+  const totalRuns = Math.min(10, Math.max(1, Number(runs) || 3));
+  const iterations = [];
 
-  const logicalReadsMedian = reads[Math.floor(reads.length / 2)];
-  const cpuMedian = cpus[Math.floor(cpus.length / 2)];
+  if (warmUp) {
+    try {
+      const warmReq = pool.request();
+      warmReq.setTimeout(timeoutMs);
+      await warmReq.batch(`SET NOCOUNT ON; ${sql};`);
+    } catch (_) {}
+  }
+
+  for (let i = 1; i <= totalRuns; i++) {
+    const iterReq = pool.request();
+    iterReq.setTimeout(timeoutMs);
+    const startTime = process.hrtime.bigint();
+
+    try {
+      const wrapped = `
+        SET NOCOUNT ON;
+        SET STATISTICS IO ON;
+        SET STATISTICS TIME ON;
+        ${sql};
+      `;
+      const res = await iterReq.batch(wrapped);
+      const endTime = process.hrtime.bigint();
+      const durMs = Number((endTime - startTime) / 1000000n);
+
+      const msgs = [];
+      if (res.recordsets) {
+        for (const set of res.recordsets) {
+          if (set.messages) for (const m of set.messages) msgs.push(m.message);
+        }
+      }
+
+      const io = parseStatisticsIo(msgs);
+      const time = parseStatisticsTime(msgs);
+
+      iterations.push({
+        iteration: i,
+        durationMs: durMs,
+        cpuMs: time.cpuMs,
+        logicalReads: io.totalLogicalReads,
+        physicalReads: io.totalPhysicalReads
+      });
+    } catch (err) {
+      iterations.push({
+        iteration: i,
+        error: err.message
+      });
+    } finally {
+      try {
+        await pool.request().batch('SET STATISTICS IO OFF; SET STATISTICS TIME OFF;');
+      } catch (_) {}
+    }
+  }
+
+  const validRuns = iterations.filter(r => !r.error);
+  const durations = validRuns.map(r => r.durationMs).sort((a, b) => a - b);
+  const reads = validRuns.map(r => r.logicalReads).sort((a, b) => a - b);
+
+  const medianDuration = durations.length > 0
+    ? durations[Math.floor(durations.length / 2)]
+    : 0;
+
+  const p95Duration = durations.length > 0
+    ? durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))]
+    : 0;
+
+  const medianReads = reads.length > 0
+    ? reads[Math.floor(reads.length / 2)]
+    : 0;
 
   return {
     ok: true,
-    benchmarkId,
-    totalRuns: iterations,
-    warmUpIncluded: !warmUp || iterations === 1,
-    summary: {
-      medianMs: median,
-      p95Ms: p95,
-      minMs: min,
-      maxMs: max,
-      avgMs: avg,
-      logicalReadsMedian,
-      cpuMedianMs: cpuMedian
+    benchmarkId: bId,
+    database: targetDb,
+    runsRequested: totalRuns,
+    runsCompleted: validRuns.length,
+    warmUpApplied: warmUp,
+    metrics: {
+      medianDurationMs: medianDuration,
+      p95DurationMs: p95Duration,
+      minDurationMs: durations[0] || 0,
+      maxDurationMs: durations[durations.length - 1] || 0,
+      avgDurationMs: durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+      medianLogicalReads: medianReads
     },
-    runs: runResults
+    iterations
   };
 }
 
@@ -303,10 +370,9 @@ function getHistory() {
 }
 
 module.exports = {
-  executeQuery,
-  cancelQuery,
-  getExecutionPlan,
+  execute,
+  cancelRequest,
+  executePlan,
   executeBenchmark,
-  getHistory,
-  parseStatistics
+  getHistory
 };

@@ -21,25 +21,25 @@
 
       <nav class="nav" aria-label="Ana navigasyon">
         <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span><span>Genel Bakış</span></button>
-        <button class="nav-item" data-page="views"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge">600</span></button>
+        <button class="nav-item" data-page="views"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge" id="sidebarViewCount">600</span></button>
         <button class="nav-item" data-page="graph"><span class="nav-icon">⌁</span><span>Bağımlılık Haritası</span></button>
-        <button class="nav-item" data-page="runtime"><span class="nav-icon">∿</span><span>Runtime & Regresyon</span><span class="status-dot danger"></span></button>
-        <button class="nav-item" data-page="refactor"><span class="nav-icon">✦</span><span>AI Refactor</span></button>
-        <button class="nav-item" data-page="validation"><span class="nav-icon">✓</span><span>Validation Lab</span></button>
-        <button class="nav-item" data-page="workbench"><span class="nav-icon">⚡</span><span>SQL Workbench</span></button>
+        <button class="nav-item" data-page="runtime"><span class="nav-icon">∿</span><span>Çalışma Zamanı ve Regresyon</span><span class="status-dot danger"></span></button>
+        <button class="nav-item" data-page="refactor"><span class="nav-icon">✦</span><span>AI Refaktör</span></button>
+        <button class="nav-item" data-page="validation"><span class="nav-icon">✓</span><span>Doğrulama Laboratuvarı</span></button>
+        <button class="nav-item" data-page="workbench"><span class="nav-icon">⚡</span><span>SQL Çalışma Alanı</span></button>
       </nav>
 
       <div class="sidebar-section">
         <span class="section-label">ARAÇLAR</span>
-        <button class="nav-item" data-page="tables"><span class="nav-icon">▦</span><span>Table Pressure</span></button>
-        <button class="nav-item" data-page="duplicates"><span class="nav-icon">≋</span><span>Duplicate Logic</span></button>
+        <button class="nav-item" data-page="tables"><span class="nav-icon">▦</span><span>Tablo Baskısı</span></button>
+        <button class="nav-item" data-page="duplicates"><span class="nav-icon">≋</span><span>Mükerrer Mantık</span></button>
         <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>Ayarlar</span></button>
       </div>
 
       <div class="sidebar-footer">
         <div class="connection-mini">
           <span class="connection-light" id="sidebarConnectionLight"></span>
-          <div><strong id="sidebarDbName">Demo Modu</strong><small id="sidebarServerInfo">SQL Server · Mock Dataset</small></div>
+          <div><strong id="sidebarDbName">Demo Veri Kümesi</strong><small id="sidebarServerInfo">Çevrimdışı · Salt-Okunur</small></div>
           <button class="icon-button" id="openConnection" title="Bağlantı ayarları">•••</button>
         </div>
       </div>
@@ -48,10 +48,11 @@
     <main class="main">
       <header class="topbar">
         <div>
-          <div class="eyebrow" id="pageEyebrow">SQL HEALTH COMMAND CENTER</div>
+          <div class="eyebrow" id="pageEyebrow">SQL SAĞLIK KONTROL MERKEZİ</div>
           <h1 id="pageTitle">Genel Bakış</h1>
         </div>
         <div class="topbar-actions">
+          <button class="icon-button" id="themeQuickToggle" title="Temayı Değiştir (Açık / Koyu)" style="font-size:15px;margin-right:4px">☀</button>
           <div class="scan-meta"><span id="scanMetaLabel">Son tarama</span><strong id="scanMetaTime">Demo</strong><small id="scanMetaAgo">Canlı veri için tara</small></div>
           <button class="button ghost" id="scanButton"><span>↻</span> Yeniden Tara</button>
           <button class="button primary" id="connectButton"><span class="button-spark">●</span> <span id="connectButtonText">Bağlantı</span></button>
@@ -146,6 +147,11 @@
         <div class="workspace views-workspace">
           <section class="view-list-pane">
             <div class="pane-head"><div><span class="panel-kicker">AA_% ENVANTER</span><h3 id="inventoryTitle">600 View</h3></div><button class="icon-button" id="refreshInventoryBtn" title="Yenile">↻</button></div>
+            <div class="db-filter-row" style="margin-bottom:8px">
+              <select id="viewDbFilter" class="setting-input select-styled" style="width:100%;height:32px;font-size:12.5px" title="Veritabanına Göre Filtrele">
+                <option value="all">Tüm Veritabanları (All Databases)</option>
+              </select>
+            </div>
             <div class="search-box"><span>⌕</span><input id="viewSearch" placeholder="View ara..."/><kbd>⌘ K</kbd></div>
             <div class="filter-row"><button class="filter-chip active" data-risk="all">Tümü <b id="countAll">600</b></button><button class="filter-chip" data-risk="critical">Kritik <b id="countCritical">37</b></button><button class="filter-chip" data-risk="high">Yüksek <b id="countHigh">84</b></button></div>
             <div class="view-list" id="viewList"></div>
@@ -322,20 +328,23 @@
             <div class="graph-nodes" id="graphNodesContainer"></div>
           </div>
           <aside class="graph-inspector" id="graphInspector">
-            <span class="panel-kicker">SELECTED NODE</span>
+            <div class="inspector-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <span class="panel-kicker">SEÇİLİ NESNE</span>
+              <button class="icon-button close-btn" id="closeInspectorBtn" title="Kapat (Esc)" style="width:26px;height:26px;font-size:13px;padding:0">✕</button>
+            </div>
             <h3 id="inspectorNodeName">STOK_HAREKETLERI</h3>
-            <span class="object-pill" id="inspectorNodeType">BASE TABLE</span>
-            <div class="inspector-metric"><span>Referenced by AA_%</span><strong id="inspectorMetricRefs">183</strong></div>
-            <div class="inspector-metric"><span>Dependency paths</span><strong id="inspectorMetricPaths">647</strong></div>
-            <div class="inspector-metric"><span>Critical consumers</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>
+            <span class="object-pill" id="inspectorNodeType">TEMEL TABLO</span>
+            <div class="inspector-metric"><span>Kullanan View Sayısı</span><strong id="inspectorMetricRefs">183</strong></div>
+            <div class="inspector-metric"><span>Bağımlılık Yolları</span><strong id="inspectorMetricPaths">647</strong></div>
+            <div class="inspector-metric"><span>Kritik Tüketiciler</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>
             <div class="inspector-warning" id="inspectorWarningBox">
-              <b>⇄ Repeated access path</b>
-              <p id="inspectorWarningText">Hedef graph içinde birden fazla bağımsız dependency dalı üzerinden erişiliyor (CTE physical materialization sağlamaz).</p>
+              <b>⇄ Mükerrer Erişim Rotaları</b>
+              <p id="inspectorWarningText">Bağımlılık haritasında birden fazla bağımsız dal üzerinden erişiliyor. (CTE kullanımı fiziksel tekrarı kaldırmaz).</p>
             </div>
             <div style="display:flex;flex-direction:column;gap:6px;margin-top:14px">
               <button class="button primary small full" id="btnInspOpenView">View Detayını Aç</button>
               <button class="button ghost small full" id="btnInspOpenSql">SQL Kodunu İncele</button>
-              <button class="button ghost small full" id="btnInspOpenPressure">Pressure Map'te Gör</button>
+              <button class="button ghost small full" id="btnInspOpenPressure">Tablo Baskısında Gör</button>
             </div>
           </aside>
         </div>
@@ -424,55 +433,68 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
       </section>
 
       <section class="page" id="page-validation">
-        <div class="section-intro">
+        <div class="val-header-bar">
           <div>
-            <span class="hero-kicker">SEMANTIC EQUIVALENCE & BENCHMARK</span>
+            <span class="hero-kicker">SEMANTİK EŞİTLİK & REGRESYON KANITLAMA STÜDYOSU</span>
             <h2>Tahmin yetmez; <em>kanıtla</em>.</h2>
-            <p>Refactoring önerisi semantik doğruluk ve kontrollü IO benchmark testlerinden geçmeden production adayı olamaz.</p>
+            <p>Refaktör adayı semantik eşitlik ve kontrollü IO benchmark testlerinden geçmeden asla güvenli kabul edilmez.</p>
           </div>
-          <div class="validation-badge">
-            <span>Proof Verdict</span>
-            <strong id="valVerdictText">UNVALIDATED</strong>
-            <small id="valVerdictSub">Pending validation lab</small>
+          <div style="display:flex;align-items:center;gap:12px">
+            <div class="val-verdict-card" id="valVerdictBadge">
+              <span class="val-verdict-kicker">DOĞRULAMA DURUMU</span>
+              <strong id="valVerdictText">DOĞRULANMADI</strong>
+              <small id="valVerdictSub">Doğrulama adımları bekleniyor</small>
+            </div>
+            <div class="val-quick-actions">
+              <button class="button ghost small" id="btnValLoadSample" title="Örnek SQL'leri Yükle">✦ Örnek Yükle</button>
+              <button class="button primary small" id="btnValRunBoth" title="Her İki Sorguyu Doğrula">▶ Doğrula</button>
+              <button class="button ghost small" id="btnValClear" title="Editörleri Temizle">Temizle</button>
+            </div>
           </div>
         </div>
 
-        <div class="validation-grid">
-          <!-- Left: Query Compare Inputs -->
-          <section class="panel span-12" style="margin-bottom:14px">
-            <div class="panel-header">
-              <div>
-                <span class="panel-kicker">SIDE-BY-SIDE QUERY COMPARE</span>
-                <h3>Orijinal vs Aday Sorgu Karşılaştırması</h3>
+        <!-- Resizable Split-View Container -->
+        <div class="val-split-wrap" id="valSplitWrap">
+          <div class="val-editor-pane" id="valOrigPane">
+            <div class="val-pane-header">
+              <div class="val-pane-title">
+                <span class="panel-kicker">ORİJİNAL SORGU (V1)</span>
+                <span class="object-pill" id="valOrigPill">Mevcut SQL</span>
               </div>
-              <div style="display:flex;gap:8px">
-                <button class="button ghost small" id="btnValLoadSample">Örnek Sorguları Yükle</button>
-                <button class="button primary small" id="btnValRunBoth">İki Sorguyu Karşılaştır</button>
-              </div>
-            </div>
-            <div class="diff-grid" style="margin-top:10px">
-              <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <span class="panel-kicker">ORİJİNAL SORGU (V1)</span>
-                  <span class="object-pill" id="valOrigPill">Original SQL</span>
-                </div>
-                <textarea id="valOrigSql" class="code-editor" style="height:180px;font-size:13px;line-height:20px" spellcheck="false" placeholder="-- Orijinal View veya Sorgu metni..."></textarea>
-              </div>
-              <div>
-                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <span class="panel-kicker" style="color:var(--accent)">REFACTORED ADAY (V2)</span>
-                  <span class="object-pill" style="border-color:rgba(124,92,255,0.4);color:var(--accent)">Candidate SQL</span>
-                </div>
-                <textarea id="valCandSql" class="code-editor candidate" style="height:180px;font-size:13px;line-height:20px" spellcheck="false" placeholder="-- AI veya optimize edilmiş aday sorgu metni..."></textarea>
+              <div class="val-pane-actions">
+                <button class="button ghost mini" id="btnValCopyOrig" title="Panoya Kopyala">Kopyala</button>
+                <button class="button ghost mini" id="btnValSendOrigToWb" title="SQL Çalışma Alanında Aç">⚡ Workbench</button>
               </div>
             </div>
-          </section>
+            <textarea id="valOrigSql" class="code-editor" spellcheck="false" placeholder="-- Orijinal View veya Sorgu metnini buraya girin..."></textarea>
+          </div>
 
-          <!-- Middle Left: 4-Tier Proof Pipeline -->
+          <div class="val-split-divider" id="valSplitDivider" title="Sürükleyerek genişliği ayarlayın (Çift tıklama: 50/50)">
+            <div class="val-divider-handle"></div>
+          </div>
+
+          <div class="val-editor-pane candidate" id="valCandPane">
+            <div class="val-pane-header">
+              <div class="val-pane-title">
+                <span class="panel-kicker" style="color:var(--purple)">ADAY REFAKTÖR SORGUSU (V2)</span>
+                <span class="object-pill" style="border-color:rgba(99,102,241,0.4);color:var(--purple)">Optimize Edilmiş Aday</span>
+              </div>
+              <div class="val-pane-actions">
+                <button class="button ghost mini" id="btnValCopyCand" title="Panoya Kopyala">Kopyala</button>
+                <button class="button ghost mini" id="btnValSendCandToWb" title="SQL Çalışma Alanında Aç">⚡ Workbench</button>
+              </div>
+            </div>
+            <textarea id="valCandSql" class="code-editor candidate" spellcheck="false" placeholder="-- AI veya optimize edilmiş aday sorgu metnini buraya girin..."></textarea>
+          </div>
+        </div>
+
+        <!-- Validation Details Grid -->
+        <div class="val-details-grid">
+          <!-- Left: 4-Tier Proof Pipeline -->
           <section class="panel span-7">
             <div class="panel-header">
               <div>
-                <span class="panel-kicker">PROOF PIPELINE</span>
+                <span class="panel-kicker">4 AŞAMALI DOĞRULAMA PİPELİNE'I</span>
                 <h3 id="valPipelineTitle">AA_URETIM_MALZEME_PLANLAMA</h3>
               </div>
               <span class="status-pill" id="valPipelineStatus">HAZIR</span>
@@ -481,7 +503,7 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
               <div class="validation-step" id="valStep-schema">
                 <span>1</span>
                 <div>
-                  <strong>1. Metadata & Schema Test (sp_describe_first_result_set)</strong>
+                  <strong>1. Metadata & Şema Testi (sp_describe_first_result_set)</strong>
                   <p id="valStepDesc-schema">Kolon sayısı, adları, ordinal sıralama ve SQL veri tipleri denetimi.</p>
                 </div>
                 <b id="valStepStatus-schema">BEKLİYOR</b>
@@ -489,7 +511,7 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
               <div class="validation-step" id="valStep-rowCount">
                 <span>2</span>
                 <div>
-                  <strong>2. Row Count Match</strong>
+                  <strong>2. Satır Sayısı Eşleşmesi (Row Count Match)</strong>
                   <p id="valStepDesc-rowCount">Belirlenen sınır altında toplam dönen satır adedi karşılaştırması.</p>
                 </div>
                 <b id="valStepStatus-rowCount">BEKLİYOR</b>
@@ -497,7 +519,7 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
               <div class="validation-step" id="valStep-setMatch">
                 <span>3</span>
                 <div>
-                  <strong>3. Bounded Dual EXCEPT Set Comparison</strong>
+                  <strong>3. Çift Yönlü Küme Farkı (Bounded Dual EXCEPT)</strong>
                   <p id="valStepDesc-setMatch">A EXCEPT B = 0 ve B EXCEPT A = 0 küme farkı denetimi.</p>
                 </div>
                 <b id="valStepStatus-setMatch">BEKLİYOR</b>
@@ -505,51 +527,58 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
               <div class="validation-step" id="valStep-multiplicity">
                 <span>4</span>
                 <div>
-                  <strong>4. Row Multiplicity Proof (GROUP BY + COUNT_BIG)</strong>
-                  <p id="valStepDesc-multiplicity">Duplicate satır sayısı ve frekanslarının korunumu kanıtı (EXCEPT yetmez).</p>
+                  <strong>4. Satır Çokluğu Güvencesi (Row Multiplicity Proof)</strong>
+                  <p id="valStepDesc-multiplicity">Duplicate satır sayısı ve frekanslarının korunumu kanıtı (GROUP BY + COUNT_BIG).</p>
                 </div>
                 <b id="valStepStatus-multiplicity">BEKLİYOR</b>
               </div>
             </div>
             <div class="validation-actions">
-              <label class="ack"><input type="checkbox" id="validationAck" checked> Üretim veritabanında kontrollü test çalıştırma riskini anladım</label>
-              <button class="button primary" id="validateButton">✦ Validation Lab'ı Başlat</button>
+              <label class="ack"><input type="checkbox" id="validationAck" checked> Üretim ortamında kontrollü test çalıştırma riskini anladım</label>
+              <button class="button primary" id="validateButton">✦ Validation Lab Doğrulamasını Başlat</button>
             </div>
           </section>
 
-          <!-- Middle Right: Benchmark Projection -->
+          <!-- Right: Summary & Benchmark -->
           <section class="panel span-5">
             <div class="panel-header">
               <div>
-                <span class="panel-kicker">BENCHMARK PROJECTION</span>
-                <h3>Mevcut vs Aday Performansı</h3>
+                <span class="panel-kicker">DOĞRULAMA VE KIYASLAMA ÖZETİ</span>
+                <h3>Sonuç & Kıyaslama</h3>
               </div>
+            </div>
+            <div class="val-summary-block" style="margin-bottom:14px">
+              <div class="val-summary-row"><span>Şema Eşleşmesi:</span><strong id="valSummarySchema">Bekliyor</strong></div>
+              <div class="val-summary-row"><span>Satır Sayısı Eşleşmesi:</span><strong id="valSummaryRowCount">Bekliyor</strong></div>
+              <div class="val-summary-row"><span>Küme Farkı (EXCEPT):</span><strong id="valSummarySetMatch">Bekliyor</strong></div>
+              <div class="val-summary-row"><span>Satır Çokluğu (Multiplicity):</span><strong id="valSummaryMultiplicity">Bekliyor</strong></div>
+              <div class="val-summary-row verdict-row"><span>Genel Karar:</span><strong id="valSummaryVerdict" class="warning-text">DOĞRULANMADI</strong></div>
+            </div>
+
+            <div class="panel-header" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+              <div><span class="panel-kicker">PERFORMANS KIYASLAMA (BENCHMARK)</span><h4 style="font-size:14px">Kaynak Tüketim Farkı</h4></div>
             </div>
             <div class="benchmark-compare">
               <div>
-                <span>Logical Reads</span>
+                <span>Mantıksal Okuma (Reads)</span>
                 <strong id="valReadsBefore">4.1B</strong><i>→</i><b id="valReadsAfter">620K</b>
               </div>
               <div>
-                <span>CPU Time</span>
+                <span>İşlemci Süresi (CPU)</span>
                 <strong id="valCpuBefore">18,400 ms</strong><i>→</i><b id="valCpuAfter">1,140 ms</b>
               </div>
               <div>
-                <span>Elapsed Time</span>
+                <span>Geçen Süre (Duration)</span>
                 <strong id="valTimeBefore">24.2 s</strong><i>→</i><b id="valTimeAfter">1.4 s</b>
               </div>
               <div>
-                <span>Row Multiplicity</span>
+                <span>Satır Çokluğu</span>
                 <strong id="valMultBefore">187,431</strong><i>→</i><b id="valMultAfter" style="color:var(--green)">187,431 ✓</b>
               </div>
               <div>
-                <span>Estimated Rows</span>
-                <strong id="valEstBefore">1 (CE Error)</strong><i>→</i><b id="valEstAfter">187,431</b>
+                <span>Tahmini Satır (CE)</span>
+                <strong id="valEstBefore">1 (CE Hatası)</strong><i>→</i><b id="valEstAfter">187,431</b>
               </div>
-            </div>
-            <div class="safe-note">
-              <strong>Guardrail: Duplicate Row Safety</strong>
-              <p>Old EXCEPT New / New EXCEPT Old tek başına "Exact Match" kanıtı sayılmaz. Duplicate multiplicity GROUP BY + COUNT_BIG(*) ile ispatlanmalıdır.</p>
             </div>
           </section>
         </div>
@@ -560,7 +589,9 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
           <div class="wb-toolbar-left">
             <span class="panel-kicker">SQL WORKBENCH</span>
             <span class="status-pill status-ready" id="wbStatusPill">● READY</span>
-            <span class="wb-db-tag" id="wbDbTag">MikroDB_V16_TEST</span>
+            <select id="wbDatabaseSelect" class="setting-input select-styled" style="width:170px;height:28px;font-size:12px;margin-left:4px" title="Aktif Çalışma Veritabanı">
+              <option value="MikroDB_V16_LIDER25">MikroDB_V16_LIDER25</option>
+            </select>
           </div>
           <div class="wb-toolbar-center">
             <button class="button primary small" id="btnWbRun" title="Çalıştır (Ctrl+Enter / F5)">
@@ -569,18 +600,18 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
             <button class="button danger small" id="btnWbStop" disabled title="Çalışan sorguyu iptal et">
               <span>■</span> İptal
             </button>
-            <button class="button ghost small" id="btnWbEstPlan" title="Estimated Execution Plan (Ctrl+L - sorguyu çalıştırmaz)">
-              <span>⌁</span> Estimated Plan
+            <button class="button ghost small" id="btnWbEstPlan" title="Tahmini Çalıştırma Planı (Estimated Plan - Ctrl+L)">
+              <span>⌁</span> Tahmini Plan
             </button>
-            <button class="button ghost small" id="btnWbActPlan" title="Actual Execution Plan (Sorguyu çalıştırarak gerçek planı çeker)">
-              <span>◈</span> Actual Plan
+            <button class="button ghost small" id="btnWbActPlan" title="Gerçek Çalıştırma Planı (Actual Plan - Sorguyu çalıştırarak plan çeker)">
+              <span>◈</span> Gerçek Plan
             </button>
             <div class="wb-benchmark-group">
-              <button class="button ghost small" id="btnWbBenchmark" title="Benchmark Modu">
-                <span>∿</span> Benchmark
+              <button class="button ghost small" id="btnWbBenchmark" title="Performans Kıyaslama (Benchmark Modu)">
+                <span>∿</span> Kıyaslama
               </button>
-              <select id="wbBenchmarkRuns" class="select-styled mini-select" title="Benchmark tekrar sayısı">
-                <option value="3" selected>3 Run (Default)</option>
+              <select id="wbBenchmarkRuns" class="select-styled mini-select" title="Tekrar sayısı">
+                <option value="3" selected>3 Run (Varsayılan)</option>
                 <option value="5">5 Run</option>
                 <option value="10">10 Run</option>
               </select>
@@ -590,8 +621,12 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
             </button>
           </div>
           <div class="wb-toolbar-right">
+            <div class="wb-meta-freshness-wrap" style="display:flex;align-items:center;gap:5px;margin-right:6px">
+              <span class="wb-meta-freshness" id="wbMetaFreshness" style="font-size:11.5px;color:var(--text-muted);white-space:nowrap">Metadata: Hazır</span>
+              <button class="button ghost small icon-only" id="btnWbRefreshMetadata" title="Metadata Önbelleğini Yenile (Refresh Metadata)" style="width:26px;height:26px;font-size:12px;padding:0">↻</button>
+            </div>
             <div class="wb-timeout-wrap">
-              <label for="wbTimeoutSelect">Timeout:</label>
+              <label for="wbTimeoutSelect">Zaman Aşımı:</label>
               <select id="wbTimeoutSelect" class="select-styled mini-select">
                 <option value="5000">5s</option>
                 <option value="15000">15s</option>
@@ -605,7 +640,7 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
         </div>
 
         <div class="workbench-split">
-          <div class="workbench-editor-section">
+          <div class="workbench-editor-section" style="position:relative">
             <div class="editor-gutter-wrap">
               <div class="editor-line-numbers" id="wbLineNumbers">1</div>
               <textarea id="wbSqlInput" class="workbench-textarea" spellcheck="false" placeholder="-- T-SQL SELECT veya WITH ... SELECT sorgunuzu buraya yazın...
@@ -618,6 +653,8 @@ FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
 GROUP BY sth_stok_kod
 ORDER BY IslemAdedi DESC;"></textarea>
             </div>
+            <!-- Schema-Aware IntelliSense Popup -->
+            <div class="intellisense-popup hidden" id="wbIntelliSense"></div>
           </div>
 
           <div class="workbench-metrics-strip" id="wbMetricsStrip">
@@ -691,8 +728,73 @@ ORDER BY IslemAdedi DESC;"></textarea>
       </section>
 
       <section class="page" id="page-tables">
-        <div class="section-intro"><div><span class="hero-kicker">BASE TABLE PRESSURE MAP</span><h2>Sorun view sayısı değil; <em>aynı tabloda biriken sorgu baskısı</em> olabilir.</h2><p>Hangi fiziksel tabloların kaç dependency yolu, kritik tüketici ve repeated access pattern tarafından kullanıldığını göster.</p></div></div>
-        <div class="table-pressure-grid" id="tablePressureGrid"></div>
+        <div class="section-intro">
+          <div>
+            <span class="hero-kicker">TEMEL TABLO BASKI ANALİZİ</span>
+            <h2>Sorun view sayısı değil; <em>aynı tabloda biriken sorgu baskısı</em> olabilir.</h2>
+            <p>Hangi fiziksel tabloların kaç bağımlılık yolu, kritik tüketici view ve mükerrer erişim rotası tarafından tüketildiğini analiz edin.</p>
+          </div>
+        </div>
+
+        <div class="tp-kpi-grid">
+          <article class="tp-kpi-card">
+            <span>Toplam Temel Tablo</span>
+            <strong id="tpKpiTotalTables">18</strong>
+            <small>Aktif veritabanları genelinde</small>
+          </article>
+          <article class="tp-kpi-card danger">
+            <span>Yüksek Baskılı Tablo</span>
+            <strong id="tpKpiHighPressure" class="danger-text">4</strong>
+            <small>Risk puanı &gt; 75 olanlar</small>
+          </article>
+          <article class="tp-kpi-card">
+            <span>Kritik Tüketici View</span>
+            <strong id="tpKpiCriticalConsumers">37</strong>
+            <small>Yüksek riskli çağıran nesneler</small>
+          </article>
+          <article class="tp-kpi-card warning">
+            <span>Mükerrer Erişim Yolu</span>
+            <strong id="tpKpiRepeatedPaths" class="warning-text">94</strong>
+            <small>Aynı tabloya çoklu rotalar</small>
+          </article>
+        </div>
+
+        <div class="tp-main-layout" id="tpMainLayout">
+          <div class="tp-table-container" id="tpTableContainer">
+            <table class="tp-table" id="tpDataTable">
+              <thead>
+                <tr>
+                  <th>Temel Tablo</th>
+                  <th>Veritabanı</th>
+                  <th>Risk Puanı</th>
+                  <th>Kullanan View</th>
+                  <th>Bağımlılık Yolları</th>
+                  <th>Mükerrer Yol</th>
+                  <th>Kritik Tüketici</th>
+                  <th>Kanıt Gücü</th>
+                  <th>İşlem</th>
+                </tr>
+              </thead>
+              <tbody id="tpTableBody">
+                <!-- Satırlar JavaScript ile doldurulur -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Kapatılabilir Sağ Inspector -->
+          <aside class="tp-inspector hidden" id="tpInspector">
+            <div class="tp-inspector-header">
+              <div>
+                <span class="panel-kicker">SEÇİLİ TABLO DETAYI</span>
+                <h3 id="tpInspTableName">STOK_HAREKETLERI</h3>
+              </div>
+              <button class="icon-button close-btn" id="closeTpInspectorBtn" title="Kapat (Esc)">✕</button>
+            </div>
+            <div class="tp-inspector-body" id="tpInspectorBody">
+              <!-- Detay verisi JavaScript ile doldurulur -->
+            </div>
+          </aside>
+        </div>
       </section>
 
       <section class="page" id="page-duplicates">
@@ -977,31 +1079,74 @@ ORDER BY IslemAdedi DESC;"></textarea>
   </div>
 
   <div class="modal-backdrop hidden" id="connectionModal">
-    <div class="modal">
+    <div class="modal" style="width:580px">
       <button class="modal-close" id="closeConnection">×</button>
-      <div class="modal-brand"><div class="brand-mark"><span></span><span></span><span></span></div><div><span class="panel-kicker">SQL SERVER</span><h2>Veritabanına Bağlan</h2></div></div>
-      <p>Bilgiler yalnız çalışan Node.js sürecinde tutulur. Şifreler hiçbir zaman tarayıcı storage'ına kaydedilmez veya loglanmaz.</p>
-      <form id="connectionForm" class="connection-form">
-        <label class="wide"><span>SQL Server / IP</span><input name="server" id="inputServer" value="127.0.0.1" required /></label>
-        <label><span>Port</span><input name="port" id="inputPort" value="1433" /></label>
-        <label><span>Veritabanı</span><input name="database" id="inputDatabase" value="MikroDB_V16_TEST" required /></label>
-        <label><span>Kullanıcı Adı</span><input name="user" id="inputUser" placeholder="sa veya audit_user" required /></label>
-        <label><span>Şifre</span><input name="password" id="inputPassword" type="password" placeholder="••••••••••" required /></label>
-        <label class="wide"><span>AI Provider API Key <small>opsiyonel</small></span><input name="apiKey" id="inputApiKey" type="password" placeholder="DeepSeek / OpenAI-compatible key" /></label>
-        <div class="form-checks wide"><label><input type="checkbox" name="trustServerCertificate" id="checkTrustCert" checked> Trust server certificate</label><label><input type="checkbox" name="encrypt" id="checkEncrypt"> Encrypt connection</label></div>
-        <div class="modal-actions wide">
-          <span class="connection-test" id="connectionTestStatus">Henüz test edilmedi</span>
-          <div style="display:flex;gap:8px">
-            <button type="button" class="button ghost" id="disconnectBtn" style="display:none">Bağlantıyı Kes</button>
-            <button type="submit" class="button primary" id="connectSubmitBtn">Bağlan & Test Et</button>
+      <div class="modal-brand">
+        <div class="brand-mark"><span></span><span></span><span></span></div>
+        <div>
+          <span class="panel-kicker">SQL SERVER INSTANCE</span>
+          <h2>Sunucu & Veritabanı Bağlantısı</h2>
+        </div>
+      </div>
+      
+      <!-- Wizard Step Indicators -->
+      <div class="wizard-steps" style="display:flex;gap:12px;margin:12px 0 16px;border-bottom:1px solid var(--border);padding-bottom:12px">
+        <span class="wizard-step active" id="stepIndicator1" style="font-size:12.5px;font-weight:600;color:var(--accent);display:flex;align-items:center;gap:6px">
+          <b style="width:20px;height:20px;border-radius:50%;background:rgba(124,92,255,0.2);display:inline-flex;align-items:center;justify-content:center;font-size:11px">1</b> Sunucu Bilgileri
+        </span>
+        <span style="color:var(--text-muted)">→</span>
+        <span class="wizard-step" id="stepIndicator2" style="font-size:12.5px;font-weight:600;color:var(--text-muted);display:flex;align-items:center;gap:6px">
+          <b style="width:20px;height:20px;border-radius:50%;background:rgba(255,255,255,0.06);display:inline-flex;align-items:center;justify-content:center;font-size:11px">2</b> Veritabanı Kapsamı
+        </span>
+      </div>
+
+      <!-- Step 1: Server Authentication -->
+      <div id="connStep1">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Sunucu kimlik bilgileri yalnız çalışan Node.js sürecinde tutulur. Şifreler kesinlikle tarayıcı depolamasına yazılmaz.</p>
+        <form id="connectionForm" class="connection-form">
+          <label class="wide"><span>SQL Server / IP</span><input name="server" id="inputServer" value="127.0.0.1" required /></label>
+          <label><span>Port</span><input name="port" id="inputPort" value="1433" /></label>
+          <label><span>Kullanıcı Adı</span><input name="user" id="inputUser" placeholder="sa veya audit_user" required /></label>
+          <label class="wide"><span>Şifre</span><input name="password" id="inputPassword" type="password" placeholder="••••••••••" required /></label>
+          <div class="form-checks wide">
+            <label><input type="checkbox" name="trustServerCertificate" id="checkTrustCert" checked> Trust server certificate</label>
+            <label><input type="checkbox" name="encrypt" id="checkEncrypt"> Encrypt connection</label>
+          </div>
+          <div class="modal-actions wide">
+            <span class="connection-test" id="connectionTestStatus">Henüz test edilmedi</span>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="button ghost" id="disconnectBtn" style="display:none">Bağlantıyı Kes</button>
+              <button type="submit" class="button primary" id="connectSubmitBtn">Sunucuya Bağlan & DB'leri Listele →</button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      <!-- Step 2: Database Scope Selector -->
+      <div id="connStep2" class="hidden">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Erişilebilir online veritabanları tespit edildi. Analiz etmek istediğiniz veritabanlarını ve başlangıç çalışma bağlamını seçin.</p>
+        <div style="margin-bottom:14px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">ANALİZ EDİLECEK VERİTABANLARI (MULTI-SELECT)</label>
+          <div id="dbScopeCheckboxList" style="max-height:180px;overflow-y:auto;background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;display:flex;flex-direction:column;gap:6px">
+            <!-- Dynamic checkboxes injected here -->
           </div>
         </div>
-      </form>
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">PRIMARY DATABASE (Varsayılan Workbench Bağlamı)</label>
+          <select id="primaryDbSelect" class="setting-input select-styled" style="width:100%"></select>
+        </div>
+        <div class="modal-actions wide" style="display:flex;justify-content:space-between;align-items:center">
+          <button type="button" class="button ghost small" id="btnBackToStep1">← Geri</button>
+          <button type="button" class="button primary" id="btnApplyScopeAndScan">Bağlan & Seçili Veritabanlarını Tara ✦</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="toast-wrap" id="toastWrap"></div>
+  <script src="/assets/js/uiText.js"></script>
   <script src="/assets/js/mock-data.js"></script>
+  <script src="/assets/js/intellisense.js"></script>
   <script src="/assets/js/app.js"></script>
 </body>
 </html>

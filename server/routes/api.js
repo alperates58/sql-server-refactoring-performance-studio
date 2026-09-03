@@ -30,7 +30,30 @@ router.get('/connection', (_req, res) => {
   res.json(db.status());
 });
 
-// 3. Test & connect
+// 2b. Step 1: Test Server Connection & Discover Databases
+router.post('/connection/test-server', async (req, res) => {
+  try {
+    const data = await db.testServerConnection(req.body);
+    res.json(data);
+  } catch (error) {
+    handleSafeError(res, error, 'Sunucu bağlantısı kurulamadı.');
+  }
+});
+
+// 2c. Step 2: Set Database Scope & Primary DB
+router.post('/connection/set-scope', async (req, res) => {
+  try {
+    const result = await db.setDatabaseScope({
+      primaryDatabase: req.body.primaryDatabase,
+      selectedDatabases: req.body.selectedDatabases
+    });
+    res.json(result);
+  } catch (error) {
+    handleSafeError(res, error, 'Veritabanı kapsamı ayarlanamadı.');
+  }
+});
+
+// 3. Test & connect (legacy single-db support)
 router.post('/connection/test', async (req, res) => {
   try {
     const info = await db.connect(req.body);
@@ -71,7 +94,9 @@ router.get('/capabilities', async (_req, res) => {
 router.post('/scan', async (req, res) => {
   try {
     const prefix = req.body.prefix || 'AA_';
-    const data = await scanner.scan(prefix);
+    const scope = req.body.scope || null;
+    const data = await scanner.scan(prefix, scope);
+    metadataCatalog.loadFromScan(data).catch(() => {});
     res.json({ ok: true, data });
   } catch (error) {
     handleSafeError(res, error, 'Metadata taraması başarısız oldu.');
@@ -87,14 +112,14 @@ router.get('/scan/latest', (_req, res) => {
   res.json({ ok: true, data });
 });
 
-// 8. Lazy load SQL definition for a specific view
-router.get('/views/:name/source', (req, res) => {
+// 8. Definition for a specific view (supports canonicalId)
+router.get('/views/:name/definition', (req, res) => {
   const viewName = req.params.name;
   const sql = scanner.getDefinition(viewName);
   if (!sql) {
     return res.status(404).json({
       ok: false,
-      error: `"${viewName}" için kaynak kod bulunamadı veya henüz taranmadı.`
+      error: `"${viewName}" için kaynak tanımı bulunamadı.`
     });
   }
   res.json({ ok: true, name: viewName, sql });
@@ -131,24 +156,29 @@ router.get('/views/:name/indexes', async (req, res) => {
 // 10. AI Refactor candidate proposal
 router.post('/ai/refactor', async (req, res) => {
   try {
-    const data = await ai.proposeRefactor(req.body);
-    res.json({ ok: true, data });
+    const { viewName, sql, problems = [], baseTables = [] } = req.body;
+    if (!viewName || !sql) {
+      return res.status(400).json({ ok: false, error: 'viewName ve sql alanları zorunludur.' });
+    }
+    const result = await ai.generateCandidate({ viewName, sql, problems, baseTables });
+    res.json(result);
   } catch (error) {
-    handleSafeError(res, error, 'AI refactoring adayı üretilemedi.');
+    handleSafeError(res, error, 'AI candidate üretilemedi.');
   }
 });
 
-// 11. AI Connection Test
+// 10b. AI Connection Test
 router.post('/ai/test', async (req, res) => {
   try {
-    const result = await ai.testConnection(req.body);
-    res.json({ ok: true, data: result });
+    const { model, apiKey, baseUrl } = req.body;
+    const result = await ai.testConnection({ model, apiKey, baseUrl });
+    res.json(result);
   } catch (error) {
     handleSafeError(res, error, 'AI bağlantı testi başarısız.');
   }
 });
 
-// 12. Settings Get & Update
+// 11. Configuration Settings
 const settings = require('../services/settingsService');
 
 router.get('/settings/config', (_req, res) => {
@@ -160,17 +190,13 @@ router.post('/settings/config', (req, res) => {
     const updated = settings.updateConfig(req.body);
     res.json({ ok: true, data: updated });
   } catch (error) {
-    handleSafeError(res, error, 'Ayarlar kaydedilemedi.');
+    handleSafeError(res, error, 'Ayarlar güncellenemedi.');
   }
 });
 
-router.post('/settings/scoring/reset', (_req, res) => {
-  try {
-    const defaults = settings.resetScoringDefaults();
-    res.json({ ok: true, data: defaults });
-  } catch (error) {
-    handleSafeError(res, error, 'Puanlama varsayılanlarına dönülemedi.');
-  }
+router.post('/settings/reset-scoring', (_req, res) => {
+  const reset = settings.resetScoringWeights();
+  res.json({ ok: true, data: reset });
 });
 
 // ==========================================
@@ -182,8 +208,9 @@ const planParser = require('../services/planParser');
 // Run Query
 router.post('/workbench/run', async (req, res) => {
   try {
-    const result = await workbench.executeQuery({
+    const result = await workbench.execute({
       sql: req.body.sql,
+      database: req.body.database,
       timeoutMs: req.body.timeoutMs,
       requestId: req.body.requestId
     });
@@ -195,15 +222,16 @@ router.post('/workbench/run', async (req, res) => {
 
 // Cancel Active Query
 router.post('/workbench/cancel', (req, res) => {
-  const result = workbench.cancelQuery(req.body.requestId);
+  const result = workbench.cancelRequest(req.body.requestId);
   res.json(result);
 });
 
 // Execution Plan (Estimated / Actual)
 router.post('/workbench/plan', async (req, res) => {
   try {
-    const planResult = await workbench.getExecutionPlan({
+    const planResult = await workbench.executePlan({
       sql: req.body.sql,
+      database: req.body.database,
       mode: req.body.mode || 'estimated',
       timeoutMs: req.body.timeoutMs
     });
@@ -211,6 +239,7 @@ router.post('/workbench/plan', async (req, res) => {
     res.json({
       ok: true,
       planType: planResult.planType,
+      database: planResult.database,
       parsed,
       rawXml: planResult.rawXml
     });
@@ -224,6 +253,7 @@ router.post('/workbench/benchmark', async (req, res) => {
   try {
     const result = await workbench.executeBenchmark({
       sql: req.body.sql,
+      database: req.body.database,
       runs: req.body.runs || 3,
       warmUp: req.body.warmUp !== false,
       timeoutMs: req.body.timeoutMs,
@@ -240,6 +270,27 @@ router.get('/workbench/history', (_req, res) => {
   res.json({ ok: true, data: workbench.getHistory() });
 });
 
+// Metadata Catalog for Schema-Aware Autocomplete / IntelliSense
+const metadataCatalog = require('../services/metadataCatalog');
+
+router.get('/workbench/metadata', (req, res) => {
+  const catalog = metadataCatalog.getCatalog(req.query.database);
+  res.json({ ok: true, data: catalog });
+});
+
+router.post('/workbench/metadata/refresh', async (req, res) => {
+  try {
+    const latest = scanner.getLatestScanData();
+    if (latest) {
+      await metadataCatalog.loadFromScan(latest);
+    }
+    const catalog = metadataCatalog.getCatalog(req.body.database);
+    res.json({ ok: true, data: catalog });
+  } catch (error) {
+    handleSafeError(res, error, 'Metadata yenilenemedi.');
+  }
+});
+
 // ==========================================
 // 14. Validation Lab Equivalence Proof Engine
 // ==========================================
@@ -250,6 +301,7 @@ router.post('/validation/verify', async (req, res) => {
     const result = await validation.validateEquivalence({
       originalSql: req.body.originalSql,
       candidateSql: req.body.candidateSql,
+      database: req.body.database,
       sampleLimit: req.body.sampleLimit || 1000
     });
     res.json(result);

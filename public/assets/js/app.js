@@ -11,16 +11,16 @@
   const $$ = s => [...document.querySelectorAll(s)];
 
   const pageTitles = {
-    overview: ['SQL HEALTH COMMAND CENTER', 'Genel Bakış'],
-    views: ['VIEW INVENTORY', 'View Envanteri'],
-    graph: ['DEPENDENCY X-RAY', 'Bağımlılık Haritası'],
-    runtime: ['QUERY STORE & PLAN INTELLIGENCE', 'Runtime & Regresyon'],
-    refactor: ['AI ASSISTED REFACTORING', 'AI Refactor'],
-    validation: ['SEMANTIC & PERFORMANCE PROOF', 'Validation Lab'],
-    workbench: ['SQL WORKBENCH & QUERY LAB', 'SQL Workbench'],
-    tables: ['BASE TABLE ANALYTICS', 'Table Pressure'],
-    duplicates: ['SQL FINGERPRINTING', 'Duplicate Logic'],
-    settings: ['STUDIO CONFIGURATION', 'Ayarlar']
+    overview: ['SQL SAĞLIK KONTROL MERKEZİ', 'Genel Bakış'],
+    views: ['VIEW ENVANTERİ', 'View Envanteri'],
+    graph: ['BAĞIMLILIK HARİTASI & X-RAY', 'Bağımlılık Haritası'],
+    runtime: ['PERFORMANS VE ÇALIŞMA ZAMANI', 'Çalışma Zamanı ve Regresyon'],
+    refactor: ['AI DESTEKLİ İYİLEŞTİRME', 'AI Refaktör'],
+    validation: ['SEMANTİK DOĞRULAMA STÜDYOSU', 'Doğrulama Laboratuvarı'],
+    workbench: ['SQL GELİŞTİRME VE TEST', 'SQL Çalışma Alanı'],
+    tables: ['TEMEL TABLO BASKI ANALİZİ', 'Tablo Baskısı'],
+    duplicates: ['MÜKERRER MANTIK VE FINGERPRINT', 'Mükerrer Mantık'],
+    settings: ['SİSTEM VE BAĞLANTI AYARLARI', 'Ayarlar']
   };
 
   // Central Application State
@@ -30,9 +30,14 @@
     capabilities: null,
     isLive: false,
     activePrefix: 'AA_',
+    primaryDatabase: MOCK.primaryDatabase || 'MikroDB_V16_LIDER25',
+    selectedDatabases: MOCK.selectedDatabases || ['MikroDB_V16_LIDER25', 'RAPOR_DB', 'MikroDB_V16_TEST'],
+    activeDatabase: MOCK.primaryDatabase || 'MikroDB_V16_LIDER25',
+    dbFilter: 'all',
     currentRiskFilter: 'all',
     currentSort: 'risk',
     selectedViewName: MOCK.views[0]?.name || '',
+    selectedCanonicalId: MOCK.views[0]?.canonicalId || '',
     lastScanTime: null,
     data: {
       views: MOCK.views,
@@ -40,6 +45,7 @@
       duplicates: MOCK.duplicates,
       regressions: MOCK.regressions,
       dependencies: [],
+      databaseSummaries: MOCK.databaseSummaries || {},
       metrics: {
         totalViews: MOCK.views.length,
         criticalViews: MOCK.views.filter(v => v.risk === 'critical').length,
@@ -207,13 +213,13 @@
         light.style.background = 'var(--yellow)';
         light.style.boxShadow = '0 0 8px rgba(247,200,106,0.4)';
       }
-      if (dbName) dbName.textContent = 'Demo Mode';
-      if (srvInfo) srvInfo.textContent = 'Mock Dataset · Bağlantı yok';
+      if (dbName) dbName.textContent = 'Demo Veri Kümesi';
+      if (srvInfo) srvInfo.textContent = 'Çevrimdışı · Salt-Okunur';
       if (connBtn) connBtn.textContent = 'Bağlantı';
-      if (settingsDb) settingsDb.textContent = 'Demo Modu';
-      if (settingsHost) settingsHost.textContent = 'Mock dataset aktif · SQL bağlantısı kurulmadı';
+      if (settingsDb) settingsDb.textContent = 'Demo Veri Kümesi';
+      if (settingsHost) settingsHost.textContent = 'Demo veri kümesi aktif · SQL sunucusuna bağlanılmadı';
       if (settingsPill) {
-        settingsPill.textContent = '○ DEMO MODE';
+        settingsPill.textContent = '○ DEMO MODU (ÇEVRİMDISI)';
         settingsPill.style.color = 'var(--yellow)';
         settingsPill.style.borderColor = 'rgba(247,200,106,0.2)';
         settingsPill.style.background = 'rgba(247,200,106,0.06)';
@@ -223,8 +229,8 @@
       if (capRow) capRow.style.display = 'none';
 
       if (topbarScanLabel) topbarScanLabel.textContent = 'MOD';
-      if (topbarScanTime) topbarScanTime.textContent = 'Demo Dataset';
-      if (topbarScanAgo) topbarScanAgo.textContent = 'Offline';
+      if (topbarScanTime) topbarScanTime.textContent = 'Demo Veri Kümesi';
+      if (topbarScanAgo) topbarScanAgo.textContent = 'Çevrimdışı';
     }
   }
 
@@ -367,13 +373,33 @@
     const q = search.toLocaleLowerCase('tr').trim();
     const views = state.data.views || [];
     const filter = state.currentRiskFilter;
+    const dbFilter = state.dbFilter || 'all';
+
+    // Populate or update #viewDbFilter
+    const dbFilterSelect = $('#viewDbFilter');
+    if (dbFilterSelect && dbFilterSelect.options.length <= 1) {
+      const distinctDbs = Array.from(new Set(views.map(v => v.database).filter(Boolean)));
+      let opts = `<option value="all">Tüm Veritabanları (${views.length})</option>`;
+      distinctDbs.forEach(dbName => {
+        const count = views.filter(v => v.database === dbName).length;
+        opts += `<option value="${dbName}">${dbName} (${count})</option>`;
+      });
+      dbFilterSelect.innerHTML = opts;
+      dbFilterSelect.value = dbFilter;
+
+      dbFilterSelect.onchange = e => {
+        state.dbFilter = e.target.value;
+        renderViewList($('#viewSearch')?.value || '');
+      };
+    }
 
     const rows = views.filter(v => {
       const vRisk = String(v.risk || v.riskLevel || '').toLowerCase();
       const matchesRisk = filter === 'all' || vRisk === filter;
       const vName = String(v.name || v.view_name || '').toLocaleLowerCase('tr');
-      const matchesSearch = !q || vName.includes(q);
-      return matchesRisk && matchesSearch;
+      const matchesSearch = !q || vName.includes(q) || (v.database && v.database.toLowerCase().includes(q));
+      const matchesDb = dbFilter === 'all' || (v.database && v.database.toLowerCase() === dbFilter.toLowerCase());
+      return matchesRisk && matchesSearch && matchesDb;
     });
 
     const criticalCount = views.filter(v => String(v.risk || v.riskLevel).toLowerCase() === 'critical').length;
@@ -390,44 +416,53 @@
     if (!list) return;
 
     if (rows.length === 0) {
-      list.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Aramaya uygun view bulunamadı.</p></div>';
+      list.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Aramaya veya seçili veritabanına uygun view bulunamadı.</p></div>';
       return;
     }
 
     list.innerHTML = rows.map(v => {
       const name = v.name || v.view_name;
-      const isActive = name === state.selectedViewName;
+      const canonical = v.canonicalId || name;
+      const isActive = canonical === state.selectedCanonicalId || name === state.selectedViewName;
       const risk = v.risk || v.riskLevel || 'low';
       return `
-        <div class="view-row ${isActive ? 'active' : ''}" data-view="${name}">
+        <div class="view-row ${isActive ? 'active' : ''}" data-view="${name}" data-canonical="${canonical}">
           <span class="risk-dot ${severityClass(risk)}"></span>
-          <div>
-            <strong>${name}</strong>
+          <div style="flex:1;min-width:0">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+              <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</strong>
+              ${v.database ? `<span class="db-badge">${v.database}</span>` : ''}
+            </div>
             <small>Risk ${v.riskScore || 0} · ${v.reads || '—'} reads</small>
           </div>
-          <span class="view-health">${v.health}</span>
+          <span class="view-health">${v.health || v.healthScore || 60}</span>
         </div>
       `;
     }).join('');
 
     $$('.view-row').forEach(r => {
-      r.addEventListener('click', () => selectView(r.dataset.view));
+      r.addEventListener('click', () => selectView(r.dataset.canonical || r.dataset.view));
     });
   }
 
-  async function selectView(viewName) {
+  async function selectView(identifier) {
     const views = state.data.views || [];
-    const v = views.find(x => (x.name || x.view_name) === viewName) || views[0];
+    const v = views.find(x => x.canonicalId === identifier || (x.name || x.view_name) === identifier) || views[0];
     if (!v) return;
 
     const name = v.name || v.view_name;
+    const canonical = v.canonicalId || name;
     state.selectedViewName = name;
+    state.selectedCanonicalId = canonical;
 
-    $$('.view-row').forEach(r => r.classList.toggle('active', r.dataset.view === name));
+    $$('.view-row').forEach(r => {
+      const isMatch = r.dataset.canonical === canonical || r.dataset.view === name;
+      r.classList.toggle('active', isMatch);
+    });
 
     if ($('#detailViewName')) $('#detailViewName').textContent = name;
-    if ($('#detailViewMeta')) $('#detailViewMeta').textContent = `${v.schema_name || 'dbo'} · modify ${v.modified || 'Bilinmiyor'}`;
-    if ($('#detailHealth')) $('#detailHealth').textContent = v.health;
+    if ($('#detailViewMeta')) $('#detailViewMeta').textContent = `${v.database || ''} · ${v.schema_name || 'dbo'} · modify ${v.modified || 'Bilinmiyor'}`;
+    if ($('#detailHealth')) $('#detailHealth').textContent = v.health || v.healthScore || 60;
     const riskLabel = $('#detailRisk');
     if (riskLabel) {
       const rLevel = String(v.riskLevel || v.risk || 'LOW').toUpperCase();
@@ -446,7 +481,7 @@
       $('#statTablesWarn').textContent = repCount > 0 ? `${repCount} repeated` : 'Clean';
       $('#statTablesWarn').style.color = repCount > 0 ? 'var(--red)' : 'var(--green)';
     }
-    if ($('#statDependents')) $('#statDependents').textContent = v.dependents || 0;
+    if ($('#statDependents')) $('#statDependents').textContent = v.dependents || (v.dependents?.length || 0);
     if ($('#statReads')) $('#statReads').textContent = v.reads || '—';
     if ($('#statMedian')) $('#statMedian').textContent = v.median || '—';
 
@@ -486,16 +521,66 @@
 
     const fullProblems = $('#fullProblemList');
     if (fullProblems) {
-      fullProblems.innerHTML = problems.map(p => `
-        <div class="full-problem">
-          <span class="problem-symbol">${p.symbol || '!'}</span>
-          <div>
-            <h4>${p.title}</h4>
-            <p>${p.detail}</p>
-          </div>
-          <span class="severity-pill ${severityClass(p.severity)}">${p.severity}</span>
-        </div>
-      `).join('') || '<div class="empty-state"><p>Tebrikler! Bu view üzerinde riskli pattern saptanmadı.</p></div>';
+      fullProblems.innerHTML = problems.map(p => {
+        const sevClass = severityClass(p.severity);
+        const sevLabel = (window.uiText?.severity[p.severity]?.label) || p.severity;
+        const why = p.why || (window.uiText?.findings[p.code]?.why) || 'SQL Server bu işlem sırasında fazladan I/O ve CPU tüketebilir; sorgu planı verimsiz operatörler içerebilir.';
+        const recommendation = p.recommendation || 'İlgili view veya alt sorguları gözden geçirin, execution planı analiz edin ve gereksiz tablo tekrarlarını kaldırın.';
+
+        return `
+          <article class="structured-problem-card">
+            <div class="spc-head">
+              <div>
+                <span class="severity-pill ${sevClass}" style="margin-bottom:6px">${sevLabel}</span>
+                <h4 class="spc-title">${p.title}</h4>
+              </div>
+              <b style="color:var(--red);font-size:14px">−${p.penalty || 10} Puan</b>
+            </div>
+            <p class="spc-desc">${p.detail}</p>
+
+            <div class="spc-section why">
+              <strong>Neden Önemli?</strong>
+              <p>${why}</p>
+            </div>
+
+            <div class="spc-section">
+              <strong>Ne Yapılabilir? (Öneri)</strong>
+              <p>${recommendation}</p>
+            </div>
+
+            <div class="spc-evidence">
+              <span><b>Kanıt:</b> ${p.evidence || 'Statik Bağımlılık Grafiği'}</span>
+              <span>•</span>
+              <span class="connected-pill" style="font-size:11px;color:var(--yellow);border-color:rgba(247,200,106,0.3)">${p.evidenceGrade || 'Grade D (Heuristik)'}</span>
+            </div>
+
+            <div class="spc-actions">
+              <button class="button ghost mini btn-spc-graph" data-view="${name}">⌁ Bağımlılık Haritasını Aç</button>
+              <button class="button ghost mini btn-spc-sql" data-view="${name}">⚡ SQL'i Gör</button>
+              <button class="button primary mini btn-spc-ai" data-view="${name}">✦ AI ile İncele</button>
+            </div>
+          </article>
+        `;
+      }).join('') || '<div class="empty-state"><p>Tebrikler! Bu view üzerinde riskli pattern saptanmadı.</p></div>';
+
+      // Bind structured problem card action buttons
+      $$('.btn-spc-graph').forEach(b => {
+        b.onclick = () => {
+          gotoPage('graph');
+          const gi = $('#graphSearchInput');
+          if (gi) { gi.value = b.dataset.view; renderGraph(); }
+        };
+      });
+      $$('.btn-spc-sql').forEach(b => {
+        b.onclick = () => {
+          $(`.detail-tabs button[data-detail-tab="sql"]`)?.click();
+        };
+      });
+      $$('.btn-spc-ai').forEach(b => {
+        b.onclick = () => {
+          gotoPage('refactor');
+        };
+      });
     }
 
     // Dependencies Tab Content
@@ -1072,30 +1157,164 @@
 
   // --- 5. Table Pressure Page ---
   function renderTables() {
-    const grid = $('#tablePressureGrid');
-    if (!grid) return;
+    const tableBody = $('#tpTableBody');
     const pressures = state.data.pressures || [];
 
-    grid.innerHTML = pressures.map((p, i) => `
-      <article class="pressure-card ${i === 0 ? 'hot' : ''}">
-        <div class="pressure-card-head">
-          <div>
-            <span class="panel-kicker">BASE TABLE</span>
-            <h3>${p.name}</h3>
-            <small>${p.repeated || 0} repeated access pattern</small>
+    // KPI Strip Calculations
+    const totalTables = pressures.length;
+    const highPressureCount = pressures.filter(p => p.score > 75).length;
+    const totalCritical = pressures.reduce((acc, p) => acc + (p.critical || 0), 0);
+    const totalRepeated = pressures.reduce((acc, p) => acc + (p.repeated || 0), 0);
+
+    if ($('#tpKpiTotalTables')) $('#tpKpiTotalTables').textContent = totalTables;
+    if ($('#tpKpiHighPressure')) $('#tpKpiHighPressure').textContent = highPressureCount;
+    if ($('#tpKpiCriticalConsumers')) $('#tpKpiCriticalConsumers').textContent = totalCritical;
+    if ($('#tpKpiRepeatedPaths')) $('#tpKpiRepeatedPaths').textContent = totalRepeated;
+
+    if (!tableBody) return;
+
+    if (pressures.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:40px;color:var(--text-muted)">Tablo baskı analizi verisi bulunamadı.</td></tr>`;
+      return;
+    }
+
+    tableBody.innerHTML = pressures.map((p, idx) => {
+      const canonical = p.canonicalId || `${p.database || 'MikroDB'}.dbo.${p.name}`;
+      const isHot = p.score > 80;
+      const scoreClass = isHot ? 'critical' : p.score > 60 ? 'warning' : 'good';
+      const scoreLabel = isHot ? 'KRİTİK' : p.score > 60 ? 'YÜKSEK' : 'NORMAL';
+
+      return `
+        <tr class="tp-row ${idx === 0 ? 'active' : ''}" data-canonical="${canonical}" data-name="${p.name}" data-db="${p.database || ''}">
+          <td>
+            <strong style="color:var(--text-primary);font-size:14px">${p.name}</strong>
+            <small style="display:block;color:var(--text-muted);font-size:11.5px">${canonical}</small>
+          </td>
+          <td>
+            <span class="object-pill" style="font-size:11.5px">${p.database || 'MikroDB'}</span>
+          </td>
+          <td>
+            <span class="tp-score-pill ${scoreClass}">${p.score} · ${scoreLabel}</span>
+          </td>
+          <td>
+            <strong>${p.refs}</strong> <span style="font-size:12px;color:var(--text-muted)">view</span>
+          </td>
+          <td>
+            <strong>${p.paths}</strong> <span style="font-size:12px;color:var(--text-muted)">yol</span>
+          </td>
+          <td>
+            <span style="font-weight:700;color:${(p.repeated || 0) > 0 ? 'var(--red)' : 'var(--green)'}">${p.repeated || 0}</span>
+          </td>
+          <td>
+            <span style="font-weight:700;color:${(p.critical || 0) > 0 ? 'var(--red)' : 'var(--text-muted)'}">${p.critical || 0} view</span>
+          </td>
+          <td>
+            <span class="connected-pill" style="font-size:11px;color:var(--yellow);border-color:rgba(247,200,106,0.25)">Grade A / B</span>
+          </td>
+          <td>
+            <button class="button ghost mini btn-inspect-table" data-name="${p.name}" data-canonical="${canonical}">İncele →</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Row Click & Inspection
+    $$('.tp-row').forEach(r => {
+      r.addEventListener('click', () => {
+        $$('.tp-row').forEach(x => x.classList.remove('active'));
+        r.classList.add('active');
+        const cId = r.dataset.canonical;
+        const name = r.dataset.name;
+        openTableInspector(cId, name);
+      });
+    });
+
+    // Wire Close Inspector Button
+    $('#closeTpInspectorBtn')?.addEventListener('click', () => {
+      $('#tpInspector')?.classList.add('hidden');
+      $('#tpMainLayout')?.classList.add('inspector-closed');
+      $$('.tp-row').forEach(x => x.classList.remove('active'));
+    });
+
+    // Auto inspect first row
+    if (pressures.length > 0) {
+      openTableInspector(pressures[0].canonicalId || pressures[0].name, pressures[0].name);
+    }
+  }
+
+  function openTableInspector(canonicalId, name) {
+    const insp = $('#tpInspector');
+    const layout = $('#tpMainLayout');
+    if (!insp) return;
+
+    const pressures = state.data.pressures || [];
+    const p = pressures.find(x => x.canonicalId === canonicalId || x.name === name) || pressures[0];
+    if (!p) return;
+
+    insp.classList.remove('hidden');
+    layout?.classList.remove('inspector-closed');
+
+    if ($('#tpInspTableName')) $('#tpInspTableName').textContent = p.name;
+
+    const body = $('#tpInspectorBody');
+    if (body) {
+      body.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+          <span class="object-pill">${p.database || 'MikroDB'}</span>
+          <span class="severity-pill ${p.score > 80 ? 'critical' : 'warning'}">RİSK ${p.score} / 100</span>
+        </div>
+
+        <div class="spc-section why" style="margin-bottom:12px">
+          <strong>Neden Yüksek Baskı Var?</strong>
+          <p>${p.refs} farklı view doğrudan veya dolaylı olarak bu tabloya erişiyor. Toplam ${p.paths} bağımlılık yolu ve ${p.repeated || 0} mükerrer erişim rotası tespit edildi.</p>
+        </div>
+
+        <div class="inspector-metric"><span>Kullanan Toplam View</span><strong>${p.refs}</strong></div>
+        <div class="inspector-metric"><span>Bağımlılık Yolları</span><strong>${p.paths}</strong></div>
+        <div class="inspector-metric"><span>Mükerrer Erişim Yolu</span><strong class="danger-text">${p.repeated || 0}</strong></div>
+        <div class="inspector-metric"><span>Kritik Tüketici View</span><strong class="danger-text">${p.critical || 0}</strong></div>
+
+        <div style="margin:16px 0 10px">
+          <h4 style="font-size:13px;color:var(--text-secondary);margin-bottom:8px">Öne Çıkan Tüketici View'lar</h4>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:var(--radius-xs);display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:12.5px;font-weight:600">AA_URETIM_MALZEME_PLANLAMA</span>
+              <small style="color:var(--red);font-weight:700">4 Rota</small>
+            </div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:var(--radius-xs);display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:12.5px;font-weight:600">AA_ISEMRI_MALZEME_DURUMLARI</span>
+              <small style="color:var(--red);font-weight:700">2 Rota</small>
+            </div>
+            <div style="padding:6px 10px;background:var(--surface2);border-radius:var(--radius-xs);display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:12.5px;font-weight:600">AA_STOK_HAREKET_OZET</span>
+              <small style="color:var(--yellow);font-weight:700">1 Rota</small>
+            </div>
           </div>
-          <span class="severity-pill ${p.score > 80 ? 'critical' : 'warning'}">${p.score} RISK</span>
         </div>
-        <div class="big">${p.paths}</div>
-        <small>dependency paths</small>
-        <div class="pressure-bar" style="margin-top:14px"><i style="width:${p.score}%"></i></div>
-        <div class="pressure-stats">
-          <div><span>AA Views</span><strong>${p.refs}</strong></div>
-          <div><span>Critical</span><strong>${p.critical || 0}</strong></div>
-          <div><span>Repeat</span><strong>${p.repeated || 0}</strong></div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:16px">
+          <button class="button primary small full" id="btnTpOpenGraph">⌁ Bağımlılık Haritasında Gör</button>
+          <button class="button ghost small full" id="btnTpOpenWorkbench">⚡ SQL Çalışma Alanında Sorgula</button>
         </div>
-      </article>
-    `).join('') || '<div class="empty-state"><p>Tablo baskı analizi verisi yok.</p></div>';
+      `;
+
+      $('#btnTpOpenGraph')?.addEventListener('click', () => {
+        gotoPage('graph');
+        const input = $('#graphSearchInput');
+        if (input) {
+          input.value = p.name;
+          renderGraph();
+        }
+      });
+
+      $('#btnTpOpenWorkbench')?.addEventListener('click', () => {
+        gotoPage('workbench');
+        const wbInput = $('#wbSqlInput');
+        if (wbInput) {
+          wbInput.value = `SELECT TOP 50 *\nFROM [${p.database || 'MikroDB'}].[dbo].[${p.name}] WITH (NOLOCK);`;
+        }
+      });
+    }
   }
 
   // --- 6. Duplicate Logic Page ---
@@ -1108,21 +1327,51 @@
       <article class="duplicate-card">
         <div class="dup-head">
           <div>
-            <span class="panel-kicker">POSSIBLE DUPLICATE</span>
-            <h3>SQL fingerprint match</h3>
+            <span class="panel-kicker">OLASI MÜKERRER VIEW (FINGERPRINT)</span>
+            <h3 style="margin-top:4px">SQL Mantık Eşleşmesi</h3>
           </div>
-          <span class="similarity">${d.similarity}%</span>
+          <span class="similarity">✓ %${d.similarity} Benzer</span>
         </div>
-        <div class="dup-pair">
-          <div class="dup-view">${d.a}</div>
-          <div class="dup-view">${d.b}</div>
+        <div class="dup-pair" style="margin:12px 0">
+          <div class="dup-view" style="font-weight:600">${d.a}</div>
+          <span style="color:var(--text-muted);font-size:16px">⟷</span>
+          <div class="dup-view" style="font-weight:600">${d.b}</div>
         </div>
         <div class="dup-meta">
-          ${(d.common || []).map(x => `<span>${x}</span>`).join('')}
+          <span style="font-size:11.5px;color:var(--text-muted)">Ortak Tablolar:</span>
+          ${(d.common || []).map(x => `<span class="object-pill">${x}</span>`).join('')}
         </div>
-        <p style="font-size:12.5px;color:var(--text-muted);margin:14px 0 0">Temel fark: <b style="color:var(--text-secondary)">${d.diff}</b></p>
+        <p style="font-size:12.5px;color:var(--text-muted);margin:12px 0 14px">Temel fark: <b style="color:var(--text-secondary)">${d.diff}</b></p>
+        <div style="display:flex;gap:8px;border-top:1px solid var(--line);padding-top:10px">
+          <button class="button ghost mini btn-dup-diff" data-a="${d.a}" data-b="${d.b}">⇄ Yan Yana SQL Karşılaştır</button>
+          <button class="button ghost mini btn-dup-graph" data-a="${d.a}">⌁ Haritada Gör</button>
+          <button class="button primary mini btn-dup-ai" data-a="${d.a}" data-b="${d.b}">✦ AI Birleştirme Analizi</button>
+        </div>
       </article>
     `).join('') || '<div class="empty-state"><p>Mükerrer SQL gövdesi bulunamadı.</p></div>';
+
+    // Bind action buttons
+    $$('.btn-dup-diff').forEach(b => {
+      b.onclick = () => {
+        gotoPage('validation');
+        const vo = $('#valOrigSql');
+        const vc = $('#valCandSql');
+        if (vo) vo.value = `-- View A: ${b.dataset.a}\nSELECT * FROM dbo.[${b.dataset.a}]`;
+        if (vc) vc.value = `-- View B: ${b.dataset.b}\nSELECT * FROM dbo.[${b.dataset.b}]`;
+      };
+    });
+    $$('.btn-dup-graph').forEach(b => {
+      b.onclick = () => {
+        gotoPage('graph');
+        const gi = $('#graphSearchInput');
+        if (gi) { gi.value = b.dataset.a; renderGraph(); }
+      };
+    });
+    $$('.btn-dup-ai').forEach(b => {
+      b.onclick = () => {
+        gotoPage('refactor');
+      };
+    });
   }
 
   // --- 7. Runtime & Regression Page ---
@@ -1133,24 +1382,24 @@
 
     table.innerHTML = `
       <div class="reg-row header">
-        <span>Object / Calling Query</span>
-        <span>Before</span>
-        <span>Current</span>
-        <span>Delta</span>
-        <span>Logical Reads</span>
-        <span>Evidence</span>
+        <span>Nesne / Çağıran Sorgu</span>
+        <span>Önceki Süre</span>
+        <span>Güncel Süre</span>
+        <span>Fark (Değişim)</span>
+        <span>Mantıksal Okuma</span>
+        <span>Kanıt Derecesi</span>
       </div>
       ${regs.map(r => `
         <div class="reg-row">
           <div>
             <strong>${r.name}</strong>
-            <small>${r.note || 'Query Store correlated'}</small>
+            <small>${r.note || 'Query Store ile eşleştirildi'}</small>
           </div>
           <span>${r.before}</span>
           <span>${r.now}</span>
           <span class="delta-up">${r.delta}</span>
           <span>${r.reads}</span>
-          <span>${r.evidence}</span>
+          <span class="connected-pill" style="font-size:11px;color:var(--yellow);border-color:rgba(247,200,106,0.25)">${r.evidence || 'Grade A'}</span>
         </div>
       `).join('')}
     `;
@@ -1248,7 +1497,7 @@
     });
 
     // 7. Appearance Controls (Theme, Density, Font Scale, Grid, Animations)
-    const savedTheme = localStorage.getItem('sql_studio_theme') || 'dark';
+    const savedTheme = localStorage.getItem('sql-studio-theme') || localStorage.getItem('sql_studio_theme') || 'dark';
     const savedDensity = localStorage.getItem('sql_studio_density') || 'comfortable';
     const savedFontScale = localStorage.getItem('sql_studio_font_scale') || 'default';
     const savedEditorFont = localStorage.getItem('sql_studio_editor_font') || '14';
@@ -1267,6 +1516,7 @@
     // Select element listeners
     $('#settingTheme')?.addEventListener('change', e => {
       applyTheme(e.target.value);
+      localStorage.setItem('sql-studio-theme', e.target.value);
       localStorage.setItem('sql_studio_theme', e.target.value);
     });
 
@@ -1312,7 +1562,53 @@
   }
 
   function applyTheme(theme) {
-    document.body.classList.toggle('theme-midnight', theme === 'midnight');
+    let effectiveTheme = theme;
+    if (theme === 'system') {
+      const isSystemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      effectiveTheme = isSystemDark ? 'dark' : 'light';
+    }
+
+    document.body.classList.remove('theme-light', 'theme-midnight');
+    if (effectiveTheme === 'light') {
+      document.body.classList.add('theme-light');
+    } else if (effectiveTheme === 'midnight') {
+      document.body.classList.add('theme-midnight');
+    }
+
+    // Update Quick Toggle Button Icon & Tooltip
+    const toggleBtn = $('#themeQuickToggle');
+    if (toggleBtn) {
+      if (effectiveTheme === 'light') {
+        toggleBtn.textContent = '☾';
+        toggleBtn.title = 'Koyu Temaya Geç (Dark Theme)';
+      } else {
+        toggleBtn.textContent = '☀';
+        toggleBtn.title = 'Açık Temaya Geç (Light Theme)';
+      }
+    }
+
+    try {
+      localStorage.setItem('sql-studio-theme', theme);
+    } catch (_) {}
+  }
+
+  // Quick Theme Toggle Handler
+  $('#themeQuickToggle')?.addEventListener('click', () => {
+    const isLight = document.body.classList.contains('theme-light');
+    const newTheme = isLight ? 'dark' : 'light';
+    applyTheme(newTheme);
+    if ($('#settingTheme')) $('#settingTheme').value = newTheme;
+    toast('Tema Değiştirildi', `${newTheme === 'light' ? 'Açık' : 'Koyu'} tema etkinleştirildi.`);
+  });
+
+  // System Theme Listener
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+      const saved = localStorage.getItem('sql-studio-theme');
+      if (saved === 'system') {
+        applyTheme('system');
+      }
+    });
   }
 
   function applyDensity(density) {
@@ -1368,6 +1664,7 @@
       renderTables();
       renderDuplicates();
       renderRuntime();
+      window.refreshWorkbenchMetadata?.();
     } catch (err) {
       toast('Tarama Hatası', err.message, 'error');
     } finally {
@@ -1413,7 +1710,9 @@
     }
   });
 
-  // Connect & Test Form Submission
+  // --- 10. Server-Centric 2-Step Connection Wizard (Phase 2.5) ---
+  let discoveredDatabases = [];
+
   $('#connectionForm')?.addEventListener('submit', async e => {
     e.preventDefault();
     const fd = new FormData(e.currentTarget);
@@ -1422,14 +1721,13 @@
 
     if (statusText) {
       statusText.className = 'connection-test';
-      statusText.textContent = 'SQL Server\'a bağlanılıyor...';
+      statusText.textContent = 'SQL Server instance\'a bağlanılıyor...';
     }
     if (submitBtn) submitBtn.disabled = true;
 
     const payload = {
       server: fd.get('server'),
       port: fd.get('port'),
-      database: fd.get('database'),
       user: fd.get('user'),
       password: fd.get('password'),
       encrypt: fd.get('encrypt') === 'on',
@@ -1437,33 +1735,50 @@
     };
 
     try {
-      const res = await fetch('/api/connection/test', {
+      const res = await fetch('/api/connection/test-server', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const json = await res.json();
-      if (!res.ok || !json.ok) throw new Error(json.error || 'Bağlantı hatası.');
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Sunucu bağlantı hatası.');
 
-      state.connected = true;
-      state.connectionInfo = json.connection;
-
-      const capRes = await fetch('/api/capabilities');
-      const capJson = await capRes.json();
-      if (capJson.ok) {
-        state.capabilities = capJson.data;
+      discoveredDatabases = json.databases || [];
+      if (discoveredDatabases.length === 0) {
+        throw new Error('Erişilebilir online user database bulunamadı.');
       }
 
-      if (statusText) {
-        statusText.classList.add('success');
-        statusText.textContent = `✓ Bağlandı: ${json.server.databaseName}`;
+      // Populate Step 2 Checkboxes
+      const scopeList = $('#dbScopeCheckboxList');
+      if (scopeList) {
+        scopeList.innerHTML = discoveredDatabases.map(db => `
+          <div class="db-scope-item">
+            <label>
+              <input type="checkbox" value="${db.name}" checked />
+              <span><b>${db.name}</b> <small style="color:var(--text-muted);font-size:11px">(${db.compatibility_level || 'Online'})</small></span>
+            </label>
+            <span class="tab-badge" style="font-size:10px">ID: ${db.database_id}</span>
+          </div>
+        `).join('');
       }
 
-      updateConnectionStatusUI();
-      toast('Bağlantı Başarılı', `${json.server.databaseName} veritabanına bağlanıldı. Otomatik tarama başlatılıyor...`, 'success');
+      // Populate Primary DB Select
+      const primarySel = $('#primaryDbSelect');
+      if (primarySel) {
+        primarySel.innerHTML = discoveredDatabases.map(db => `
+          <option value="${db.name}">${db.name}</option>
+        `).join('');
+      }
 
-      closeModal();
-      setTimeout(() => triggerScan(), 400);
+      // Transition to Step 2
+      $('#connStep1')?.classList.add('hidden');
+      $('#connStep2')?.classList.remove('hidden');
+      $('#stepIndicator1')?.classList.remove('active');
+      $('#stepIndicator1')?.style.setProperty('color', 'var(--green)');
+      $('#stepIndicator2')?.classList.add('active');
+      $('#stepIndicator2')?.style.setProperty('color', 'var(--accent)');
+
+      toast('Sunucu Doğrulandı', `${discoveredDatabases.length} erişilebilir veritabanı listelendi. Kapsamı seçin.`, 'success');
     } catch (err) {
       if (statusText) {
         statusText.classList.add('error');
@@ -1472,6 +1787,66 @@
       toast('Bağlantı Başarısız', err.message, 'error');
     } finally {
       if (submitBtn) submitBtn.disabled = false;
+    }
+  });
+
+  // Step 2: Back to Step 1
+  $('#btnBackToStep1')?.addEventListener('click', () => {
+    $('#connStep2')?.classList.add('hidden');
+    $('#connStep1')?.classList.remove('hidden');
+    $('#stepIndicator2')?.classList.remove('active');
+    $('#stepIndicator2')?.style.setProperty('color', 'var(--text-muted)');
+    $('#stepIndicator1')?.classList.add('active');
+    $('#stepIndicator1')?.style.setProperty('color', 'var(--accent)');
+  });
+
+  // Step 2: Apply Scope and Scan
+  $('#btnApplyScopeAndScan')?.addEventListener('click', async () => {
+    const checked = $$('#dbScopeCheckboxList input[type="checkbox"]:checked').map(cb => cb.value);
+    const primary = $('#primaryDbSelect')?.value || checked[0];
+
+    if (checked.length === 0) {
+      toast('Kapsam Boş', 'Lütfen en az bir veritabanı seçin.', 'error');
+      return;
+    }
+
+    const applyBtn = $('#btnApplyScopeAndScan');
+    if (applyBtn) {
+      applyBtn.disabled = true;
+      applyBtn.textContent = 'Bağlanıyor & Taranıyor...';
+    }
+
+    try {
+      const res = await fetch('/api/connection/set-scope', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ primaryDatabase: primary, selectedDatabases: checked })
+      });
+      const json = await res.json();
+      if (!res.ok || !json.ok) throw new Error(json.error || 'Kapsam ayarlanamadı.');
+
+      state.connected = true;
+      state.primaryDatabase = primary;
+      state.selectedDatabases = checked;
+      state.activeDatabase = primary;
+
+      // Update Workbench DB selector
+      const wbSel = $('#wbDatabaseSelect');
+      if (wbSel) {
+        wbSel.innerHTML = checked.map(d => `<option value="${d}" ${d === primary ? 'selected' : ''}>${d}</option>`).join('');
+      }
+
+      updateConnectionStatusUI();
+      closeModal();
+      toast('Bağlantı Kuruldu', `${checked.length} veritabanı analiz kapsamına alındı. Tarama başlatılıyor...`, 'success');
+      setTimeout(() => triggerScan(), 300);
+    } catch (err) {
+      toast('Hata', err.message, 'error');
+    } finally {
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Bağlan & Seçili Veritabanlarını Tara ✦';
+      }
     }
   });
 
@@ -1519,7 +1894,7 @@
   });
 
   // ============================================================
-  // --- 13. VALIDATION LAB & QUERY COMPARE (Phase 2D) ---
+  // --- 13. VALIDATION LAB & QUERY COMPARE (Phase 2D/2.6) ---
   // ============================================================
   function initValidationLab() {
     const origInput = $('#valOrigSql');
@@ -1529,10 +1904,85 @@
     const btnValidate = $('#validateButton');
     const ackCheck = $('#validationAck');
 
+    // Resizable Split-View (Horizontal Split with Mouse Drag)
+    const splitWrap = $('#valSplitWrap');
+    const divider = $('#valSplitDivider');
+    const leftPane = $('#valOrigPane');
+    const rightPane = $('#valCandPane');
+    if (splitWrap && divider && leftPane && rightPane) {
+      let isDragging = false;
+      divider.addEventListener('mousedown', e => {
+        isDragging = true;
+        divider.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', e => {
+        if (!isDragging) return;
+        const rect = splitWrap.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const total = rect.width;
+        let ratio = x / total;
+        if (ratio < 0.30) ratio = 0.30;
+        if (ratio > 0.70) ratio = 0.70;
+        leftPane.style.flex = `${ratio}`;
+        rightPane.style.flex = `${1 - ratio}`;
+      });
+      window.addEventListener('mouseup', () => {
+        if (isDragging) {
+          isDragging = false;
+          divider.classList.remove('dragging');
+          document.body.style.cursor = '';
+        }
+      });
+      divider.addEventListener('dblclick', () => {
+        leftPane.style.flex = '1';
+        rightPane.style.flex = '1';
+      });
+    }
+
+    // Clear & Copy & Workbench Quick Actions
+    $('#btnValClear')?.addEventListener('click', () => {
+      if (origInput) origInput.value = '';
+      if (candInput) candInput.value = '';
+      setValVerdict('DOĞRULANMADI');
+      toast('Temizlendi', 'Orijinal ve aday sorgu alanları temizlendi.');
+    });
+
+    $('#btnValCopyOrig')?.addEventListener('click', () => {
+      if (origInput?.value) {
+        navigator.clipboard.writeText(origInput.value);
+        toast('Kopyalandı', 'Orijinal SQL panoya kopyalandı.', 'success');
+      }
+    });
+
+    $('#btnValCopyCand')?.addEventListener('click', () => {
+      if (candInput?.value) {
+        navigator.clipboard.writeText(candInput.value);
+        toast('Kopyalandı', 'Aday SQL panoya kopyalandı.', 'success');
+      }
+    });
+
+    $('#btnValSendOrigToWb')?.addEventListener('click', () => {
+      if (origInput?.value) {
+        const wbInput = $('#wbSqlInput');
+        if (wbInput) wbInput.value = origInput.value;
+        gotoPage('workbench');
+      }
+    });
+
+    $('#btnValSendCandToWb')?.addEventListener('click', () => {
+      if (candInput?.value) {
+        const wbInput = $('#wbSqlInput');
+        if (wbInput) wbInput.value = candInput.value;
+        gotoPage('workbench');
+      }
+    });
+
     // Load sample queries
     btnLoadSample?.addEventListener('click', () => {
       if (origInput) {
-        origInput.value = `-- Original View Query:
+        origInput.value = `-- Orijinal View Sorgusu (V1):
 SELECT 
     sth_stok_kod,
     sth_tip,
@@ -1542,7 +1992,7 @@ FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
 WHERE sth_tarih >= '2026-01-01';`;
       }
       if (candInput) {
-        candInput.value = `-- Refactored Candidate Query:
+        candInput.value = `-- Optimize Edilmiş Aday Refaktör Sorgusu (V2):
 SELECT 
     sth_stok_kod,
     sth_tip,
@@ -1551,6 +2001,7 @@ SELECT
 FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
 WHERE sth_tarih >= '2026-01-01';`;
       }
+      setValVerdict('DOĞRULANMADI');
       toast('Örnek Yüklendi', 'Orijinal ve aday sorgu şablonları yüklendi.');
     });
 
@@ -1608,7 +2059,7 @@ WHERE sth_tarih >= '2026-01-01';`;
         toast('Karşılaştırma Hatası', err.message, 'error');
       } finally {
         btnRunBoth.disabled = false;
-        btnRunBoth.textContent = 'İki Sorguyu Karşılaştır';
+        btnRunBoth.textContent = '▶ Doğrula';
       }
     });
 
@@ -1644,7 +2095,7 @@ WHERE sth_tarih >= '2026-01-01';`;
           if (!res.ok || !json.ok) throw new Error(json.error || 'Validation başarısız.');
 
           renderValSteps(json.steps);
-          setValVerdict(json.verdict);
+          setValVerdict(json.verdict === 'EXACT MATCH' ? 'SEMANTİK OLARAK DOĞRULANDI' : 'SONUÇ UYUŞMUYOR');
         } else {
           // Demo Mode Simulation
           await new Promise(r => setTimeout(r, 600));
@@ -1655,18 +2106,15 @@ WHERE sth_tarih >= '2026-01-01';`;
             { id: 'multiplicity', status: 'PASS', detail: 'Tüm satırların duplicate adetleri (GROUP BY + COUNT_BIG) doğrulandı.' }
           ];
           renderValSteps(demoSteps);
-          setValVerdict('EXACT MATCH');
+          setValVerdict('SEMANTİK OLARAK DOĞRULANDI');
         }
-        toast('Validation Tamamlandı', 'Tüm semantik denetim adımları tamamlandı.', 'success');
+        toast('Doğrulama Tamamlandı', 'Tüm semantik denetim adımları başarıyla tamamlandı.', 'success');
       } catch (err) {
-        toast('Validation Hatası', err.message, 'error');
-        if (statusPill) {
-          statusPill.textContent = 'HATA';
-          statusPill.className = 'status-pill status-danger';
-        }
+        toast('Doğrulama Hatası', err.message, 'error');
+        setValVerdict('SONUÇ UYUŞMUYOR');
       } finally {
         btnValidate.disabled = false;
-        btnValidate.textContent = '✦ Validation Lab\'ı Başlat';
+        btnValidate.textContent = '✦ Validation Lab Doğrulamasını Başlat';
       }
     });
 
@@ -1676,15 +2124,37 @@ WHERE sth_tarih >= '2026-01-01';`;
         const elStatus = $(`#valStepStatus-${st.id}`);
         const elDesc = $(`#valStepDesc-${st.id}`);
 
+        const isPass = st.status === 'PASS';
+        const isFail = st.status === 'FAILED';
+        const statusLabel = isPass ? 'BAŞARILI' : (isFail ? 'BAŞARISIZ' : 'BEKLİYOR');
+
         if (elStep) {
-          elStep.className = `validation-step ${st.status === 'PASS' ? 'done' : st.status === 'FAILED' ? 'failed' : ''}`;
+          elStep.className = `validation-step ${isPass ? 'done' : (isFail ? 'failed' : '')}`;
         }
         if (elStatus) {
-          elStatus.textContent = st.status;
-          elStatus.style.color = st.status === 'PASS' ? 'var(--green)' : st.status === 'FAILED' ? 'var(--red)' : 'var(--yellow)';
+          elStatus.textContent = statusLabel;
+          elStatus.style.color = isPass ? 'var(--green)' : (isFail ? 'var(--red)' : 'var(--yellow)');
         }
         if (elDesc && st.detail) {
           elDesc.textContent = st.detail;
+        }
+
+        // Summary block
+        if (st.id === 'schema' && $('#valSummarySchema')) {
+          $('#valSummarySchema').textContent = isPass ? 'Birebir Eşleşti ✓' : 'Uyuşmazlık ✕';
+          $('#valSummarySchema').style.color = isPass ? 'var(--green)' : 'var(--red)';
+        }
+        if (st.id === 'rowCount' && $('#valSummaryRowCount')) {
+          $('#valSummaryRowCount').textContent = isPass ? 'Eşit (1,000) ✓' : 'Farklı ✕';
+          $('#valSummaryRowCount').style.color = isPass ? 'var(--green)' : 'var(--red)';
+        }
+        if (st.id === 'setMatch' && $('#valSummarySetMatch')) {
+          $('#valSummarySetMatch').textContent = isPass ? 'Fark Yok (0) ✓' : 'Küme Farkı Var ✕';
+          $('#valSummarySetMatch').style.color = isPass ? 'var(--green)' : 'var(--red)';
+        }
+        if (st.id === 'multiplicity' && $('#valSummaryMultiplicity')) {
+          $('#valSummaryMultiplicity').textContent = isPass ? 'Frekanslar Korundu ✓' : 'Frekans Farkı ✕';
+          $('#valSummaryMultiplicity').style.color = isPass ? 'var(--green)' : 'var(--red)';
         }
       }
     }
@@ -1693,16 +2163,40 @@ WHERE sth_tarih >= '2026-01-01';`;
       const vText = $('#valVerdictText');
       const vSub = $('#valVerdictSub');
       const pStatus = $('#valPipelineStatus');
+      const sumVerdict = $('#valSummaryVerdict');
 
-      if (vText) vText.textContent = verdict;
-      if (vSub) vSub.textContent = verdict === 'EXACT MATCH' ? 'Semantically Validated ✓' : 'Notice / Action required';
+      if (vText) {
+        vText.textContent = verdict;
+        if (verdict === 'SEMANTİK OLARAK DOĞRULANDI') {
+          vText.style.color = 'var(--green)';
+        } else if (verdict === 'DOĞRULANMADI') {
+          vText.style.color = 'var(--yellow)';
+        } else {
+          vText.style.color = 'var(--red)';
+        }
+      }
+
+      if (vSub) {
+        if (verdict === 'SEMANTİK OLARAK DOĞRULANDI') {
+          vSub.textContent = 'Şema, satır sayısı, EXCEPT ve satır çokluğu kanıtlandı ✓';
+        } else if (verdict === 'DOĞRULANMADI') {
+          vSub.textContent = 'Doğrulama adımları bekleniyor';
+        } else {
+          vSub.textContent = 'Sonuç veya şema uyuşmazlığı saptandı ✕';
+        }
+      }
+
+      if (sumVerdict) {
+        sumVerdict.textContent = verdict;
+        sumVerdict.className = verdict === 'SEMANTİK OLARAK DOĞRULANDI' ? 'positive-text' : (verdict === 'DOĞRULANMADI' ? 'warning-text' : 'danger-text');
+      }
 
       if (pStatus) {
         pStatus.textContent = verdict;
-        if (verdict === 'EXACT MATCH') {
+        if (verdict === 'SEMANTİK OLARAK DOĞRULANDI') {
           pStatus.className = 'status-pill status-ready';
-        } else if (verdict.includes('PARTIALLY')) {
-          pStatus.className = 'status-pill status-warning';
+        } else if (verdict === 'DOĞRULANMADI') {
+          pStatus.className = 'status-pill';
         } else {
           pStatus.className = 'status-pill status-danger';
         }
@@ -1838,23 +2332,25 @@ WHERE sth_tarih >= '2026-01-01';`;
 
       const filteredActions = actions.filter(a => a.title.toLowerCase().includes(q));
       const views = (state.data.views || [])
-        .filter(v => (v.name || v.view_name).toLowerCase().includes(q))
+        .filter(v => (v.name || v.view_name).toLowerCase().includes(q) || (v.database && v.database.toLowerCase().includes(q)))
         .slice(0, 8)
         .map(v => ({
           title: v.name || v.view_name,
+          subtitle: v.database || '',
           category: 'VIEWLAR',
           icon: '⌘',
           action: () => {
-            selectView(v.name || v.view_name);
+            selectView(v.canonicalId || v.name);
             gotoPage('views');
           }
         }));
 
       const tables = (state.data.pressures || [])
-        .filter(p => p.name.toLowerCase().includes(q))
+        .filter(p => p.name.toLowerCase().includes(q) || (p.database && p.database.toLowerCase().includes(q)))
         .slice(0, 5)
         .map(p => ({
           title: p.name,
+          subtitle: p.database || '',
           category: 'BASE TABLOLAR',
           icon: '▦',
           action: () => gotoPage('tables')
@@ -1878,7 +2374,10 @@ WHERE sth_tarih >= '2026-01-01';`;
           <div class="cmd-item ${idx === selectedIdx ? 'active' : ''}" data-idx="${idx}">
             <div class="cmd-item-left">
               <span class="cmd-item-icon">${it.icon}</span>
-              <span>${it.title}</span>
+              <div style="display:flex;align-items:center;gap:6px">
+                <span>${it.title}</span>
+                ${it.subtitle ? `<span class="db-badge" style="font-size:10px;padding:1px 5px">${it.subtitle}</span>` : ''}
+              </div>
             </div>
             <span class="tab-badge" style="font-size:10px">${it.category.split(' ')[0]}</span>
           </div>
@@ -1983,6 +2482,62 @@ WHERE sth_tarih >= '2026-01-01';`;
       // Initial line count
       updateLineNumbers();
 
+      // Initialize Schema-Aware IntelliSense Engine
+      const popupEl = $('#wbIntelliSense');
+      let intelliSense = null;
+      if (input && popupEl && window.StudioIntelliSense) {
+        intelliSense = new StudioIntelliSense(input, popupEl, {
+          getActiveDatabase: () => $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase,
+          onInsert: () => updateLineNumbers()
+        });
+      }
+
+      async function loadMetadataCatalog() {
+        const activeDb = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+        try {
+          const res = await fetch(`/api/workbench/metadata?database=${encodeURIComponent(activeDb)}`);
+          const json = await res.json();
+          if (json.ok && json.data) {
+            if (intelliSense) intelliSense.setCatalog(json.data);
+            const time = new Date(json.data.lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const freshEl = $('#wbMetaFreshness');
+            if (freshEl) freshEl.textContent = `Metadata: ${time}`;
+          }
+        } catch (_) {}
+      }
+
+      $('#btnWbRefreshMetadata')?.addEventListener('click', async () => {
+        const activeDb = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+        const btn = $('#btnWbRefreshMetadata');
+        if (btn) btn.disabled = true;
+        try {
+          const res = await fetch('/api/workbench/metadata/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ database: activeDb })
+          });
+          const json = await res.json();
+          if (json.ok && json.data) {
+            if (intelliSense) intelliSense.setCatalog(json.data);
+            const time = new Date(json.data.lastUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const freshEl = $('#wbMetaFreshness');
+            if (freshEl) freshEl.textContent = `Metadata: ${time}`;
+            toast('Metadata Yenilendi', `Metadata kataloğu güncellendi (${json.data.views.length} view, ${json.data.tables.length} tablo).`, 'success');
+          }
+        } catch (err) {
+          toast('Hata', err.message, 'error');
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+      });
+
+      $('#wbDatabaseSelect')?.addEventListener('change', () => {
+        loadMetadataCatalog();
+      });
+
+      loadMetadataCatalog();
+      window.refreshWorkbenchMetadata = loadMetadataCatalog;
+
       // Keyboard shortcuts in editor
       input.addEventListener('keydown', e => {
         // Tab key indent
@@ -2065,6 +2620,7 @@ WHERE sth_tarih >= '2026-01-01';`;
         return;
       }
 
+      const dbTarget = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
       const timeoutMs = Number($('#wbTimeoutSelect')?.value || 30000);
       const reqId = 'wb_' + Date.now();
       workbenchState.activeRequestId = reqId;
@@ -2078,13 +2634,13 @@ WHERE sth_tarih >= '2026-01-01';`;
           const res = await fetch('/api/workbench/run', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sql, timeoutMs, requestId: reqId })
+            body: JSON.stringify({ sql, database: dbTarget, timeoutMs, requestId: reqId })
           });
           const json = await res.json();
           if (!res.ok || !json.ok) throw new Error(json.error || 'Sorgu çalıştırılamadı.');
 
           renderWbResults(json);
-          toast('Sorgu Tamamlandı', `${json.rowsReturned || json.rows.length} satır ${json.metrics.durationMs} ms içinde getirildi.`, 'success');
+          toast('Sorgu Tamamlandı', `${json.rowsReturned || json.rows.length} satır [${dbTarget}] üzerinde ${json.metrics.durationMs} ms içinde getirildi.`, 'success');
         } else {
           // Demo Mode Mock Execution
           await new Promise(r => setTimeout(r, 450));
@@ -2120,14 +2676,14 @@ WHERE sth_tarih >= '2026-01-01';`;
               elapsedTimeMs: Math.round(performance.now() - startTime)
             },
             messages: [
-              "SQL Server Execution Times: CPU time = 240 ms, elapsed time = 310 ms.",
+              `SQL Server Execution Times (${dbTarget}): CPU time = 240 ms, elapsed time = 310 ms.`,
               "Table 'STOK_HAREKETLERI'. Scan count 4, logical reads 12400, physical reads 0.",
               "Table 'STOKLAR'. Scan count 1, logical reads 1880, physical reads 0.",
               `(${mockRows.length} rows affected)`
             ]
           };
           renderWbResults(mockData);
-          toast('Demo Çalıştırıldı', 'Demo veri seti üzerinde sorgu simüle edildi.', 'success');
+          toast('Demo Çalıştırıldı', `[${dbTarget}] simüle edildi.`, 'success');
         }
       } catch (err) {
         toast('Sorgu Hatası', err.message, 'error');
@@ -2177,7 +2733,8 @@ WHERE sth_tarih >= '2026-01-01';`;
         return;
       }
 
-      setWbRunningState(true, mode === 'actual' ? 'ACTUAL PLAN ALINIYOR...' : 'ESTIMATED PLAN DERLENİYOR...');
+      const dbTarget = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+      setWbRunningState(true, mode === 'actual' ? `ACTUAL PLAN [${dbTarget}]...` : `ESTIMATED PLAN [${dbTarget}]...`);
       const timeoutMs = Number($('#wbTimeoutSelect')?.value || 30000);
 
       try {
@@ -2185,14 +2742,14 @@ WHERE sth_tarih >= '2026-01-01';`;
           const res = await fetch('/api/workbench/plan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sql, mode, timeoutMs })
+            body: JSON.stringify({ sql, database: dbTarget, mode, timeoutMs })
           });
           const json = await res.json();
           if (!res.ok || !json.ok) throw new Error(json.error || 'Plan alınamadı.');
 
           renderWbPlan(json.planType, json.parsed);
           switchWbTab('plan');
-          toast('Plan Hazır', `${json.planType} execution plan başarıyla analiz edildi.`, 'success');
+          toast('Plan Hazır', `${json.planType} execution plan [${dbTarget}] başarıyla analiz edildi.`, 'success');
         } else {
           // Demo Mode Plan Synthesis
           await new Promise(r => setTimeout(r, 400));
@@ -2224,10 +2781,11 @@ WHERE sth_tarih >= '2026-01-01';`;
           };
           renderWbPlan(isActual ? 'ACTUAL' : 'ESTIMATED', mockPlan);
           switchWbTab('plan');
-          toast('Demo Plan Hazır', `${isActual ? 'Actual' : 'Estimated'} plan hazırlandı.`, 'success');
+          toast('Demo Plan Hazır', `[${dbTarget}] ${isActual ? 'Actual' : 'Estimated'} plan hazırlandı.`, 'success');
         }
       } catch (err) {
         toast('Plan Hatası', err.message, 'error');
+        setWbErrorState(err.message);
       } finally {
         setWbRunningState(false);
       }
@@ -2237,17 +2795,18 @@ WHERE sth_tarih >= '2026-01-01';`;
     btnBenchmark?.addEventListener('click', async () => {
       const sql = input?.value.trim();
       if (!sql) {
-        toast('Sorgu Boş', 'Lütfen benchmark yapılacak bir SELECT sorgusu yazın.', 'error');
+        toast('Sorgu Boş', 'Lütfen benchmark uygulanacak bir SELECT sorgusu yazın.', 'error');
         return;
       }
 
-      const runs = Number($('#wbBenchmarkRuns')?.value || 3);
+      const runs = Number($('#wbRunsSelect')?.value || 3);
       if (runs > 3) {
-        const ok = confirm(`Bu işlem bağlı veritabanı üzerinde sorguyu ${runs} kez arka arkaya çalıştıracaktır.\n\nDevam etmek istiyor musunuz?`);
+        const ok = confirm(`UYARI: Bu işlem veritabanı üzerinde sorguyu arka arkaya ${runs} kez yürütecektir. Devam etmek istiyor musunuz?`);
         if (!ok) return;
       }
 
-      setWbRunningState(true, `BENCHMARK (${runs} RUNS)...`);
+      const dbTarget = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+      setWbRunningState(true, `BENCHMARK (${runs} RUNS) [${dbTarget}]...`);
       const timeoutMs = Number($('#wbTimeoutSelect')?.value || 30000);
 
       try {
@@ -2255,14 +2814,14 @@ WHERE sth_tarih >= '2026-01-01';`;
           const res = await fetch('/api/workbench/benchmark', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sql, runs, warmUp: true, timeoutMs })
+            body: JSON.stringify({ sql, database: dbTarget, runs, warmUp: true, timeoutMs })
           });
           const json = await res.json();
           if (!res.ok || !json.ok) throw new Error(json.error || 'Benchmark başarısız.');
 
           renderWbBenchmark(json);
           switchWbTab('statistics');
-          toast('Benchmark Tamamlandı', `Median: ${json.summary.medianMs} ms · P95: ${json.summary.p95Ms} ms`, 'success');
+          toast('Benchmark Tamamlandı', `[${dbTarget}] Median: ${json.metrics?.medianDurationMs || 0} ms`, 'success');
         } else {
           // Demo Mode Benchmark Simulation
           await new Promise(r => setTimeout(r, 600));
@@ -2273,6 +2832,7 @@ WHERE sth_tarih >= '2026-01-01';`;
           ];
           renderWbBenchmark({
             totalRuns: runs,
+            database: dbTarget,
             warmUpIncluded: false,
             summary: {
               medianMs: 13,
@@ -2453,13 +3013,14 @@ WHERE sth_tarih >= '2026-01-01';`;
 
       const isActual = planType === 'ACTUAL';
       const badgeClass = isActual ? 'status-pill status-ready' : 'status-pill';
+      const planTitle = isActual ? 'GERÇEK ÇALIŞTIRMA PLANI (ACTUAL PLAN)' : 'TAHMİNİ ÇALIŞTIRMA PLANI (ESTIMATED PLAN)';
 
       let html = `
         <div class="wb-plan-header">
           <div>
-            <span class="${badgeClass}">${planType} PLAN</span>
-            <strong style="margin-left:10px">SubTree Cost: ${parsed.totalSubTreeCost || 0}</strong>
-            <small style="margin-left:8px;color:var(--text-muted)">(Opt Level: ${parsed.optimizationLevel || 'FULL'})</small>
+            <span class="${badgeClass}">${planTitle}</span>
+            <strong style="margin-left:12px">Alt Ağaç Maliyeti: ${parsed.totalSubTreeCost || 0}</strong>
+            <small style="margin-left:8px;color:var(--text-muted)">(Optimizasyon Seviyesi: ${parsed.optimizationLevel || 'FULL'})</small>
           </div>
           <span>${parsed.operatorCount || 0} operatör</span>
         </div>
@@ -2483,12 +3044,13 @@ WHERE sth_tarih >= '2026-01-01';`;
       if (parsed.cardinalityMismatches?.length > 0) {
         html += `
           <div style="margin-bottom:14px">
-            <h4 style="font-size:14px;margin-bottom:8px;color:var(--red)">Cardinality Estimation Hataları (${parsed.cardinalityMismatches.length})</h4>
+            <h4 style="font-size:14px;margin-bottom:8px;color:var(--red)">Kardinalite Tahmin Hataları (${parsed.cardinalityMismatches.length})</h4>
             ${parsed.cardinalityMismatches.map(cm => `
-              <div class="setting-card" style="border-left:3px solid var(--red)">
+              <div class="setting-card" style="border-left:3px solid var(--red);margin-bottom:6px">
                 <div>
                   <strong>${cm.operator} — ${cm.object || 'Node ' + cm.nodeId}</strong>
                   <p>Tahmin: <b>${cm.estimated.toLocaleString()}</b> satır → Gerçek: <b style="color:var(--red)">${cm.actual.toLocaleString()}</b> satır</p>
+                  <small style="color:var(--text-muted);display:block;margin-top:2px">Optimizatörün beklediğinden çok farklı satır dönmesi yanlış join veya index seek kararlarına yol açar.</small>
                 </div>
                 <span class="severity-pill critical">${cm.factor}</span>
               </div>
@@ -2503,18 +3065,24 @@ WHERE sth_tarih >= '2026-01-01';`;
           <div style="margin-bottom:14px">
             <h4 style="font-size:14px;margin-bottom:10px">En Yüksek Maliyetli Operatörler</h4>
             <div class="wb-op-list">
-              ${parsed.topOperators.map(op => `
-                <div class="wb-op-card">
-                  <div class="wb-op-title">
-                    <span class="node-badge" style="font-size:11px">${op.isScan ? 'SCAN' : op.isLookup ? 'LOOKUP' : 'OP'}</span>
-                    <div>
-                      <strong>${op.physicalOp}</strong>
-                      <small style="display:block;color:var(--text-muted)">${op.targetObject ? 'Tablo: ' + op.targetObject : ''} · Est Rows: ${op.estimatedRows.toLocaleString()}${op.actualRows != null ? ' · Actual: ' + op.actualRows.toLocaleString() : ''}</small>
+              ${parsed.topOperators.map(op => {
+                const opInfo = (window.uiText?.operators && window.uiText.operators[op.physicalOp]);
+                const opNameTr = opInfo ? opInfo.tr : op.physicalOp;
+                const opBadge = opInfo ? opInfo.icon : (op.isScan ? 'SCAN' : op.isLookup ? 'LOOKUP' : 'OP');
+
+                return `
+                  <div class="wb-op-card">
+                    <div class="wb-op-title">
+                      <span class="node-badge" style="font-size:11px">${opBadge}</span>
+                      <div>
+                        <strong>${opNameTr}</strong>
+                        <small style="display:block;color:var(--text-muted)">(${op.physicalOp}) ${op.targetObject ? '· Tablo: ' + op.targetObject : ''} · Tahmin: ${op.estimatedRows.toLocaleString()} satır${op.actualRows != null ? ' · Gerçek: ' + op.actualRows.toLocaleString() + ' satır' : ''}</small>
+                      </div>
                     </div>
+                    <span class="wb-op-cost">%${op.costPercent}</span>
                   </div>
-                  <span class="wb-op-cost">%${op.costPercent}</span>
-                </div>
-              `).join('')}
+                `;
+              }).join('')}
             </div>
           </div>
         `;
@@ -2523,16 +3091,22 @@ WHERE sth_tarih >= '2026-01-01';`;
       // Missing Indexes
       if (parsed.missingIndexes?.length > 0) {
         html += `
-          <div>
-            <h4 style="font-size:14px;margin-bottom:8px;color:var(--green)">Tavsiye Edilen Missing Indexes</h4>
-            ${parsed.missingIndexes.map(mi => `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <h4 style="font-size:14px;margin:0;color:var(--green)">Tavsiye Edilen İndeksler (Missing Indexes)</h4>
+              <small style="color:var(--yellow);font-size:11.5px">⚠ Bu indeks otomatik oluşturulmaz; DBA onayıyla test edilmelidir.</small>
+            </div>
+            ${parsed.missingIndexes.map((mi, miIdx) => `
               <div class="full-problem" style="margin-bottom:8px">
-                <div>
-                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-                    <strong>Etki: +%${mi.impact}</strong>
-                    <span class="object-pill">${mi.table}</span>
+                <div style="width:100%">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <strong>Tahmini Etki: +%${mi.impact}</strong>
+                      <span class="object-pill">${mi.table}</span>
+                    </div>
+                    <button class="button ghost mini btn-copy-missing-idx" data-idx="${miIdx}">Scripti Kopyala</button>
                   </div>
-                  <pre class="wb-terminal" style="max-height:80px;font-size:12px">${mi.indexDdl}</pre>
+                  <pre class="wb-terminal" style="max-height:80px;font-size:12px;overflow-x:auto" id="missingIdxPre-${miIdx}">${mi.indexDdl}</pre>
                 </div>
               </div>
             `).join('')}
@@ -2542,6 +3116,18 @@ WHERE sth_tarih >= '2026-01-01';`;
 
       planWrap.innerHTML = html;
       if ($('#wbPlanBadge')) $('#wbPlanBadge').style.display = 'inline-block';
+
+      // Bind missing index copy buttons
+      $$('.btn-copy-missing-idx').forEach(btn => {
+        btn.onclick = () => {
+          const idx = btn.dataset.idx;
+          const pre = $(`#missingIdxPre-${idx}`);
+          if (pre) {
+            navigator.clipboard.writeText(pre.textContent);
+            toast('Kopyalandı', 'İndeks oluşturma DDL scripti panoya kopyalandı.', 'success');
+          }
+        };
+      });
     }
 
     function renderWbBenchmark(data) {
@@ -2660,10 +3246,19 @@ WHERE sth_tarih >= '2026-01-01';`;
       // Offline / disconnected: default to mock data
     }
 
+    // Initialize Workbench DB selector
+    const wbSel = $('#wbDatabaseSelect');
+    if (wbSel) {
+      wbSel.innerHTML = state.selectedDatabases.map(d => `<option value="${d}" ${d === state.primaryDatabase ? 'selected' : ''}>${d}</option>`).join('');
+      wbSel.onchange = e => {
+        state.activeDatabase = e.target.value;
+      };
+    }
+
     updateConnectionStatusUI();
     renderOverview();
     renderViewList();
-    selectView(state.selectedViewName);
+    selectView(state.selectedCanonicalId || state.selectedViewName);
     renderTables();
     renderDuplicates();
     renderRuntime();

@@ -121,7 +121,7 @@ function parseShowPlanXML(xmlString) {
     if (wText.includes('SpillToTempDb')) {
       warnings.push({
         type: 'SPILL_TEMPDB',
-        title: 'TempDB Spill Tespit Edildi',
+        title: "TempDB'ye Taşma (TempDB Spill)",
         severity: 'CRITICAL',
         detail: 'Hafıza yetersizliği nedeniyle Sort veya Hash Match işlemi diske (TempDB) yazdı.'
       });

@@ -1,24 +1,14 @@
 /**
- * Runtime Evidence Service
+ * SQL Server Refactoring & Performance Studio
+ * Per-Database Runtime Evidence Service (Phase 2.5)
  *
- * Correlates SQL Server runtime metrics with view definitions.
- * Conforms to AGENTS.md rules:
- * - Evidence Grade A: Query Store verified
- * - Evidence Grade B: Plan Cache (volatile)
- * - Evidence Grade D: Static / no runtime data
- * - Honest attribution: View itself is not an executable unit;
- *   runtime metrics belong to the calling queries referencing the view.
+ * Implements:
+ * - Query Store evaluated independently per database (READ_WRITE, READ_ONLY, OFF)
+ * - Evidence tagged with databaseName and canonicalId
+ * - Honest runtime attribution with evidence grade (A for QS, B for DMV, D for static)
  */
 
-const fs = require('fs');
-const path = require('path');
 const db = require('./sqlServer');
-const capabilities = require('./capabilities');
-
-const sqlDir = path.join(__dirname, '..', '..', 'sql');
-function loadSql(file) {
-  return fs.readFileSync(path.join(sqlDir, file), 'utf8');
-}
 
 function formatDuration(microseconds) {
   if (!microseconds || microseconds <= 0) return '0ms';
@@ -36,150 +26,162 @@ function formatReads(reads) {
   return String(Math.round(reads));
 }
 
-async function collectRuntimeEvidence(views = []) {
-  const viewNames = new Set(views.map(v => v.view_name.toUpperCase()));
-  const cap = await capabilities.detect().catch(() => null);
-
-  const evidenceMap = new Map(); // viewName -> runtime summary
+async function collectRuntimeEvidence(views = [], selectedDatabases = []) {
+  const viewEvidence = new Map(); // canonicalId.toLowerCase() -> runtime summary
   const regressions = [];
-  let source = 'NONE';
-  let evidenceGrade = 'D';
-  let isVolatile = false;
+  const perDbStatus = {};
 
-  // Try Query Store first if supported and active
-  if (cap?.queryStore?.active) {
+  for (const dbName of selectedDatabases) {
+    let pool;
     try {
-      source = 'QUERY_STORE';
-      evidenceGrade = 'A';
-      const qsSql = loadSql('04-query-store.sql');
-      const result = await db.query(qsSql);
-
-      for (const row of result.recordset || []) {
-        const text = (row.query_sql_text || '').toUpperCase();
-        for (const viewName of viewNames) {
-          if (text.includes(viewName)) {
-            if (!evidenceMap.has(viewName)) {
-              evidenceMap.set(viewName, {
-                executions: 0,
-                totalReads: 0,
-                maxDurationUs: 0,
-                avgDurationUs: 0,
-                sampleCount: 0,
-                plans: new Set(),
-                evidenceGrade: 'A',
-                attributionMethod: 'Query Store calling-query correlation',
-                warning: null
-              });
-            }
-            const ev = evidenceMap.get(viewName);
-            ev.sampleCount++;
-            ev.executions += Number(row.count_executions || 1);
-            ev.totalReads += Number(row.avg_logical_io_reads || 0) * Number(row.count_executions || 1);
-            ev.maxDurationUs = Math.max(ev.maxDurationUs, Number(row.avg_duration || 0));
-            ev.avgDurationUs += Number(row.avg_duration || 0);
-            ev.plans.add(row.plan_id);
-          }
-        }
-      }
-
-      // Check for regressions (e.g. multiple plans or high duration)
-      for (const [vName, ev] of evidenceMap.entries()) {
-        const avgUs = ev.sampleCount > 0 ? ev.avgDurationUs / ev.sampleCount : 0;
-        const avgReads = ev.executions > 0 ? ev.totalReads / ev.executions : 0;
-        const hasMultiplePlans = ev.plans.size > 1;
-        const isRegression = hasMultiplePlans || avgUs > 5000000; // > 5 seconds
-
-        ev.avgDurationMs = Math.round(avgUs / 1000);
-        ev.avgLogicalReads = Math.round(avgReads);
-        ev.isRegression = isRegression;
-        ev.formattedReads = formatReads(ev.totalReads);
-        ev.formattedDuration = formatDuration(avgUs);
-
-        if (isRegression) {
-          regressions.push({
-            name: vName,
-            before: formatDuration(Math.max(500000, avgUs * 0.1)),
-            now: formatDuration(avgUs),
-            delta: `+${Math.round(Math.min(30000, ((avgUs - (avgUs * 0.1)) / (avgUs * 0.1)) * 100))}%`,
-            reads: formatReads(ev.totalReads),
-            evidence: 'A',
-            note: hasMultiplePlans ? 'Plan regression detected (multiple plan IDs)' : 'High execution duration'
-          });
-        }
-      }
+      pool = db.getPool(dbName);
     } catch (_) {
-      // Failed to query Query Store, fall through to plan cache
-      source = 'NONE';
+      perDbStatus[dbName] = { queryStoreState: 'OFF', source: 'NONE', evidenceGrade: 'D' };
+      continue;
     }
-  }
 
-  // Fallback to Plan Cache if Query Store gave nothing
-  if (evidenceMap.size === 0 && cap?.permissions?.canViewDatabaseState) {
+    // 1. Check Query Store on this specific database
+    let qsState = 'OFF';
     try {
-      source = 'PLAN_CACHE';
-      evidenceGrade = 'B';
-      isVolatile = true;
-      const pcSql = loadSql('05-plan-cache.sql');
-      const result = await db.query(pcSql);
+      const qsRes = await pool.request().query(`
+        SELECT actual_state_desc, desired_state_desc 
+        FROM sys.database_query_store_options;
+      `);
+      qsState = (qsRes.recordset[0]?.actual_state_desc || 'OFF').toUpperCase();
+    } catch (_) {
+      qsState = 'OFF';
+    }
 
-      for (const row of result.recordset || []) {
-        const text = (row.statement_text || '').toUpperCase();
-        for (const viewName of viewNames) {
-          if (text.includes(viewName)) {
-            if (!evidenceMap.has(viewName)) {
-              evidenceMap.set(viewName, {
-                executions: 0,
-                totalReads: 0,
-                totalWorkerTime: 0,
-                totalElapsedTimeUs: 0,
-                sampleCount: 0,
-                evidenceGrade: 'B',
-                attributionMethod: 'Plan Cache DMV correlation',
-                warning: 'Plan Cache verisi volatildir. SQL Server yeniden başlatıldığında veya bellek baskısında sıfırlanır.'
-              });
-            }
-            const ev = evidenceMap.get(viewName);
-            ev.sampleCount++;
-            ev.executions += Number(row.execution_count || 1);
-            ev.totalReads += Number(row.total_logical_reads || 0);
-            ev.totalElapsedTimeUs += Number(row.total_elapsed_time || 0);
+    const qsActive = qsState === 'READ_WRITE' || qsState === 'READ_ONLY';
+    perDbStatus[dbName] = {
+      queryStoreState: qsState,
+      source: qsActive ? 'QUERY_STORE' : 'PLAN_CACHE',
+      evidenceGrade: qsActive ? 'A' : 'B'
+    };
+
+    const dbViews = views.filter(v => (v.database || v.database_name) === dbName);
+    if (dbViews.length === 0) continue;
+
+    if (qsActive) {
+      // Query Store path on this DB
+      try {
+        const qsQuery = `
+          SELECT TOP 200
+            q.query_id,
+            qt.query_sql_text,
+            p.plan_id,
+            rs.count_executions,
+            rs.avg_duration,
+            rs.avg_logical_io_reads,
+            rs.avg_cpu_time,
+            rs.last_execution_time
+          FROM sys.query_store_query AS q
+          JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
+          JOIN sys.query_store_plan AS p ON p.query_id = q.query_id
+          JOIN sys.query_store_runtime_stats AS rs ON rs.plan_id = p.plan_id
+          WHERE rs.last_execution_time >= DATEADD(day, -7, GETUTCDATE())
+          ORDER BY rs.avg_logical_io_reads DESC;
+        `;
+        const qsRes = await pool.request().query(qsQuery);
+        const rows = qsRes.recordset || [];
+
+        for (const v of dbViews) {
+          const vName = v.name || v.view_name;
+          const matching = rows.filter(r => r.query_sql_text?.includes(vName));
+          if (matching.length > 0) {
+            const totalReads = matching.reduce((sum, r) => sum + (Number(r.avg_logical_io_reads || 0) * Number(r.count_executions || 1)), 0);
+            const avgDurUs = matching.reduce((sum, r) => sum + Number(r.avg_duration || 0), 0) / matching.length;
+            const avgCpuUs = matching.reduce((sum, r) => sum + Number(r.avg_cpu_time || 0), 0) / matching.length;
+            const cId = v.canonicalId || `${dbName}.${v.schema_name || 'dbo'}.${vName}`;
+
+            const summary = {
+              databaseName: dbName,
+              canonicalId: cId,
+              viewName: vName,
+              totalReads,
+              formattedReads: formatReads(totalReads),
+              avgDurationUs: avgDurUs,
+              formattedDuration: formatDuration(avgDurUs),
+              avgCpuUs,
+              executionCount: matching.reduce((s, r) => s + Number(r.count_executions || 0), 0),
+              planCount: matching.length,
+              evidenceGrade: 'A',
+              attributionMethod: 'Query Store query text correlation',
+              isRegressed: false,
+              callingQueries: matching.slice(0, 3).map(m => ({
+                queryId: m.query_id,
+                sql: m.query_sql_text.slice(0, 150),
+                executions: m.count_executions,
+                avgReads: formatReads(m.avg_logical_io_reads)
+              }))
+            };
+
+            viewEvidence.set(cId.toLowerCase(), summary);
+            viewEvidence.set(vName.toUpperCase(), summary);
           }
         }
+      } catch (_) {
+        // Query store query error fallback
       }
+    } else {
+      // Plan Cache (DMV) fallback on this DB
+      try {
+        const dmvSql = `
+          SELECT TOP 100
+            st.text,
+            qs.execution_count,
+            qs.total_logical_reads,
+            qs.total_elapsed_time,
+            qs.total_worker_time
+          FROM sys.dm_exec_query_stats qs
+          CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+          WHERE st.text NOT LIKE '%sys.dm_%'
+          ORDER BY qs.total_logical_reads DESC;
+        `;
+        const dmvRes = await pool.request().query(dmvSql);
+        const rows = dmvRes.recordset || [];
 
-      for (const [vName, ev] of evidenceMap.entries()) {
-        const avgUs = ev.executions > 0 ? ev.totalElapsedTimeUs / ev.executions : 0;
-        const avgReads = ev.executions > 0 ? ev.totalReads / ev.executions : 0;
-        ev.avgDurationMs = Math.round(avgUs / 1000);
-        ev.avgLogicalReads = Math.round(avgReads);
-        ev.isRegression = avgUs > 5000000;
-        ev.formattedReads = formatReads(ev.totalReads);
-        ev.formattedDuration = formatDuration(avgUs);
+        for (const v of dbViews) {
+          const vName = v.name || v.view_name;
+          const matching = rows.filter(r => r.text?.includes(vName));
+          if (matching.length > 0) {
+            const totalReads = matching.reduce((sum, r) => sum + Number(r.total_logical_reads || 0), 0);
+            const totalDurUs = matching.reduce((sum, r) => sum + Number(r.total_elapsed_time || 0), 0);
+            const cId = v.canonicalId || `${dbName}.${v.schema_name || 'dbo'}.${vName}`;
 
-        if (ev.isRegression) {
-          regressions.push({
-            name: vName,
-            before: formatDuration(avgUs * 0.2),
-            now: formatDuration(avgUs),
-            delta: '+400%',
-            reads: formatReads(ev.totalReads),
-            evidence: 'B',
-            note: 'Plan Cache snapshot anomali tespiti'
-          });
+            const summary = {
+              databaseName: dbName,
+              canonicalId: cId,
+              viewName: vName,
+              totalReads,
+              formattedReads: formatReads(totalReads),
+              avgDurationUs: matching.length > 0 ? totalDurUs / matching.length : 0,
+              formattedDuration: formatDuration(matching.length > 0 ? totalDurUs / matching.length : 0),
+              evidenceGrade: 'B',
+              attributionMethod: 'Plan Cache (DMV) volatile text correlation',
+              isRegressed: false,
+              callingQueries: matching.slice(0, 3).map(m => ({
+                sql: m.text.slice(0, 150),
+                executions: m.execution_count,
+                avgReads: formatReads(m.total_logical_reads / (m.execution_count || 1))
+              }))
+            };
+
+            viewEvidence.set(cId.toLowerCase(), summary);
+            viewEvidence.set(vName.toUpperCase(), summary);
+          }
         }
-      }
-    } catch (_) {
-      source = 'NONE';
+      } catch (_) {}
     }
   }
 
   return {
-    source,
-    evidenceGrade,
-    isVolatile,
-    viewEvidence: evidenceMap,
-    regressions: regressions.slice(0, 10)
+    perDbStatus,
+    viewEvidence,
+    regressions
   };
 }
 
-module.exports = { collectRuntimeEvidence, formatDuration, formatReads };
+module.exports = {
+  collectRuntimeEvidence
+};

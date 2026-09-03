@@ -20,7 +20,7 @@ const { validateReadOnly } = require('./sqlValidator');
 /**
  * Validates semantic equivalence between an original query and a candidate query.
  */
-async function validateEquivalence({ originalSql, candidateSql, sampleLimit = 1000 }) {
+async function validateEquivalence({ originalSql, candidateSql, database = null, sampleLimit = 1000 }) {
   // 1. Validate both queries are read-only
   const valOrig = validateReadOnly(originalSql);
   if (!valOrig.valid) throw new Error(`Orijinal sorgu kural dışı: ${valOrig.reason}`);
@@ -32,8 +32,8 @@ async function validateEquivalence({ originalSql, candidateSql, sampleLimit = 10
     throw new Error('Aktif SQL Server bağlantısı yok. Lütfen önce bağlanın.');
   }
 
-  const pool = db.getPool();
-  if (!pool) throw new Error('Veritabanı bağlantı havuzu hazır değil.');
+  const pool = db.getPool(database);
+  if (!pool) throw new Error(`Veritabanı bağlantı havuzu hazır değil (${database || 'varsayılan'}).`);
 
   const limit = Math.min(5000, Math.max(10, Number(sampleLimit) || 1000));
 
