@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>SQL Server Refactoring & Performance Studio</title>
+  <link rel="stylesheet" href="/assets/css/app.css" />
+</head>
+<body>
+  <div class="noise"></div>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div>
+          <strong>SQL Studio</strong>
+          <small>Refactoring & Performance</small>
+        </div>
+      </div>
+
+      <nav class="nav" aria-label="Ana navigasyon">
+        <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span><span>Genel Bakış</span></button>
+        <button class="nav-item" data-page="views"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge">600</span></button>
+        <button class="nav-item" data-page="graph"><span class="nav-icon">⌁</span><span>Bağımlılık Haritası</span></button>
+        <button class="nav-item" data-page="runtime"><span class="nav-icon">∿</span><span>Runtime & Regresyon</span><span class="status-dot danger"></span></button>
+        <button class="nav-item" data-page="refactor"><span class="nav-icon">✦</span><span>AI Refactor</span></button>
+        <button class="nav-item" data-page="validation"><span class="nav-icon">✓</span><span>Validation Lab</span></button>
+      </nav>
+
+      <div class="sidebar-section">
+        <span class="section-label">ARAÇLAR</span>
+        <button class="nav-item" data-page="tables"><span class="nav-icon">▦</span><span>Table Pressure</span></button>
+        <button class="nav-item" data-page="duplicates"><span class="nav-icon">≋</span><span>Duplicate Logic</span></button>
+        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>Ayarlar</span></button>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="connection-mini">
+          <span class="connection-light" id="sidebarConnectionLight"></span>
+          <div><strong id="sidebarDbName">Demo Modu</strong><small id="sidebarServerInfo">SQL Server · Mock Dataset</small></div>
+          <button class="icon-button" id="openConnection" title="Bağlantı ayarları">•••</button>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow" id="pageEyebrow">SQL HEALTH COMMAND CENTER</div>
+          <h1 id="pageTitle">Genel Bakış</h1>
+        </div>
+        <div class="topbar-actions">
+          <div class="scan-meta"><span id="scanMetaLabel">Son tarama</span><strong id="scanMetaTime">Demo</strong><small id="scanMetaAgo">Canlı veri için tara</small></div>
+          <button class="button ghost" id="scanButton"><span>↻</span> Yeniden Tara</button>
+          <button class="button primary" id="connectButton"><span class="button-spark">●</span> <span id="connectButtonText">Bağlantı</span></button>
+        </div>
+      </header>
+
+      <section class="page active" id="page-overview">
+        <div class="hero-grid">
+          <div class="hero-copy">
+            <div class="hero-kicker"><span class="pulse" id="heroPulse"></span> <span id="heroKickerText">Veritabanı canlı · Read-only denetim modu</span></div>
+            <h2 id="heroHeadline"><span id="heroViewCount">600</span> view içinden <em>gerçek darboğazı</em> bul.</h2>
+            <p>Statik SQL analizi, dependency graph, Query Store ve plan regresyonlarını tek ekranda birleştir. AI sadece aday üretir; değişiklik validation geçmeden hiçbir şey deploy edilmez.</p>
+            <div class="hero-actions">
+              <button class="button primary large" data-goto="views">Kritik View'ları İncele <span>→</span></button>
+              <button class="button ghost large" data-goto="graph">Haritayı Aç</button>
+            </div>
+          </div>
+          <div class="health-orbit" aria-label="Genel sağlık puanı">
+            <svg viewBox="0 0 180 180" role="img">
+              <circle cx="90" cy="90" r="72" class="orbit-track"></circle>
+              <circle cx="90" cy="90" r="72" class="orbit-value" id="orbitTrackValue" stroke-dasharray="452" stroke-dashoffset="126"></circle>
+            </svg>
+            <div class="orbit-copy"><span>DB Health</span><strong id="overviewDbHealth">72</strong><small>/ 100</small></div>
+            <div class="orbit-chip chip-danger" id="overviewHealthChip">↓ 8 pts</div>
+          </div>
+        </div>
+
+        <div class="metric-grid">
+          <article class="metric-card danger-card">
+            <div class="metric-top"><span class="metric-icon">!</span><span class="trend danger-text" id="metricCriticalTrend">+4 bugün</span></div>
+            <strong id="metricCritical">37</strong><span>Kritik View</span><small>Health &lt; 45 veya aktif regresyon</small>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span class="metric-icon">⌁</span><span class="trend warning-text" id="metricMaxDepth">Derinlik 11</span></div>
+            <strong id="metricEdges">1,842</strong><span>Dependency Edge</span><small>View → View → Table bağlantısı</small>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span class="metric-icon">⇄</span><span class="trend danger-text" id="metricRepeatedTrend">94 pattern</span></div>
+            <strong id="metricRepeated">312</strong><span>Mükerrer Table Access</span><small>Aynı base table'a çoklu yol</small>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span class="metric-icon">∿</span><span class="trend positive-text" id="metricQsStatus">Query Store açık</span></div>
+            <strong id="metricRegressions">14</strong><span>Aktif Regresyon</span><small>Son 24 saat anomalileri</small>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span class="metric-icon">≋</span><span class="trend warning-text" id="metricDuplicateTrend">%92 max</span></div>
+            <strong id="metricDuplicates">48</strong><span>Duplicate Adayı</span><small>Normalize SQL benzerlik kümeleri</small>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <section class="panel span-8">
+            <div class="panel-header">
+              <div><span class="panel-kicker">ÖNCELİK SIRASI</span><h3>Bugün Müdahale Edilecekler</h3></div>
+              <div class="segmented" id="overviewSortSegmented"><button class="active" data-sort="risk">Risk</button><button data-sort="reads">Reads</button><button data-sort="regression">Regresyon</button></div>
+            </div>
+            <div class="risk-list" id="overviewRiskList"></div>
+          </section>
+
+          <section class="panel span-4">
+            <div class="panel-header"><div><span class="panel-kicker">BASE TABLE PRESSURE</span><h3>En Çok Baskı Alan Tablolar</h3></div><button class="link-button" data-goto="tables">Tümü →</button></div>
+            <div class="pressure-list" id="pressureList"></div>
+          </section>
+
+          <section class="panel span-7">
+            <div class="panel-header"><div><span class="panel-kicker">PERFORMANCE REGRESSION</span><h3>Son 24 Saat</h3></div><span class="live-pill" id="overviewRegressionPill"><span></span> Query Store</span></div>
+            <div class="chart-wrap">
+              <svg id="regressionChart" viewBox="0 0 760 240" preserveAspectRatio="none" aria-label="Performans regresyon grafiği">
+                <defs><linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#7c5cff" stop-opacity=".32"/><stop offset="1" stop-color="#7c5cff" stop-opacity="0"/></linearGradient></defs>
+                <g class="grid-lines"><line x1="0" y1="40" x2="760" y2="40"/><line x1="0" y1="95" x2="760" y2="95"/><line x1="0" y1="150" x2="760" y2="150"/><line x1="0" y1="205" x2="760" y2="205"/></g>
+                <path class="chart-area" d="M0,192 C80,185 110,185 150,176 S230,168 278,174 S355,172 402,164 S470,158 520,155 C560,152 580,157 610,146 C642,134 650,66 684,75 C710,83 716,44 760,31 L760,240 L0,240 Z"></path>
+                <path class="chart-line" d="M0,192 C80,185 110,185 150,176 S230,168 278,174 S355,172 402,164 S470,158 520,155 C560,152 580,157 610,146 C642,134 650,66 684,75 C710,83 716,44 760,31"></path>
+                <circle cx="684" cy="75" r="5" class="chart-point danger-point"></circle>
+              </svg>
+              <div class="chart-axis"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>Şimdi</span></div>
+              <div class="chart-callout" id="regressionCallout"><span>AA_URETIM_MALZEME_PLANLAMA</span><strong>0.94s → 284s</strong><small>+30,112%</small></div>
+            </div>
+          </section>
+
+          <section class="panel span-5">
+            <div class="panel-header"><div><span class="panel-kicker">SON BULGULAR</span><h3>Analyzer Feed</h3></div><button class="icon-button" id="refreshFeedBtn">↻</button></div>
+            <div class="feed" id="overviewFeed">
+              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Cardinality explosion</strong><p>Estimate 1 → Actual 187,431</p><small>AA_ISEMRI_MALZEME_DURUMLARI · 1 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Repeated base table access</strong><p>STOK_HAREKETLERI x4 logical path</p><small>AA_URETIM_MALZEME_PLANLAMA · 3 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>Non-SARGable predicate</strong><p>CONVERT(date, sth_tarih)</p><small>AA_STOK_HAREKET_OZET · 8 dk önce</small></div></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="page-views">
+        <div class="workspace views-workspace">
+          <section class="view-list-pane">
+            <div class="pane-head"><div><span class="panel-kicker">AA_% ENVANTER</span><h3 id="inventoryTitle">600 View</h3></div><button class="icon-button" id="refreshInventoryBtn" title="Yenile">↻</button></div>
+            <div class="search-box"><span>⌕</span><input id="viewSearch" placeholder="View ara..."/><kbd>⌘ K</kbd></div>
+            <div class="filter-row"><button class="filter-chip active" data-risk="all">Tümü <b id="countAll">600</b></button><button class="filter-chip" data-risk="critical">Kritik <b id="countCritical">37</b></button><button class="filter-chip" data-risk="high">Yüksek <b id="countHigh">84</b></button></div>
+            <div class="view-list" id="viewList"></div>
+          </section>
+          <section class="view-detail-pane">
+            <div class="detail-hero">
+              <div><span class="object-type">VIEW</span><h2 id="detailViewName">AA_URETIM_MALZEME_PLANLAMA</h2><p id="detailViewMeta">dbo · modify 03.09.2026 16:47</p></div>
+              <div class="detail-score"><div class="score-ring"><strong id="detailHealth">38</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">CRITICAL · 92</strong></div></div>
+            </div>
+            <div class="detail-tabs"><button class="active" data-detail-tab="overview">Overview</button><button data-detail-tab="sql">SQL</button><button data-detail-tab="dependencies">Dependencies</button><button data-detail-tab="plans">Execution Plans</button><button data-detail-tab="problems">Problems <span id="tabProblemCount">6</span></button></div>
+            <div class="detail-tab active" id="detail-tab-overview">
+              <div class="stat-strip">
+                <div><span>Depth</span><strong id="statDepth">6</strong><small id="statDepthWarn">⚠ &gt; 3</small></div><div><span>Base Tables</span><strong id="statTables">9</strong><small id="statTablesWarn">3 repeated</small></div><div><span>Dependents</span><strong id="statDependents">27</strong><small>Blast radius</small></div><div><span>24h Reads</span><strong id="statReads">4.1B</strong><small id="statReadsDelta">+186%</small></div><div><span>Median</span><strong id="statMedian">284s</strong><small id="statMedianDelta">was 0.94s</small></div>
+              </div>
+              <div class="detail-grid">
+                <section class="inner-panel">
+                  <div class="inner-head"><h4>Risk Breakdown</h4><span>Health penalties</span></div>
+                  <div class="risk-bars" id="riskBars"></div>
+                </section>
+                <section class="inner-panel">
+                  <div class="inner-head"><h4>Top Problems</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">6 bulgu</span> →</button></div>
+                  <div class="problem-list" id="topProblems"></div>
+                </section>
+              </div>
+              <section class="inner-panel impact-panel">
+                <div class="inner-head"><div><h4>Blast Radius</h4><span>Bu view değişirse etkilenebilecek üst nesneler</span></div><button class="button ghost small" data-goto="graph">Haritada Gör</button></div>
+                <div class="impact-chain" id="impactChain"><span>AA_GENEL_PLAN</span><i>→</i><span>AA_PLANLAMA_EKRANI</span><i>→</i><b>AA_URETIM_MALZEME_PLANLAMA</b><i>→</i><span>4 rapor</span><i>+</i><span>23 view</span></div>
+              </section>
+            </div>
+            <div class="detail-tab" id="detail-tab-sql">
+              <div class="code-toolbar"><span id="sqlToolbarName">dbo.AA_URETIM_MALZEME_PLANLAMA.sql</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="refactor">✦ AI Refactor</button></div></div>
+              <pre class="code-editor"><code id="sqlCode"></code></pre>
+            </div>
+            <div class="detail-tab" id="detail-tab-dependencies">
+              <div id="dependenciesContent">
+                <div class="empty-state"><div class="empty-icon">⌁</div><h3>Dependency Graph hazır</h3><p>Seçili view'ın upstream ve downstream ilişkilerini interaktif haritada incele.</p><button class="button primary" data-goto="graph">Haritayı Aç</button></div>
+              </div>
+            </div>
+            <div class="detail-tab" id="detail-tab-plans"><div class="plan-list" id="planList"></div></div>
+            <div class="detail-tab" id="detail-tab-problems"><div class="full-problem-list" id="fullProblemList"></div></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="page" id="page-graph">
+        <div class="graph-toolbar">
+          <div class="search-box graph-search"><span>⌕</span><input id="graphSearchInput" value="AA_URETIM_MALZEME_PLANLAMA" placeholder="View veya tablo ara..." /></div>
+          <div class="graph-legend"><span><i class="legend-dot target"></i>Hedef View</span><span><i class="legend-dot view"></i>View</span><span><i class="legend-dot table"></i>Table</span><span><i class="legend-dot function"></i>Function</span></div>
+          <div class="toolbar-group"><button class="icon-button" id="graphZoomOut" title="Uzaklaş">−</button><button class="icon-button" id="graphZoomIn" title="Yaklaş">＋</button><button class="icon-button" id="graphResetZoom" title="Sıfırla">⊙</button><button class="button ghost small" id="graphDirectionBtn">Upstream + Downstream</button></div>
+        </div>
+        <div class="graph-stage" id="graphStage">
+          <svg class="graph-lines" id="graphSvg" viewBox="0 0 1200 680" preserveAspectRatio="none">
+            <defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#4e5264"/></marker></defs>
+            <g class="edge-lines" id="graphEdgeLines">
+              <path d="M600 330 C490 300, 430 250, 332 205"/><path d="M600 330 C520 350, 440 390, 338 430"/><path d="M600 330 C725 290, 800 242, 905 188"/><path d="M600 330 C720 345, 800 390, 910 430"/><path d="M332 205 C245 205, 196 165, 120 134"/><path d="M332 205 C250 232, 200 268, 126 300"/><path d="M338 430 C250 430, 205 455, 125 490"/><path d="M905 188 C1000 188, 1055 160, 1120 130"/><path d="M910 430 C1010 430, 1055 462, 1120 505"/>
+            </g>
+          </svg>
+          <div id="graphNodesContainer">
+            <div class="graph-node target-node" style="left:50%;top:48%" data-node="AA_URETIM_MALZEME_PLANLAMA"><span class="node-badge">VIEW</span><strong>AA_URETIM_<br/>MALZEME_PLANLAMA</strong><small>Health 38 · Critical</small></div>
+            <div class="graph-node view-node" style="left:27%;top:29%"><span class="node-badge">VIEW</span><strong>AA_ISEMRI_<br/>MALZEME_DURUMLARI</strong><small>Health 44</small></div>
+            <div class="graph-node view-node" style="left:27%;top:62%"><span class="node-badge">VIEW</span><strong>AA_STOK_<br/>DURUMU</strong><small>Health 58</small></div>
+            <div class="graph-node view-node" style="left:76%;top:27%"><span class="node-badge">VIEW</span><strong>AA_SIPARIS_<br/>KALAN</strong><small>Health 71</small></div>
+            <div class="graph-node view-node" style="left:76%;top:62%"><span class="node-badge">VIEW</span><strong>AA_URETIM_<br/>EMIRLERI</strong><small>Health 67</small></div>
+            <div class="graph-node table-node hot" style="left:10%;top:17%"><span class="node-badge">TABLE</span><strong>STOK_HAREKETLERI</strong><small>4 access paths</small></div>
+            <div class="graph-node table-node" style="left:10%;top:42%"><span class="node-badge">TABLE</span><strong>STOKLAR</strong><small>183 dependents</small></div>
+            <div class="graph-node table-node" style="left:10%;top:72%"><span class="node-badge">TABLE</span><strong>ISEMIRLERI</strong><small>74 dependents</small></div>
+            <div class="graph-node table-node" style="left:93%;top:16%"><span class="node-badge">TABLE</span><strong>SIPARISLER</strong><small>96 dependents</small></div>
+            <div class="graph-node function-node" style="left:93%;top:74%"><span class="node-badge">FUNCTION</span><strong>fn_DepodakiMiktar</strong><small>Scalar call</small></div>
+          </div>
+          <aside class="graph-inspector" id="graphInspector">
+            <span class="panel-kicker">SELECTED NODE</span><h3 id="inspectorNodeName">STOK_HAREKETLERI</h3><span class="object-pill" id="inspectorNodeType">BASE TABLE</span>
+            <div class="inspector-metric"><span>Referenced by AA_%</span><strong id="inspectorMetricRefs">183</strong></div><div class="inspector-metric"><span>Dependency paths</span><strong id="inspectorMetricPaths">647</strong></div><div class="inspector-metric"><span>Critical consumers</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>
+            <div class="inspector-warning" id="inspectorWarningBox"><b>⇄ Repeated access</b><p id="inspectorWarningText">Hedef graph içinde 4 farklı logical path üzerinden erişiliyor.</p></div>
+            <button class="button primary full" id="inspectorActionBtn" data-goto="tables">Pressure Map'i Aç</button>
+          </aside>
+        </div>
+      </section>
+
+      <section class="page" id="page-runtime">
+        <div class="section-intro"><div><span class="hero-kicker"><span class="pulse"></span> Query Store + Plan Cache</span><h2>Regresyonları <em>olduğu anda</em> yakala.</h2><p>View'lar bağımsız executable object değildir. Studio, view tanımlarını calling-query metni ve execution plan ile ilişkilendirerek runtime maliyetini kanıt seviyesine göre sınıflandırır.</p></div><div class="data-quality"><span>Runtime evidence</span><strong>A</strong><small>Query Store available</small></div></div>
+        <div class="runtime-grid">
+          <section class="panel span-12"><div class="panel-header"><div><span class="panel-kicker">ACTIVE REGRESSIONS</span><h3>14 anomali</h3></div><div class="toolbar-group"><button class="button ghost small">24 saat⌄</button><button class="button ghost small">Export</button></div></div><div class="regression-table" id="regressionTable"></div></section>
+          <section class="panel span-7"><div class="panel-header"><div><span class="panel-kicker">PLAN X-RAY</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">CRITICAL</span></div><div class="plan-xray"><div class="operator good"><small>Index Seek</small><strong>ISEMIRLERI</strong><span>18K rows</span></div><i>→</i><div class="operator danger"><small>Nested Loops</small><strong>Estimate 1</strong><span>Actual 187,431</span></div><i>→</i><div class="operator warning"><small>Key Lookup</small><strong>STOK_HAREKETLERI</strong><span>4.8M executions</span></div></div><div class="xray-foot"><span>⚠ Cardinality error: <strong>187,431×</strong></span><span>Logical reads: <strong>3,482,771</strong></span><span>Memory grant: <strong>24 MB</strong></span></div></section>
+          <section class="panel span-5"><div class="panel-header"><div><span class="panel-kicker">ROOT CAUSE CANDIDATES</span><h3>Neden Değişti?</h3></div></div><div class="cause-list"><div><span class="cause-score">92%</span><div><strong>Statistics stale</strong><p>STOK_HAREKETLERI · modification 31.4%</p></div></div><div><span class="cause-score">87%</span><div><strong>Plan changed</strong><p>Hash Match → Nested Loops</p></div></div><div><span class="cause-score">74%</span><div><strong>Parameter sensitivity</strong><p>Yeni plan belirli cardinality aralığında kötü.</p></div></div></div></section>
+        </div>
+      </section>
+
+      <section class="page" id="page-refactor">
+        <div class="refactor-layout">
+          <section class="refactor-source">
+            <div class="pane-head"><div><span class="panel-kicker">TARGET</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">RISK 92</span></div>
+            <div class="context-pack">
+              <div><span>Source chain</span><strong>6 view</strong></div><div><span>Base tables</span><strong>9</strong></div><div><span>Indexes</span><strong>24</strong></div><div><span>Plan findings</span><strong>7</strong></div>
+            </div>
+            <div class="code-label"><span>Current SQL · flattened context preview</span><span>842 lines</span></div>
+            <pre class="code-editor tall"><code>CREATE VIEW dbo.AA_URETIM_MALZEME_PLANLAMA AS
+SELECT
+    a.[Ana İş Emri],
+    a.[İş Kodu],
+    a.[Sipariş No],
+    a.[Ürün Kodu],
+    ISNULL(i.[Kalan Miktar], 0) AS [Kalan Miktar],
+    u.upl_kodu AS [Tüketim Kod],
+    s.sto_isim AS [Tüketim Ad]
+FROM dbo.AA_URETIM_AGACI a
+LEFT JOIN dbo.AA_ISEMRI_MALZEME_DURUMLARI i ON ...
+LEFT JOIN dbo.URETIM_MALZEME_PLANLAMA u ON ...
+LEFT JOIN dbo.STOKLAR s ON ...
+-- 6-level dependency context loaded...</code></pre>
+          </section>
+          <section class="refactor-control">
+            <div class="ai-head"><div class="ai-orb">✦</div><div><span class="panel-kicker">AI REFACTOR ENGINE</span><h3>Conservative Optimize</h3></div><span class="provider-pill">DeepSeek</span></div>
+            <div class="guardrail"><span>✓</span><div><strong>Semantic Preservation Guardrail</strong><p>Column order, types, NULL behavior, multiplicity ve filtre semantiği korunmadan aday “safe” sayılmaz.</p></div></div>
+            <div class="refactor-options"><label><input type="checkbox" checked> Dependency flattening</label><label><input type="checkbox" checked> Repeated scan reduction</label><label><input type="checkbox" checked> SARGability rewrite</label><label><input type="checkbox" checked> Index suggestions</label><label><input type="checkbox" checked> Validation query pack</label><label><input type="checkbox"> Aggressive rewrite</label></div>
+            <div class="ai-warning"><strong>AI deploy etmez.</strong><p>Üretilen SQL yalnızca candidate olarak kaydedilir. Validation tamamlanmadan CREATE OR ALTER VIEW sunulmaz.</p></div>
+            <button class="button ai-button full" id="runRefactor"><span>✦</span> Refactor Candidate Üret</button>
+            <div class="ai-progress hidden" id="aiProgress"><div class="progress-head"><span>Context hazırlanıyor...</span><b>18%</b></div><div class="progress-track"><i></i></div><small>Dependency definitions + index metadata + plan findings</small></div>
+          </section>
+        </div>
+        <section class="candidate-panel hidden" id="candidatePanel">
+          <div class="panel-header"><div><span class="panel-kicker">CANDIDATE V2</span><h3>Refactor sonucu</h3></div><div class="candidate-stats"><span>Expected reads <b>−78%</b></span><span>Complexity <b>6 → 3</b></span><span class="needs-validation">● NEEDS VALIDATION</span></div></div>
+          <div class="diff-grid"><pre class="code-editor"><code>-- BEFORE
+LEFT JOIN AA_ISEMRI_MALZEME_DURUMLARI i ...
+LEFT JOIN AA_STOK_DURUMU sd ...
+LEFT JOIN AA_HAREKET_OZET ho ...
+
+-- STOK_HAREKETLERI reached by 4 branches</code></pre><pre class="code-editor candidate"><code>-- CANDIDATE
+WITH StockAgg AS (
+  SELECT sth_stok_kod,
+         SUM(CASE WHEN ... THEN sth_miktar END) AS ...
+  FROM dbo.STOK_HAREKETLERI
+  WHERE sth_tarih >= @Boundary
+  GROUP BY sth_stok_kod
+)
+SELECT ...
+-- shared aggregation replaces repeated paths</code></pre></div>
+          <div class="candidate-actions"><button class="button ghost">Diff'i Aç</button><button class="button ghost">İndeks Önerileri (3)</button><button class="button primary" data-goto="validation">Validation Lab'e Gönder →</button></div>
+        </section>
+      </section>
+
+      <section class="page" id="page-validation">
+        <div class="validation-hero"><div><span class="hero-kicker">NO TRUST WITHOUT PROOF</span><h2>Optimize edilmiş olması yetmez. <em>Aynı sonucu verdiğini kanıtla.</em></h2><p>Validation Lab eski ve yeni sorguyu kontrollü şekilde karşılaştırır. Ağır benchmark yalnızca açık kullanıcı eylemiyle çalışır.</p></div><div class="validation-badge"><span>Candidate</span><strong>V2</strong><small>not deployed</small></div></div>
+        <div class="validation-grid">
+          <section class="panel span-8"><div class="panel-header"><div><span class="panel-kicker">VALIDATION PIPELINE</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill warning">PENDING</span></div><div class="validation-steps"><div class="validation-step done"><span>1</span><div><strong>Schema compatibility</strong><p>Column order, names, SQL types</p></div><b>PASS</b></div><div class="validation-step done"><span>2</span><div><strong>Static semantic checks</strong><p>JOIN/filter/grouping invariants</p></div><b>PASS</b></div><div class="validation-step"><span>3</span><div><strong>Result equivalence</strong><p>EXCEPT both directions + row count</p></div><b>READY</b></div><div class="validation-step"><span>4</span><div><strong>Performance benchmark</strong><p>STATISTICS IO/TIME · controlled run</p></div><b>LOCKED</b></div></div><div class="validation-actions"><label class="ack"><input type="checkbox" id="validationAck"> Kontrollü karşılaştırma sorgusunun çalıştırılmasını onaylıyorum.</label><button class="button primary" id="validateButton" disabled>Validation Çalıştır</button></div></section>
+          <section class="panel span-4"><div class="panel-header"><div><span class="panel-kicker">EXPECTED RESULT</span><h3>Benchmark Target</h3></div></div><div class="benchmark-compare"><div><span>Logical Reads</span><strong>3.48M</strong><i>→</i><b>~760K</b></div><div><span>Median Duration</span><strong>284s</strong><i>→</i><b>~8–25s</b></div><div><span>Dependency Depth</span><strong>6</strong><i>→</i><b>3</b></div><div><span>Repeated scans</span><strong>4</strong><i>→</i><b>1–2</b></div></div><div class="safe-note"><strong>Bu değerler tahmindir.</strong><p>Gerçek kazanç yalnız benchmark sonrasında gösterilir.</p></div></section>
+        </div>
+      </section>
+
+      <section class="page" id="page-tables">
+        <div class="section-intro"><div><span class="hero-kicker">BASE TABLE PRESSURE MAP</span><h2>Sorun view sayısı değil; <em>aynı tabloda biriken sorgu baskısı</em> olabilir.</h2><p>Hangi fiziksel tabloların kaç dependency yolu, kritik tüketici ve repeated access pattern tarafından kullanıldığını göster.</p></div></div>
+        <div class="table-pressure-grid" id="tablePressureGrid"></div>
+      </section>
+
+      <section class="page" id="page-duplicates">
+        <div class="section-intro"><div><span class="hero-kicker">SQL FINGERPRINTING</span><h2>600 view içinde <em>aynı işi tekrar yazanları</em> bul.</h2><p>Whitespace, alias ve literal farklılıklarını normalize ederek benzer SQL gövdelerini kümeler. Birleştirme kararı otomatik verilmez.</p></div></div>
+        <div class="duplicate-grid" id="duplicateGrid"></div>
+      </section>
+
+      <section class="page" id="page-settings">
+        <div class="settings-layout">
+          <section class="settings-nav"><button class="active">Database Connection</button><button>AI Provider</button><button>Risk Scoring</button><button>Runtime Evidence</button><button>Safety & Permissions</button><button>Appearance</button></section>
+          <section class="settings-content">
+            <span class="panel-kicker">DATABASE CONNECTION</span>
+            <h2>Bağlantı & Yetki</h2>
+            <p class="settings-lead">Varsayılan çalışma şekli read-only'dir. SQL parolası ve AI key'i tarayıcı localStorage'a yazılmaz.</p>
+            <div class="setting-card"><div><strong id="settingsActiveDb">Demo Modu</strong><p id="settingsActiveHost">Mock dataset aktif · Bağlantı yok</p></div><span class="connected-pill" id="settingsConnStatusPill" style="color:var(--yellow);border-color:rgba(247,200,106,.2)">○ DEMO MODE</span></div>
+            <div class="setting-card"><div><strong>View prefix</strong><p>Analize dahil edilecek nesne öneki (varsayılan: AA_)</p></div><input class="setting-input" id="settingViewPrefix" value="AA_"/></div>
+            <div class="setting-card"><div><strong>Query Store</strong><p id="settingsQsDesc">Runtime regression için tercih edilen kanıt kaynağı</p></div><span class="connected-pill" id="settingsQsPill" style="color:var(--subtle);border-color:#2a3040">● OFF / DEMO</span></div>
+            <div class="setting-card" id="settingsCapRow" style="display:none"><div><strong id="settingsVersionText">SQL Server</strong><p id="settingsCompatText">Compat Level</p></div><span class="connected-pill" id="settingsEditionPill">EDITION</span></div>
+            <div class="permission-box"><strong>SQL İzinleri & Güvenlik</strong><code id="settingsPermText">VIEW DEFINITION · VIEW DATABASE STATE · SELECT Query Store metadata</code><p>Uygulama ilk sürümde CREATE / ALTER / DROP yetkisi istemez. Tüm operasyonlar salt-okunur (read-only) meta-sorgulardır.</p></div>
+          </section>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="connectionModal">
+    <div class="modal">
+      <button class="modal-close" id="closeConnection">×</button>
+      <div class="modal-brand"><div class="brand-mark"><span></span><span></span><span></span></div><div><span class="panel-kicker">SQL SERVER</span><h2>Veritabanına Bağlan</h2></div></div>
+      <p>Bilgiler yalnız çalışan Node.js sürecinde tutulur. Şifreler hiçbir zaman tarayıcı storage'ına kaydedilmez veya loglanmaz.</p>
+      <form id="connectionForm" class="connection-form">
+        <label class="wide"><span>SQL Server / IP</span><input name="server" id="inputServer" value="127.0.0.1" required /></label>
+        <label><span>Port</span><input name="port" id="inputPort" value="1433" /></label>
+        <label><span>Veritabanı</span><input name="database" id="inputDatabase" value="MikroDB_V16_TEST" required /></label>
+        <label><span>Kullanıcı Adı</span><input name="user" id="inputUser" placeholder="sa veya audit_user" required /></label>
+        <label><span>Şifre</span><input name="password" id="inputPassword" type="password" placeholder="••••••••••" required /></label>
+        <label class="wide"><span>AI Provider API Key <small>opsiyonel</small></span><input name="apiKey" id="inputApiKey" type="password" placeholder="DeepSeek / OpenAI-compatible key" /></label>
+        <div class="form-checks wide"><label><input type="checkbox" name="trustServerCertificate" id="checkTrustCert" checked> Trust server certificate</label><label><input type="checkbox" name="encrypt" id="checkEncrypt"> Encrypt connection</label></div>
+        <div class="modal-actions wide">
+          <span class="connection-test" id="connectionTestStatus">Henüz test edilmedi</span>
+          <div style="display:flex;gap:8px">
+            <button type="button" class="button ghost" id="disconnectBtn" style="display:none">Bağlantıyı Kes</button>
+            <button type="submit" class="button primary" id="connectSubmitBtn">Bağlan & Test Et</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+  <script src="/assets/js/mock-data.js"></script>
+  <script src="/assets/js/app.js"></script>
+</body>
+</html>
