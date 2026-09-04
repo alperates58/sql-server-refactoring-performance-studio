@@ -2003,6 +2003,88 @@
 
   // --- 10. Server-Centric 2-Step Connection Wizard (Phase 2.5) ---
   let discoveredDatabases = [];
+  let selectedScopeDbs = new Set();
+
+  function renderDbScopeCheckboxes(filterText = '') {
+    const scopeList = $('#dbScopeCheckboxList');
+    if (!scopeList) return;
+
+    const query = filterText.toLowerCase().trim();
+    const filtered = discoveredDatabases.filter(db => !query || db.name.toLowerCase().includes(query));
+
+    if (filtered.length === 0) {
+      scopeList.innerHTML = `<div style="text-align:center;padding:12px;color:var(--text-muted);font-size:12px">Eşleşen veritabanı bulunamadı.</div>`;
+      return;
+    }
+
+    scopeList.innerHTML = filtered.map(db => {
+      const isChecked = selectedScopeDbs.has(db.name);
+      return `
+        <div class="db-scope-item">
+          <label>
+            <input type="checkbox" value="${db.name}" ${isChecked ? 'checked' : ''} />
+            <span><b>${db.name}</b> <small style="color:var(--text-muted);font-size:11px">(${db.compatibility_level || 'Online'})</small></span>
+          </label>
+          <span class="tab-badge" style="font-size:10px">ID: ${db.database_id}</span>
+        </div>
+      `;
+    }).join('');
+
+    scopeList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) {
+          selectedScopeDbs.add(cb.value);
+        } else {
+          selectedScopeDbs.delete(cb.value);
+        }
+        syncPrimaryDbOptions();
+      });
+    });
+  }
+
+  function syncPrimaryDbOptions() {
+    const primarySel = $('#primaryDbSelect');
+    if (!primarySel) return;
+
+    const currentPrimary = primarySel.value;
+    const checkedArray = Array.from(selectedScopeDbs);
+    const dbsToShow = checkedArray.length > 0
+      ? discoveredDatabases.filter(d => selectedScopeDbs.has(d.name))
+      : discoveredDatabases;
+
+    primarySel.innerHTML = dbsToShow.map(db => `
+      <option value="${db.name}" ${db.name === currentPrimary ? 'selected' : ''}>${db.name}</option>
+    `).join('');
+
+    if (checkedArray.length > 0 && !selectedScopeDbs.has(primarySel.value)) {
+      primarySel.value = checkedArray[0];
+    }
+  }
+
+  // Scope Select All / Deselect All / Filter Input bindings
+  $('#btnScopeSelectAll')?.addEventListener('click', () => {
+    discoveredDatabases.forEach(db => selectedScopeDbs.add(db.name));
+    renderDbScopeCheckboxes($('#dbScopeFilterInput')?.value || '');
+    syncPrimaryDbOptions();
+  });
+
+  $('#btnScopeDeselectAll')?.addEventListener('click', () => {
+    selectedScopeDbs.clear();
+    renderDbScopeCheckboxes($('#dbScopeFilterInput')?.value || '');
+    syncPrimaryDbOptions();
+  });
+
+  $('#dbScopeFilterInput')?.addEventListener('input', e => {
+    renderDbScopeCheckboxes(e.target.value);
+  });
+
+  $('#primaryDbSelect')?.addEventListener('change', e => {
+    const chosen = e.target.value;
+    if (chosen && !selectedScopeDbs.has(chosen)) {
+      selectedScopeDbs.add(chosen);
+      renderDbScopeCheckboxes($('#dbScopeFilterInput')?.value || '');
+    }
+  });
 
   $('#connectionForm')?.addEventListener('submit', async e => {
     e.preventDefault();
@@ -2039,27 +2121,28 @@
         throw new Error('Erişilebilir online user database bulunamadı.');
       }
 
-      // Populate Step 2 Checkboxes
-      const scopeList = $('#dbScopeCheckboxList');
-      if (scopeList) {
-        scopeList.innerHTML = discoveredDatabases.map(db => `
-          <div class="db-scope-item">
-            <label>
-              <input type="checkbox" value="${db.name}" checked />
-              <span><b>${db.name}</b> <small style="color:var(--text-muted);font-size:11px">(${db.compatibility_level || 'Online'})</small></span>
-            </label>
-            <span class="tab-badge" style="font-size:10px">ID: ${db.database_id}</span>
-          </div>
-        `).join('');
+      // Initialize selectedScopeDbs: DO NOT check all!
+      // Only select previously selected DBs, or only the single primary/first DB
+      selectedScopeDbs.clear();
+      if (state.selectedDatabases && state.selectedDatabases.length > 0) {
+        state.selectedDatabases.forEach(d => {
+          if (discoveredDatabases.some(db => db.name === d)) selectedScopeDbs.add(d);
+        });
+      }
+      if (selectedScopeDbs.size === 0 && discoveredDatabases.length > 0) {
+        const defaultDb = state.primaryDatabase && discoveredDatabases.some(db => db.name === state.primaryDatabase)
+          ? state.primaryDatabase
+          : discoveredDatabases[0].name;
+        selectedScopeDbs.add(defaultDb);
       }
 
-      // Populate Primary DB Select
-      const primarySel = $('#primaryDbSelect');
-      if (primarySel) {
-        primarySel.innerHTML = discoveredDatabases.map(db => `
-          <option value="${db.name}">${db.name}</option>
-        `).join('');
-      }
+      // Reset filter input if present
+      const filterInput = $('#dbScopeFilterInput');
+      if (filterInput) filterInput.value = '';
+
+      // Populate Step 2 Checkboxes & Primary DB
+      renderDbScopeCheckboxes();
+      syncPrimaryDbOptions();
 
       // Transition to Step 2
       $('#connStep1')?.classList.add('hidden');
@@ -2093,7 +2176,7 @@
 
   // Step 2: Apply Scope and Scan
   $('#btnApplyScopeAndScan')?.addEventListener('click', async () => {
-    const checked = $$('#dbScopeCheckboxList input[type="checkbox"]:checked').map(cb => cb.value);
+    const checked = Array.from(selectedScopeDbs);
     const primary = $('#primaryDbSelect')?.value || checked[0];
 
     if (checked.length === 0) {
