@@ -99,11 +99,22 @@ async function detect() {
     });
   }
 
+  const anyQsActive = databaseMatrix.some(d => d.queryStoreState === 'READ_WRITE' || d.queryStoreState === 'READ_ONLY');
+  const primaryQs = databaseMatrix.find(d => d.database === status.primaryDatabase)?.queryStoreState || (anyQsActive ? 'ACTIVE' : 'OFF');
+
   return {
     ...instanceInfo,
     primaryDatabase: status.primaryDatabase,
     selectedDatabases,
-    databaseMatrix
+    databaseMatrix,
+    queryStore: {
+      active: anyQsActive,
+      state: primaryQs
+    },
+    permissions: {
+      canViewDefinition: databaseMatrix.length > 0 && databaseMatrix.every(d => d.canViewDefinition),
+      canViewDatabaseState: databaseMatrix.length > 0 && databaseMatrix.every(d => d.canViewDatabaseState)
+    }
   };
 }
 

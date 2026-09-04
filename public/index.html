@@ -297,6 +297,9 @@
             <span><i class="legend-dot function"></i>Function</span>
           </div>
           <div class="toolbar-group">
+            <select id="graphDbSelect" class="setting-input select-styled" style="min-width:140px;max-width:240px;height:30px;font-size:12px" title="Harita Veritabanı">
+              <option value="all">Tüm Veritabanları</option>
+            </select>
             <select id="graphDepthSelect" class="setting-input select-styled" style="width:110px" title="Bağımlılık Derinliği">
               <option value="1">Derinlik: 1</option>
               <option value="2" selected>Derinlik: 2</option>
@@ -589,7 +592,7 @@ LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
           <div class="wb-toolbar-left">
             <span class="panel-kicker">SQL WORKBENCH</span>
             <span class="status-pill status-ready" id="wbStatusPill">● READY</span>
-            <select id="wbDatabaseSelect" class="setting-input select-styled" style="width:170px;height:28px;font-size:12px;margin-left:4px" title="Aktif Çalışma Veritabanı">
+            <select id="wbDatabaseSelect" class="setting-input select-styled wb-db-select" style="min-width:200px;max-width:320px;height:28px;font-size:12px;margin-left:4px" title="Aktif Çalışma Veritabanı">
               <option value="MikroDB_V16_LIDER25">MikroDB_V16_LIDER25</option>
             </select>
           </div>

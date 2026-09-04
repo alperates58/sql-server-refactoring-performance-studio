@@ -148,21 +148,26 @@
     const topbarScanTime = $('#scanMetaTime');
     const topbarScanAgo = $('#scanMetaAgo');
 
-    if (state.connected && state.connectionInfo) {
-      const serverInst = `${state.connectionInfo.server}${state.connectionInfo.port && state.connectionInfo.port != 1433 ? ':' + state.connectionInfo.port : ''}`;
+    const isActuallyConnected = Boolean(state.connected && (state.connectionInfo || state.isLive));
+
+    if (isActuallyConnected) {
+      const dbLabel = state.connectionInfo?.database || state.primaryDatabase || (state.selectedDatabases && state.selectedDatabases[0]) || 'SQL Server';
+      const serverInst = state.connectionInfo?.server
+        ? `${state.connectionInfo.server}${state.connectionInfo.port && state.connectionInfo.port != 1433 ? ':' + state.connectionInfo.port : ''}`
+        : 'SQL Instance';
       
       // Sidebar Footer
       if (light) {
         light.style.background = 'var(--green)';
         light.style.boxShadow = '0 0 12px rgba(67,217,156,0.8)';
       }
-      if (dbName) dbName.textContent = state.connectionInfo.database;
+      if (dbName) dbName.textContent = dbLabel;
       if (srvInfo) srvInfo.innerHTML = `<span style="color:var(--green);font-weight:700">LIVE</span> · ${serverInst}`;
-      if (connBtn) connBtn.textContent = `● ${state.connectionInfo.database}`;
+      if (connBtn) connBtn.textContent = `● ${dbLabel}`;
 
       // Settings Status Cards
-      if (settingsDb) settingsDb.textContent = state.connectionInfo.database;
-      if (settingsHost) settingsHost.textContent = `${serverInst} (Kullanıcı: ${state.connectionInfo.user || 'sa'})`;
+      if (settingsDb) settingsDb.textContent = dbLabel;
+      if (settingsHost) settingsHost.textContent = `${serverInst} (Kullanıcı: ${state.connectionInfo?.user || 'sa'})`;
       if (settingsPill) {
         settingsPill.textContent = '● CONNECTED (LIVE)';
         settingsPill.style.color = 'var(--green)';
@@ -175,7 +180,7 @@
       // Topbar Real Scan Info
       if (topbarScanLabel) topbarScanLabel.textContent = 'SON TARAMA';
       if (topbarScanTime) topbarScanTime.textContent = state.lastScanTime ? formatTime(state.lastScanTime) : 'Bağlandı';
-      if (topbarScanAgo) topbarScanAgo.textContent = state.connectionInfo.database;
+      if (topbarScanAgo) topbarScanAgo.textContent = dbLabel;
 
       // Capabilities Row
       if (state.capabilities && capRow) {
@@ -299,19 +304,27 @@
 
     const riskList = $('#overviewRiskList');
     if (riskList) {
-      riskList.innerHTML = sortedViews.slice(0, 5).map(v => `
-        <div class="risk-row" data-view="${v.name || v.view_name}">
-          <i class="risk-level-bar ${severityClass(v.risk || v.riskLevel)}"></i>
-          <div class="risk-name">
-            <strong>${v.name || v.view_name}</strong>
-            <small>${v.schema_name || 'dbo'} · depth ${v.depth || 1} · ${v.dependents || 0} dependents</small>
+      riskList.innerHTML = sortedViews.slice(0, 5).map(v => {
+        const depCount = v.dependentCount != null ? v.dependentCount : (Array.isArray(v.dependents) ? v.dependents.length : (v.dependents || 0));
+        const healthScore = v.health != null ? v.health : (v.healthScore != null ? v.healthScore : 60);
+        const riskLevel = v.risk || v.riskLevel || v.riskCategory || 'low';
+        const riskScore = v.riskScore != null ? v.riskScore : 0;
+        const viewName = v.name || v.view_name;
+
+        return `
+          <div class="risk-row" data-view="${viewName}">
+            <i class="risk-level-bar ${severityClass(riskLevel)}"></i>
+            <div class="risk-name">
+              <strong>${viewName}</strong>
+              <small>${v.schema_name || 'dbo'} · depth ${v.depth || 1} · ${depCount} dependents</small>
+            </div>
+            <div class="health-number ${severityClass(riskLevel)}">${healthScore}</div>
+            <div class="risk-cell"><small>Risk</small><strong>${riskScore}</strong></div>
+            <div class="risk-cell"><small>24h Reads</small><strong>${v.reads || '—'}</strong></div>
+            <div class="risk-cell"><small>Median</small><strong>${v.median || '—'}</strong></div>
           </div>
-          <div class="health-number ${severityClass(v.risk || v.riskLevel)}">${v.health}</div>
-          <div class="risk-cell"><small>Risk</small><strong>${v.riskScore || 0}</strong></div>
-          <div class="risk-cell"><small>24h Reads</small><strong>${v.reads || '—'}</strong></div>
-          <div class="risk-cell"><small>Median</small><strong>${v.median || '—'}</strong></div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
 
       $$('.risk-row').forEach(r => r.addEventListener('click', () => {
         selectView(r.dataset.view);
@@ -377,15 +390,32 @@
 
     // Populate or update #viewDbFilter
     const dbFilterSelect = $('#viewDbFilter');
-    if (dbFilterSelect && dbFilterSelect.options.length <= 1) {
+    if (dbFilterSelect) {
       const distinctDbs = Array.from(new Set(views.map(v => v.database).filter(Boolean)));
+      if (state.selectedDatabases && state.selectedDatabases.length > 0) {
+        state.selectedDatabases.forEach(d => {
+          if (!distinctDbs.includes(d)) distinctDbs.push(d);
+        });
+      }
+
       let opts = `<option value="all">Tüm Veritabanları (${views.length})</option>`;
       distinctDbs.forEach(dbName => {
         const count = views.filter(v => v.database === dbName).length;
         opts += `<option value="${dbName}">${dbName} (${count})</option>`;
       });
-      dbFilterSelect.innerHTML = opts;
-      dbFilterSelect.value = dbFilter;
+
+      // Avoid re-rendering if options and values are identical
+      if (dbFilterSelect.dataset.lastDbs !== distinctDbs.join(',')) {
+        dbFilterSelect.innerHTML = opts;
+        dbFilterSelect.dataset.lastDbs = distinctDbs.join(',');
+      }
+
+      if (distinctDbs.some(d => d.toLowerCase() === dbFilter.toLowerCase())) {
+        dbFilterSelect.value = dbFilter;
+      } else {
+        state.dbFilter = 'all';
+        dbFilterSelect.value = 'all';
+      }
 
       dbFilterSelect.onchange = e => {
         state.dbFilter = e.target.value;
@@ -682,10 +712,47 @@
   }
 
   async function renderGraph() {
-    const targetName = state.selectedViewName;
     const views = state.data.views || [];
-    const targetView = views.find(v => (v.name || v.view_name) === targetName) || views[0];
+    const graphDbSel = $('#graphDbSelect');
+    if (graphDbSel) {
+      const distinctDbs = Array.from(new Set(views.map(v => v.database).filter(Boolean)));
+      if (state.selectedDatabases && state.selectedDatabases.length > 0) {
+        state.selectedDatabases.forEach(d => {
+          if (!distinctDbs.includes(d)) distinctDbs.push(d);
+        });
+      }
+      const currentGraphDb = graphDbSel.value || 'all';
+      let opts = `<option value="all">Tüm Veritabanları</option>`;
+      distinctDbs.forEach(d => {
+        opts += `<option value="${d}">${d}</option>`;
+      });
+
+      if (graphDbSel.dataset.lastDbs !== distinctDbs.join(',')) {
+        graphDbSel.innerHTML = opts;
+        graphDbSel.dataset.lastDbs = distinctDbs.join(',');
+      }
+
+      if (distinctDbs.includes(currentGraphDb)) {
+        graphDbSel.value = currentGraphDb;
+      }
+    }
+
+    let targetName = state.selectedViewName;
+    let targetView = views.find(v => (v.name || v.view_name) === targetName) || views[0];
+    if (graphDbSel && graphDbSel.value !== 'all') {
+      const dbViews = views.filter(v => v.database === graphDbSel.value);
+      if (dbViews.length > 0 && (!targetView || targetView.database !== graphDbSel.value)) {
+        targetView = dbViews[0];
+        targetName = targetView.name || targetView.view_name;
+        state.selectedViewName = targetName;
+        state.selectedCanonicalId = targetView.canonicalId || targetName;
+      }
+    }
     if (!targetView) return;
+
+    if ($('#graphSearchInput')) {
+      $('#graphSearchInput').value = targetView.name || targetView.view_name;
+    }
 
     const viewport = $('#graphViewport');
     const nodesWrap = $('#graphNodesContainer');
@@ -1058,9 +1125,20 @@
     renderGraph();
   });
 
-  // Graph Depth & Direction Dropdown Changes
+  // Graph Depth, Direction & Database Dropdown Changes
   $('#graphDepthSelect')?.addEventListener('change', () => renderGraph());
   $('#graphDirectionSelect')?.addEventListener('change', () => renderGraph());
+  $('#graphDbSelect')?.addEventListener('change', () => {
+    const chosenDb = $('#graphDbSelect')?.value;
+    if (chosenDb && chosenDb !== 'all') {
+      const dbView = (state.data.views || []).find(v => v.database === chosenDb);
+      if (dbView) {
+        state.selectedViewName = dbView.name || dbView.view_name;
+        state.selectedCanonicalId = dbView.canonicalId || state.selectedViewName;
+      }
+    }
+    renderGraph();
+  });
 
   // --- Graph Live Autocomplete Search ---
   const graphSearchInput = $('#graphSearchInput');
@@ -1068,9 +1146,14 @@
 
   function getSearchCandidates(query = '') {
     const q = query.toLowerCase();
-    const views = (state.data.views || []).map(v => ({ name: v.name || v.view_name, type: 'VIEW' }));
-    const tables = (state.data.pressures || []).map(p => ({ name: p.name, type: 'TABLE' }));
-    const functions = [{ name: 'fn_DepodakiMiktar', type: 'FUNCTION' }];
+    const chosenDb = $('#graphDbSelect')?.value;
+    let rawViews = state.data.views || [];
+    if (chosenDb && chosenDb !== 'all') {
+      rawViews = rawViews.filter(v => v.database === chosenDb);
+    }
+    const views = rawViews.map(v => ({ name: v.name || v.view_name, type: 'VIEW', database: v.database }));
+    const tables = (state.data.pressures || []).map(p => ({ name: p.name, type: 'TABLE', database: p.database }));
+    const functions = [{ name: 'fn_DepodakiMiktar', type: 'FUNCTION', database: '' }];
 
     const all = [...views, ...tables, ...functions];
     return all.filter(item => item.name.toLowerCase().includes(q)).slice(0, 8);
@@ -1086,6 +1169,7 @@
     graphDropdown.innerHTML = items.map((item, idx) => `
       <div class="autocomplete-item ${idx === graphState.searchIndex ? 'active' : ''}" data-index="${idx}" data-name="${item.name}">
         <span class="item-name">${item.name}</span>
+        ${item.database ? `<span class="db-badge" style="font-size:9.5px;padding:1px 5px">${item.database}</span>` : ''}
         <span class="node-badge" style="font-size:10px">${item.type}</span>
       </div>
     `).join('');
@@ -1830,10 +1914,31 @@
       state.selectedDatabases = checked;
       state.activeDatabase = primary;
 
+      // Fetch active connection info and server metadata
+      try {
+        const connRes = await fetch('/api/connection');
+        const connJson = await connRes.json();
+        if (connJson.connected) {
+          state.connected = true;
+          state.connectionInfo = connJson.connection;
+          state.primaryDatabase = connJson.primaryDatabase || primary;
+          state.selectedDatabases = connJson.selectedDatabases || checked;
+          state.activeDatabase = state.primaryDatabase;
+        }
+      } catch (_) {}
+
+      // Fetch capabilities
+      try {
+        const capRes = await fetch('/api/capabilities');
+        const capJson = await capRes.json();
+        if (capJson.ok) state.capabilities = capJson.data;
+      } catch (_) {}
+
       // Update Workbench DB selector
       const wbSel = $('#wbDatabaseSelect');
       if (wbSel) {
-        wbSel.innerHTML = checked.map(d => `<option value="${d}" ${d === primary ? 'selected' : ''}>${d}</option>`).join('');
+        wbSel.innerHTML = state.selectedDatabases.map(d => `<option value="${d}" ${d === state.primaryDatabase ? 'selected' : ''}>${d}</option>`).join('');
+        wbSel.value = state.primaryDatabase;
       }
 
       updateConnectionStatusUI();
@@ -3225,6 +3330,12 @@ WHERE sth_tarih >= '2026-01-01';`;
       if (conn.connected) {
         state.connected = true;
         state.connectionInfo = conn.connection;
+        if (conn.primaryDatabase) state.primaryDatabase = conn.primaryDatabase;
+        if (conn.selectedDatabases && conn.selectedDatabases.length > 0) {
+          state.selectedDatabases = conn.selectedDatabases;
+        }
+        state.activeDatabase = state.primaryDatabase;
+
         const capRes = await fetch('/api/capabilities');
         const capJson = await capRes.json();
         if (capJson.ok) state.capabilities = capJson.data;
@@ -3250,6 +3361,7 @@ WHERE sth_tarih >= '2026-01-01';`;
     const wbSel = $('#wbDatabaseSelect');
     if (wbSel) {
       wbSel.innerHTML = state.selectedDatabases.map(d => `<option value="${d}" ${d === state.primaryDatabase ? 'selected' : ''}>${d}</option>`).join('');
+      wbSel.value = state.activeDatabase || state.primaryDatabase;
       wbSel.onchange = e => {
         state.activeDatabase = e.target.value;
       };

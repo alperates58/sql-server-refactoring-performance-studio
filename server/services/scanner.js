@@ -275,6 +275,12 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       });
     }
 
+    const readsStr = rt
+      ? (rt.totalReads > 1e9 ? `${(rt.totalReads / 1e9).toFixed(1)}B` : rt.totalReads > 1e6 ? `${(rt.totalReads / 1e6).toFixed(1)}M` : rt.totalReads.toLocaleString())
+      : '—';
+    const medianStr = rt ? `${rt.avgDurationMs || 0}ms` : '—';
+    const modifiedStr = v.modify_date ? new Date(v.modify_date).toLocaleDateString('tr-TR') : 'Bilinmiyor';
+
     return {
       canonicalId: v.canonicalId,
       database: v.database_name,
@@ -284,20 +290,28 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       object_id: v.object_id,
       createDate: v.create_date,
       modifyDate: v.modify_date,
+      modified: modifiedStr,
       definition: v.definition,
+      health,
       healthScore: health,
-      riskScore: risk.score,
+      risk: risk.category,
+      riskLevel: risk.category,
       riskCategory: risk.category,
+      riskScore: risk.score,
       depth: signals.depth,
+      tables: signals.baseTableCount,
       baseTableCount: signals.baseTableCount,
       repeatedBaseTableCount: signals.repeatedBaseTableCount,
       dependentCount: signals.dependentCount,
-      dependents: gStats.dependents || [],
+      dependents: signals.dependentCount,
+      dependentList: gStats.dependents || [],
       repeatedBaseTables: gStats.repeatedBaseTables || [],
       baseTables: (gStats.repeatedBaseTables || []).map(r => r.tableName || r.canonicalId),
       problems,
       riskBars: buildRiskBars(signals, risk.score),
       runtime: rt,
+      reads: readsStr,
+      median: medianStr,
       dynamicSqlLimitation: gStats.dynamicSqlLimitation
     };
   });

@@ -82,8 +82,7 @@ async function execute({
   const reqId = requestId || `req_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
   const request = pool.request();
   activeRequests.set(reqId, request);
-
-  request.setTimeout(Math.min(120000, Math.max(1000, Number(timeoutMs) || 30000)));
+  request.timeout = Math.min(120000, Math.max(1000, Number(timeoutMs) || 30000));
 
   const startTime = process.hrtime.bigint();
 
@@ -198,7 +197,7 @@ async function executePlan({
   const reqId = requestId || `plan_${Date.now()}`;
   const request = pool.request();
   activeRequests.set(reqId, request);
-  request.setTimeout(Math.min(60000, Math.max(1000, Number(timeoutMs) || 15000)));
+  request.timeout = Math.min(60000, Math.max(1000, Number(timeoutMs) || 15000));
 
   const isActual = mode.toLowerCase() === 'actual';
 
@@ -280,14 +279,14 @@ async function executeBenchmark({
   if (warmUp) {
     try {
       const warmReq = pool.request();
-      warmReq.setTimeout(timeoutMs);
+      warmReq.timeout = timeoutMs;
       await warmReq.batch(`SET NOCOUNT ON; ${sql};`);
     } catch (_) {}
   }
 
   for (let i = 1; i <= totalRuns; i++) {
     const iterReq = pool.request();
-    iterReq.setTimeout(timeoutMs);
+    iterReq.timeout = timeoutMs;
     const startTime = process.hrtime.bigint();
 
     try {
