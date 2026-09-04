@@ -306,7 +306,10 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       dependents: signals.dependentCount,
       dependentList: gStats.dependents || [],
       repeatedBaseTables: gStats.repeatedBaseTables || [],
-      baseTables: (gStats.repeatedBaseTables || []).map(r => r.tableName || r.canonicalId),
+      baseTables: ((gStats.baseTables && gStats.baseTables.length > 0) ? gStats.baseTables : (gStats.repeatedBaseTables || []))
+        .map(r => (typeof r === 'string' ? r.split('.').pop() : (r.tableName || r.name || r.canonicalId))),
+      upstreamViews: (gStats.dependents || []).map(r => (typeof r === 'string' ? r.split('.').pop() : (r.name || r.canonicalId))),
+      downstreamViews: (gStats.downstreamViews || []).map(r => (typeof r === 'string' ? r.split('.').pop() : (r.name || r.canonicalId))),
       problems,
       riskBars: buildRiskBars(signals, risk.score),
       runtime: rt,
@@ -402,7 +405,13 @@ async function scan(prefix = 'AA_', explicitScope = null) {
 
 function getSubGraphForView(identifier, options = {}) {
   if (!latestScan) return null;
-  return extractSubGraph(identifier, latestScan.views, latestScan.dependencies, options);
+  const targetView = latestScan.views.find(v =>
+    v.canonicalId.toLowerCase() === String(identifier).toLowerCase() ||
+    v.name.toLowerCase() === String(identifier).toLowerCase() ||
+    (v.view_name && v.view_name.toLowerCase() === String(identifier).toLowerCase())
+  );
+  const targetId = targetView ? targetView.canonicalId : identifier;
+  return extractSubGraph(targetId, latestScan.views, latestScan.dependencies, options);
 }
 
 async function getIndexesForView(identifier) {

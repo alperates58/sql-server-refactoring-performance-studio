@@ -229,9 +229,11 @@ function buildDependencyStats(views = [], rawEdges = [], selectedDatabases = [],
     return {
       depth: maxDepth,
       baseTableCount: baseTablePaths.size,
+      baseTables: Array.from(baseTableNames.values()),
       repeatedBaseTableCount: repeatedBaseTables.length,
       repeatedBaseTables,
       transitiveCount: transitiveObjects.size,
+      downstreamViews: Array.from(downstreamViews),
       downstreamViewCount: downstreamViews.size,
       downstreamFunctionCount: downstreamFunctions.size,
       outOfScopeCount: outOfScopeNodes.size,
@@ -293,59 +295,73 @@ function buildDependencyStats(views = [], rawEdges = [], selectedDatabases = [],
 function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {}) {
   const depthLimit = options.depth === 'all' ? 999 : Number(options.depth || 2);
   const direction = options.direction || 'both'; // 'both', 'downstream', 'upstream'
-  const rootKey = String(rootCanonicalId || '').toLowerCase();
+  const rootKey = String(rootCanonicalId || '').toLowerCase().trim();
 
   const viewLookup = new Map();
   for (const v of views) {
-    const k = (v.canonicalId || v.name || v.view_name).toLowerCase();
-    viewLookup.set(k, v);
+    if (v.canonicalId) viewLookup.set(v.canonicalId.toLowerCase(), v);
+    if (v.name) viewLookup.set(v.name.toLowerCase(), v);
+    if (v.view_name) viewLookup.set(v.view_name.toLowerCase(), v);
   }
+
+  // Resolve root to canonicalId if bare name
+  const rootObj = viewLookup.get(rootKey);
+  const effectiveRootId = rootObj ? (rootObj.canonicalId || rootObj.name || rootCanonicalId) : rootCanonicalId;
+  const rootDb = rootObj ? (rootObj.database || '') : '';
+  const effectiveRootKey = effectiveRootId.toLowerCase();
 
   const outgoing = new Map();
   const incoming = new Map();
+
+  function addEdgeMap(map, key, edge) {
+    if (!key) return;
+    const k = String(key).toLowerCase().trim();
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(edge);
+  }
+
   for (const e of rawEdges) {
-    const sKey = (e.sourceCanonicalId || e.source_name || '').toLowerCase();
-    const tKey = (e.targetCanonicalId || e.target_name || '').toLowerCase();
+    addEdgeMap(outgoing, e.sourceCanonicalId, e);
+    addEdgeMap(outgoing, e.sourceName, e);
+    addEdgeMap(outgoing, e.source_name, e);
 
-    if (!outgoing.has(sKey)) outgoing.set(sKey, []);
-    outgoing.get(sKey).push(e);
-
-    if (!incoming.has(tKey)) incoming.set(tKey, []);
-    incoming.get(tKey).push(e);
+    addEdgeMap(incoming, e.targetCanonicalId, e);
+    addEdgeMap(incoming, e.targetName, e);
+    addEdgeMap(incoming, e.target_name, e);
+    addEdgeMap(incoming, e.referenced_entity_name, e);
   }
 
   const nodeSet = new Map(); // key -> node
   const edgeSet = new Set();
 
-  function addNode(canonicalId, role = 'view', database = '', server = null) {
-    const k = canonicalId.toLowerCase();
+  function addNode(canonicalId, role = 'VIEW', database = '', server = null) {
+    if (!canonicalId) return;
+    const k = String(canonicalId).toLowerCase().trim();
     if (!nodeSet.has(k)) {
-      const v = viewLookup.get(k);
+      const v = viewLookup.get(k) || viewLookup.get(canonicalId.split('.').pop().toLowerCase());
       const parsed = parseCanonicalId(canonicalId, database);
       nodeSet.set(k, {
         id: canonicalId,
         canonicalId: canonicalId,
-        name: parsed.name,
-        schema: parsed.schema,
-        database: parsed.database || database,
+        name: parsed.name || canonicalId.split('.').pop(),
+        schema: parsed.schema || 'dbo',
+        database: parsed.database || database || (v ? v.database : ''),
         server: parsed.server || server,
         type: role,
         health: v ? (v.healthScore || v.health || 60) : null,
         risk: v ? (v.riskCategory || v.risk || 'medium') : null,
-        isTarget: k === rootKey
+        isTarget: k === rootKey || k === effectiveRootKey
       });
     }
   }
 
   // Always add root
-  const rootObj = viewLookup.get(rootKey);
-  const rootDb = rootObj ? (rootObj.database || '') : '';
-  addNode(rootCanonicalId, 'target', rootDb);
+  addNode(effectiveRootId, 'TARGET', rootDb);
 
   // Downstream BFS
   if (direction === 'both' || direction === 'downstream') {
-    const queue = [{ id: rootCanonicalId, depth: 0 }];
-    const visited = new Set([rootKey]);
+    const queue = [{ id: effectiveRootId, depth: 0 }];
+    const visited = new Set([rootKey, effectiveRootKey]);
 
     while (queue.length > 0) {
       const { id, depth } = queue.shift();
@@ -353,19 +369,20 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
       const edges = outgoing.get(id.toLowerCase()) || [];
       for (const e of edges) {
-        const tId = e.targetCanonicalId || e.target_name;
-        const tKey = tId.toLowerCase();
-        let role = 'table';
-        if (e.isLinkedServer) role = 'linked_server';
-        else if (e.isOutOfScope) role = 'out_of_scope';
-        else if (e.isSynonym) role = 'synonym';
-        else if (e.targetType?.includes('VIEW')) role = 'view';
-        else if (e.targetType?.includes('FUNCTION')) role = 'function';
+        const tId = e.targetCanonicalId || e.targetName || e.target_name || e.referenced_entity_name;
+        if (!tId) continue;
+        const tKey = String(tId).toLowerCase().trim();
+        let role = 'TABLE';
+        if (e.isLinkedServer) role = 'LINKED_SERVER';
+        else if (e.isOutOfScope) role = 'OUT_OF_SCOPE';
+        else if (e.isSynonym) role = 'SYNONYM';
+        else if (e.targetType?.toUpperCase().includes('VIEW') || viewLookup.has(tKey)) role = 'DOWNSTREAM_VIEW';
+        else if (e.targetType?.toUpperCase().includes('FUNCTION')) role = 'FUNCTION';
 
         addNode(tId, role, e.targetDatabase, e.targetServer);
         edgeSet.add(e);
 
-        if (!visited.has(tKey) && (role === 'view' || role === 'synonym')) {
+        if (!visited.has(tKey) && (role === 'DOWNSTREAM_VIEW' || role === 'SYNONYM')) {
           visited.add(tKey);
           queue.push({ id: tId, depth: depth + 1 });
         }
@@ -375,8 +392,8 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
   // Upstream BFS
   if (direction === 'both' || direction === 'upstream') {
-    const queue = [{ id: rootCanonicalId, depth: 0 }];
-    const visited = new Set([rootKey]);
+    const queue = [{ id: effectiveRootId, depth: 0 }];
+    const visited = new Set([rootKey, effectiveRootKey]);
 
     while (queue.length > 0) {
       const { id, depth } = queue.shift();
@@ -384,10 +401,11 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
       const edges = incoming.get(id.toLowerCase()) || [];
       for (const e of edges) {
-        const sId = e.sourceCanonicalId || e.source_name;
-        const sKey = sId.toLowerCase();
+        const sId = e.sourceCanonicalId || e.sourceName || e.source_name;
+        if (!sId) continue;
+        const sKey = String(sId).toLowerCase().trim();
 
-        addNode(sId, 'view', e.sourceDatabase);
+        addNode(sId, 'UPSTREAM_VIEW', e.sourceDatabase);
         edgeSet.add(e);
 
         if (!visited.has(sKey)) {

@@ -477,7 +477,15 @@
 
   async function selectView(identifier) {
     const views = state.data.views || [];
-    const v = views.find(x => x.canonicalId === identifier || (x.name || x.view_name) === identifier) || views[0];
+    const targetIdStr = String(identifier || '').toLowerCase().trim();
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === targetIdStr) ||
+      (x.name && x.name.toLowerCase() === targetIdStr) ||
+      (x.view_name && x.view_name.toLowerCase() === targetIdStr)
+    ) || views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase().endsWith('.' + targetIdStr)) ||
+      (x.name && x.name.toLowerCase().includes(targetIdStr))
+    ) || views[0];
     if (!v) return;
 
     const name = v.name || v.view_name;
@@ -738,16 +746,27 @@
     }
 
     let targetName = state.selectedViewName;
-    let targetView = views.find(v => (v.name || v.view_name) === targetName) || views[0];
+    let targetView = views.find(v =>
+      (v.canonicalId && v.canonicalId.toLowerCase() === String(state.selectedCanonicalId || targetName).toLowerCase()) ||
+      (v.name || v.view_name) === targetName ||
+      (v.name || v.view_name)?.toLowerCase() === String(targetName).toLowerCase()
+    );
+
     if (graphDbSel && graphDbSel.value !== 'all') {
-      const dbViews = views.filter(v => v.database === graphDbSel.value);
-      if (dbViews.length > 0 && (!targetView || targetView.database !== graphDbSel.value)) {
-        targetView = dbViews[0];
-        targetName = targetView.name || targetView.view_name;
-        state.selectedViewName = targetName;
-        state.selectedCanonicalId = targetView.canonicalId || targetName;
+      if (targetView && targetView.database && targetView.database !== graphDbSel.value) {
+        const dbOpt = Array.from(graphDbSel.options).find(o => o.value === targetView.database);
+        if (dbOpt) graphDbSel.value = targetView.database;
+      } else if (!targetView || (targetView.database && targetView.database !== graphDbSel.value)) {
+        const dbViews = views.filter(v => v.database === graphDbSel.value);
+        if (dbViews.length > 0) {
+          targetView = dbViews[0];
+          targetName = targetView.name || targetView.view_name;
+          state.selectedViewName = targetName;
+          state.selectedCanonicalId = targetView.canonicalId || targetName;
+        }
       }
     }
+    if (!targetView) targetView = views[0];
     if (!targetView) return;
 
     if ($('#graphSearchInput')) {
@@ -764,7 +783,8 @@
       try {
         const depth = $('#graphDepthSelect')?.value || '2';
         const direction = $('#graphDirectionSelect')?.value || 'both';
-        const res = await fetch(`/api/views/${encodeURIComponent(targetView.name || targetView.view_name)}/graph?depth=${depth}&direction=${direction}`);
+        const targetParam = targetView.canonicalId || targetView.name || targetView.view_name;
+        const res = await fetch(`/api/views/${encodeURIComponent(targetParam)}/graph?depth=${depth}&direction=${direction}`);
         const json = await res.json();
         if (json.ok && json.graph) {
           subGraphData = json.graph;
@@ -774,13 +794,137 @@
       }
     }
 
-    // If live API returned data, use it; otherwise build from targetView metadata
-    const upstream = subGraphData?.nodes?.filter(n => n.type === 'UPSTREAM_VIEW').map(n => n.name) || targetView.upstreamViews || ['AA_GENEL_PLAN', 'AA_PLANLAMA_EKRANI'];
-    const baseTables = subGraphData?.nodes?.filter(n => n.type === 'TABLE').map(n => n.name) || targetView.baseTables || ['STOK_HAREKETLERI', 'STOKLAR', 'ISEMIRLERI'];
-    const repeated = (targetView.repeatedBaseTables || []).map(r => r.tableName);
+    const targetNameStr = targetView.name || targetView.view_name;
+    const targetCanonStr = (targetView.canonicalId || targetNameStr).toLowerCase();
+
+    // 1. Extract from subGraphData if present
+    let upstreamList = [];
+    let downstreamList = [];
+
+    if (subGraphData && Array.isArray(subGraphData.nodes)) {
+      subGraphData.nodes.forEach(n => {
+        const nName = n.name || (n.canonicalId ? n.canonicalId.split('.').pop() : '');
+        const nCanon = (n.canonicalId || nName).toLowerCase();
+        if (n.isTarget || n.type === 'TARGET' || nName.toLowerCase() === targetNameStr.toLowerCase() || nCanon === targetCanonStr) {
+          return; // Skip target itself
+        }
+        if (n.type === 'UPSTREAM_VIEW' || n.type === 'UPSTREAM' || n.type === 'view') {
+          upstreamList.push({
+            name: nName,
+            type: 'UPSTREAM_VIEW',
+            health: n.health || 65,
+            risk: n.risk || 'HIGH',
+            canonicalId: n.canonicalId
+          });
+        } else {
+          downstreamList.push({
+            name: nName,
+            type: n.type || 'TABLE',
+            badge: n.type === 'DOWNSTREAM_VIEW' ? 'VIEW' : (n.type === 'FUNCTION' ? 'FN' : (n.type === 'LINKED_SERVER' ? 'LINK' : 'TABLE')),
+            health: n.health,
+            risk: n.risk,
+            canonicalId: n.canonicalId
+          });
+        }
+      });
+    }
+
+    // 2. Fallback / Augment with view metadata if subGraph had no nodes
+    if (upstreamList.length === 0 && targetView.upstreamViews && targetView.upstreamViews.length > 0) {
+      upstreamList = targetView.upstreamViews.map((name, idx) => ({
+        name: typeof name === 'string' ? name.split('.').pop() : (name.name || name.canonicalId),
+        type: 'UPSTREAM_VIEW',
+        health: 65 - idx * 4,
+        risk: 'HIGH'
+      }));
+    }
+
+    if (downstreamList.length === 0) {
+      const bTables = targetView.baseTables || [];
+      const dViews = targetView.downstreamViews || [];
+      bTables.forEach(tbl => {
+        const tName = typeof tbl === 'string' ? tbl.split('.').pop() : (tbl.tableName || tbl.name || tbl.canonicalId);
+        if (tName && !downstreamList.some(d => d.name.toLowerCase() === tName.toLowerCase())) {
+          downstreamList.push({
+            name: tName,
+            type: 'TABLE',
+            badge: 'TABLE'
+          });
+        }
+      });
+      dViews.forEach(vw => {
+        const vName = typeof vw === 'string' ? vw.split('.').pop() : (vw.name || vw.canonicalId);
+        if (vName && !downstreamList.some(d => d.name.toLowerCase() === vName.toLowerCase())) {
+          downstreamList.push({
+            name: vName,
+            type: 'DOWNSTREAM_VIEW',
+            badge: 'VIEW'
+          });
+        }
+      });
+    }
+
+    // 3. Fallback to state.data.dependencies if still empty
+    if (upstreamList.length === 0 || downstreamList.length === 0) {
+      const allDeps = state.data.dependencies || [];
+      const tLower = targetNameStr.toLowerCase();
+
+      allDeps.forEach(d => {
+        const sCanon = (d.sourceCanonicalId || '').toLowerCase();
+        const sName = (d.sourceName || d.source_name || '').toLowerCase();
+        const tCanon = (d.targetCanonicalId || '').toLowerCase();
+        const tName = (d.targetName || d.target_name || d.referenced_entity_name || '').toLowerCase();
+
+        // TargetView is target -> caller is upstream
+        if (upstreamList.length === 0 && (tCanon === targetCanonStr || tName === tLower || tCanon.endsWith('.' + tLower))) {
+          const upName = d.sourceName || d.source_name || (d.sourceCanonicalId ? d.sourceCanonicalId.split('.').pop() : '');
+          if (upName && !upstreamList.some(u => u.name.toLowerCase() === upName.toLowerCase())) {
+            upstreamList.push({
+              name: upName,
+              type: 'UPSTREAM_VIEW',
+              health: 65,
+              risk: 'HIGH'
+            });
+          }
+        }
+
+        // TargetView is source -> callee is downstream
+        if (downstreamList.length === 0 && (sCanon === targetCanonStr || sName === tLower || sCanon.endsWith('.' + tLower))) {
+          const downName = d.targetName || d.target_name || d.referenced_entity_name || (d.targetCanonicalId ? d.targetCanonicalId.split('.').pop() : '');
+          if (downName && !downstreamList.some(dw => dw.name.toLowerCase() === downName.toLowerCase())) {
+            const rawType = (d.targetType || d.target_type || '').toUpperCase();
+            let role = 'TABLE';
+            let badge = 'TABLE';
+            if (rawType.includes('VIEW')) { role = 'DOWNSTREAM_VIEW'; badge = 'VIEW'; }
+            else if (rawType.includes('FUNCTION')) { role = 'FUNCTION'; badge = 'FN'; }
+            else if (d.isLinkedServer) { role = 'LINKED_SERVER'; badge = 'LINK'; }
+            downstreamList.push({
+              name: downName,
+              type: role,
+              badge
+            });
+          }
+        }
+      });
+    }
+
+    // 4. Demo Mock Fallback only when not in live mode
+    if (!state.isLive) {
+      if (upstreamList.length === 0) {
+        upstreamList = ['AA_GENEL_PLAN', 'AA_PLANLAMA_EKRANI'].map((name, idx) => ({
+          name, type: 'UPSTREAM_VIEW', health: 65 - idx * 4, risk: 'HIGH'
+        }));
+      }
+      if (downstreamList.length === 0) {
+        downstreamList = ['STOK_HAREKETLERI', 'STOKLAR', 'ISEMIRLERI'].map(name => ({
+          name, type: 'TABLE', badge: 'TABLE'
+        }));
+      }
+    }
+
+    const repeated = (targetView.repeatedBaseTables || []).map(r => (typeof r === 'string' ? r : (r.tableName || r.name || '')));
 
     // Coordinate System: 2400 x 1600 Virtual Canvas
-    // Target Node centered at (1200, 800)
     const centerX = 1200;
     const centerY = 800;
 
@@ -796,26 +940,27 @@
       x: centerX,
       y: centerY,
       isTarget: true,
-      health: targetView.health,
-      risk: targetView.risk || targetView.riskLevel || 'CRITICAL',
-      riskScore: targetView.riskScore || 92
+      health: targetView.health || targetView.healthScore || 60,
+      risk: targetView.risk || targetView.riskLevel || 'MEDIUM',
+      riskScore: targetView.riskScore || 70
     };
     nodes.push(targetNode);
 
-    // 2. Upstream Nodes (Column on Left at X = 700)
-    const upCount = Math.min(6, upstream.length);
-    const upStartY = centerY - ((upCount - 1) * 130) / 2;
-    upstream.slice(0, upCount).forEach((name, idx) => {
-      const nodeY = upStartY + idx * 130;
+    // 2. Upstream Nodes (Column on Left at X = 650)
+    const upCount = Math.min(8, upstreamList.length);
+    const upSpacing = upCount > 5 ? 100 : 130;
+    const upStartY = centerY - ((upCount - 1) * upSpacing) / 2;
+    upstreamList.slice(0, upCount).forEach((item, idx) => {
+      const nodeY = upStartY + idx * upSpacing;
       const node = {
         id: `up_${idx}`,
-        name,
+        name: item.name,
         type: 'UPSTREAM',
         badge: 'VIEW',
         x: 650,
         y: nodeY,
-        health: 65 - idx * 4,
-        risk: 'HIGH'
+        health: item.health || (65 - idx * 4),
+        risk: item.risk || 'HIGH'
       };
       nodes.push(node);
       edges.push({
@@ -825,17 +970,18 @@
       });
     });
 
-    // 3. Downstream Base Tables & Functions (Column on Right at X = 1750)
-    const tableCount = Math.min(8, baseTables.length);
-    const tableStartY = centerY - ((tableCount - 1) * 120) / 2;
-    baseTables.slice(0, tableCount).forEach((name, idx) => {
-      const isHot = repeated.includes(name) || name === 'STOK_HAREKETLERI';
-      const nodeY = tableStartY + idx * 120;
+    // 3. Downstream Nodes (Column on Right at X = 1750)
+    const downCount = Math.min(10, downstreamList.length);
+    const downSpacing = downCount > 6 ? 90 : 120;
+    const downStartY = centerY - ((downCount - 1) * downSpacing) / 2;
+    downstreamList.slice(0, downCount).forEach((item, idx) => {
+      const isHot = repeated.some(r => r && (r.toLowerCase() === item.name.toLowerCase() || item.name.toLowerCase().endsWith('.' + r.toLowerCase())));
+      const nodeY = downStartY + idx * downSpacing;
       const node = {
-        id: `tbl_${idx}`,
-        name,
-        type: 'TABLE',
-        badge: 'TABLE',
+        id: `down_${idx}`,
+        name: item.name,
+        type: item.type,
+        badge: item.badge || (item.type === 'DOWNSTREAM_VIEW' ? 'VIEW' : item.type === 'FUNCTION' ? 'FN' : 'TABLE'),
         isHot,
         x: 1750,
         y: nodeY,
@@ -861,9 +1007,8 @@
     // Center Graph Viewport Initially
     graphCenterSelected();
 
-    // Set default inspector to target or hot table
-    const hotTbl = baseTables.find(t => repeated.includes(t)) || baseTables[0] || targetView.name;
-    updateInspector(hotTbl, 'TABLE', targetView);
+    // Set default inspector to target node (HEDEF VIEW)
+    updateInspector(targetView.name || targetView.view_name, 'TARGET', targetView);
   }
 
   function renderGraphEdges() {
@@ -890,15 +1035,23 @@
       let nodeClass = 'graph-node';
       if (n.isTarget) nodeClass += ' target-node';
       else if (n.type === 'TABLE') nodeClass += ` table-node ${n.isHot ? 'hot' : ''}`;
+      else if (n.type === 'FUNCTION') nodeClass += ' function-node';
       else nodeClass += ' view-node';
 
       if (n.id === graphState.selectedNodeId) nodeClass += ' active-node';
+
+      let subtitle = `Health ${n.health || 60}`;
+      if (n.isTarget) subtitle = `Health ${n.health || 60} · ${n.risk || 'NORMAL'}`;
+      else if (n.isHot) subtitle = '4 access paths';
+      else if (n.type === 'TABLE') subtitle = 'Base Table';
+      else if (n.type === 'FUNCTION') subtitle = 'Function';
+      else if (n.type === 'DOWNSTREAM_VIEW') subtitle = 'Referenced View';
 
       return `
         <div class="${nodeClass}" id="gnode_${n.id}" style="left:${n.x}px;top:${n.y}px" data-node-id="${n.id}" data-node-name="${n.name}" data-node-type="${n.type}">
           <span class="node-badge">${n.badge}</span>
           <strong>${n.name}</strong>
-          <small>${n.isTarget ? `Health ${n.health} · ${n.risk}` : n.isHot ? '4 access paths' : n.type === 'TABLE' ? 'Base Table' : `Health ${n.health}`}</small>
+          <small>${subtitle}</small>
         </div>
       `;
     }).join('');
@@ -932,12 +1085,23 @@
     if (!insp) return;
 
     if ($('#inspectorNodeName')) $('#inspectorNodeName').textContent = nodeName;
-    if ($('#inspectorNodeType')) $('#inspectorNodeType').textContent = nodeType === 'TABLE' ? 'BASE TABLE' : 'VIEW';
+    if ($('#inspectorNodeType')) {
+      let typeLabel = 'VIEW';
+      if (nodeType === 'TABLE') typeLabel = 'BASE TABLE';
+      else if (nodeType === 'TARGET') typeLabel = 'HEDEF VIEW';
+      else if (nodeType === 'UPSTREAM' || nodeType === 'UPSTREAM_VIEW') typeLabel = 'DEPENDENT VIEW';
+      else if (nodeType === 'DOWNSTREAM_VIEW') typeLabel = 'REFERENCED VIEW';
+      else if (nodeType === 'FUNCTION') typeLabel = 'FUNCTION';
+      else if (nodeType === 'SYNONYM') typeLabel = 'SYNONYM';
+      else if (nodeType === 'LINKED_SERVER') typeLabel = 'LINKED SERVER';
+      $('#inspectorNodeType').textContent = typeLabel;
+    }
 
     const p = (state.data.pressures || []).find(x => x.name === nodeName);
-    const refsCount = p ? p.refs : (currentView.dependents || 14);
-    const pathsCount = p ? p.paths : (currentView.depth || 3);
-    const criticalCount = p ? p.critical : 6;
+    const isTargetOrView = nodeType !== 'TABLE' && nodeType !== 'FUNCTION';
+    const refsCount = p ? p.refs : (isTargetOrView ? (currentView.dependents || (currentView.dependentList?.length || 0)) : 1);
+    const pathsCount = p ? p.paths : (isTargetOrView ? (currentView.depth || 1) : 1);
+    const criticalCount = p ? p.critical : (isTargetOrView ? (currentView.problems?.filter(pr => pr.severity === 'CRITICAL').length || 0) : 0);
 
     if ($('#inspectorMetricRefs')) $('#inspectorMetricRefs').textContent = refsCount;
     if ($('#inspectorMetricPaths')) $('#inspectorMetricPaths').textContent = pathsCount;
@@ -945,9 +1109,9 @@
 
     const warnBox = $('#inspectorWarningBox');
     if (warnBox) {
-      const isRepeated = (currentView.repeatedBaseTables || []).some(r => r.tableName === nodeName);
-      if (isRepeated || nodeName === 'STOK_HAREKETLERI') {
-        warnBox.style.display = 'block';
+      if (nodeType === 'TABLE') {
+        const isRepeated = (currentView.repeatedBaseTables || []).some(r => r.tableName === nodeName || r.canonicalId?.endsWith('.' + nodeName));
+        warnBox.style.display = isRepeated ? 'block' : 'none';
       } else {
         warnBox.style.display = 'none';
       }
@@ -958,15 +1122,17 @@
     const btnSql = $('#btnInspOpenSql');
     const btnPressure = $('#btnInspOpenPressure');
 
+    const isViewType = nodeType === 'TARGET' || nodeType === 'VIEW' || nodeType === 'UPSTREAM' || nodeType === 'UPSTREAM_VIEW' || nodeType === 'DOWNSTREAM_VIEW';
+
     if (btnView) {
-      btnView.style.display = nodeType === 'TABLE' ? 'none' : 'block';
+      btnView.style.display = isViewType ? 'block' : 'none';
       btnView.onclick = () => {
         selectView(nodeName);
         gotoPage('views');
       };
     }
     if (btnSql) {
-      btnSql.style.display = nodeType === 'TABLE' ? 'none' : 'block';
+      btnSql.style.display = isViewType ? 'block' : 'none';
       btnSql.onclick = () => {
         selectView(nodeName);
         gotoPage('views');
@@ -1145,7 +1311,7 @@
   const graphDropdown = $('#graphSearchDropdown');
 
   function getSearchCandidates(query = '') {
-    const q = query.toLowerCase();
+    const q = query.toLowerCase().trim();
     const chosenDb = $('#graphDbSelect')?.value;
     let rawViews = state.data.views || [];
     if (chosenDb && chosenDb !== 'all') {
@@ -1156,17 +1322,30 @@
     const functions = [{ name: 'fn_DepodakiMiktar', type: 'FUNCTION', database: '' }];
 
     const all = [...views, ...tables, ...functions];
-    return all.filter(item => item.name.toLowerCase().includes(q)).slice(0, 8);
+    if (!q) {
+      return { total: all.length, candidates: all.slice(0, 100) };
+    }
+    const filtered = all.filter(item => item.name.toLowerCase().includes(q));
+    return { total: filtered.length, candidates: filtered.slice(0, 100) };
   }
 
-  function renderSearchDropdown(items) {
+  function renderSearchDropdown(searchResult) {
     if (!graphDropdown) return;
-    if (items.length === 0) {
-      graphDropdown.classList.add('hidden');
+    const { total, candidates } = typeof searchResult === 'object' && searchResult.candidates
+      ? searchResult
+      : { total: (searchResult || []).length, candidates: searchResult || [] };
+
+    if (candidates.length === 0) {
+      graphDropdown.innerHTML = `
+        <div class="autocomplete-empty" style="padding:12px;text-align:center;color:var(--text-muted);font-size:12px">
+          Eşleşen view veya nesne bulunamadı.
+        </div>
+      `;
+      graphDropdown.classList.remove('hidden');
       return;
     }
 
-    graphDropdown.innerHTML = items.map((item, idx) => `
+    let html = candidates.map((item, idx) => `
       <div class="autocomplete-item ${idx === graphState.searchIndex ? 'active' : ''}" data-index="${idx}" data-name="${item.name}">
         <span class="item-name">${item.name}</span>
         ${item.database ? `<span class="db-badge" style="font-size:9.5px;padding:1px 5px">${item.database}</span>` : ''}
@@ -1174,6 +1353,15 @@
       </div>
     `).join('');
 
+    if (total > candidates.length) {
+      html += `
+        <div style="padding:7px 12px;font-size:11px;color:var(--text-muted);background:rgba(0,0,0,0.25);border-top:1px solid #202636;text-align:center">
+          Toplam ${total} sonuçtan ilk ${candidates.length} tanesi gösteriliyor. Filtrelemek için yazmaya devam edin.
+        </div>
+      `;
+    }
+
+    graphDropdown.innerHTML = html;
     graphDropdown.classList.remove('hidden');
 
     graphDropdown.querySelectorAll('.autocomplete-item').forEach(el => {
@@ -1185,23 +1373,40 @@
 
   function chooseSearchResult(name) {
     if (!name) return;
-    if (graphSearchInput) graphSearchInput.value = name;
+    const views = state.data.views || [];
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === name.toLowerCase()) ||
+      (x.name && x.name.toLowerCase() === name.toLowerCase()) ||
+      (x.view_name && x.view_name.toLowerCase() === name.toLowerCase())
+    );
+    const actualName = v ? (v.name || v.view_name) : name;
+    if (graphSearchInput) graphSearchInput.value = actualName;
     if (graphDropdown) graphDropdown.classList.add('hidden');
-    selectView(name);
+
+    // If selected view belongs to a specific db, make sure graphDbSelect matches
+    if (v && v.database) {
+      const graphDbSel = $('#graphDbSelect');
+      if (graphDbSel && graphDbSel.value !== 'all' && graphDbSel.value !== v.database) {
+        const dbOpt = Array.from(graphDbSel.options).find(o => o.value === v.database);
+        if (dbOpt) graphDbSel.value = v.database;
+      }
+    }
+
+    selectView(actualName);
     renderGraph();
   }
 
   if (graphSearchInput && graphDropdown) {
-    graphSearchInput.addEventListener('input', e => {
-      const q = e.target.value.trim();
+    const showSearchDropdown = () => {
+      const q = graphSearchInput.value.trim();
       graphState.searchIndex = -1;
-      if (q.length > 0) {
-        const candidates = getSearchCandidates(q);
-        renderSearchDropdown(candidates);
-      } else {
-        graphDropdown.classList.add('hidden');
-      }
-    });
+      const res = getSearchCandidates(q);
+      renderSearchDropdown(res);
+    };
+
+    graphSearchInput.addEventListener('input', showSearchDropdown);
+    graphSearchInput.addEventListener('focus', showSearchDropdown);
+    graphSearchInput.addEventListener('click', showSearchDropdown);
 
     graphSearchInput.addEventListener('keydown', e => {
       const items = graphDropdown.querySelectorAll('.autocomplete-item');
@@ -1216,10 +1421,12 @@
         e.preventDefault();
         graphState.searchIndex = (graphState.searchIndex + 1) % items.length;
         items.forEach((it, i) => it.classList.toggle('active', i === graphState.searchIndex));
+        items[graphState.searchIndex]?.scrollIntoView({ block: 'nearest' });
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         graphState.searchIndex = (graphState.searchIndex - 1 + items.length) % items.length;
         items.forEach((it, i) => it.classList.toggle('active', i === graphState.searchIndex));
+        items[graphState.searchIndex]?.scrollIntoView({ block: 'nearest' });
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (graphState.searchIndex >= 0 && items[graphState.searchIndex]) {
