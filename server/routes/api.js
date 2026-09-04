@@ -112,8 +112,8 @@ router.get('/scan/latest', (_req, res) => {
   res.json({ ok: true, data });
 });
 
-// 8. Definition for a specific view (supports canonicalId)
-router.get('/views/:name/definition', (req, res) => {
+// 8. Definition for a specific view (supports canonicalId and /source alias)
+const handleViewDefinition = (req, res) => {
   const viewName = req.params.name;
   const sql = scanner.getDefinition(viewName);
   if (!sql) {
@@ -123,7 +123,10 @@ router.get('/views/:name/definition', (req, res) => {
     });
   }
   res.json({ ok: true, name: viewName, sql });
-});
+};
+
+router.get('/views/:name/definition', handleViewDefinition);
+router.get('/views/:name/source', handleViewDefinition);
 
 // 9. Subgraph for a specific view with depth and direction filtering
 router.get('/views/:name/graph', (req, res) => {

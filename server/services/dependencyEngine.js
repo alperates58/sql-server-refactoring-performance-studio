@@ -332,36 +332,66 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
   }
 
   const nodeSet = new Map(); // key -> node
-  const edgeSet = new Set();
+  const edgeList = [];
+  const edgeDedupe = new Set();
 
-  function addNode(canonicalId, role = 'VIEW', database = '', server = null) {
-    if (!canonicalId) return;
-    const k = String(canonicalId).toLowerCase().trim();
+  function addNode(canonicalId, role = 'VIEW', database = '', server = null, depth = 0) {
+    if (!canonicalId) return null;
+    const v = viewLookup.get(String(canonicalId).toLowerCase().trim()) || viewLookup.get(canonicalId.split('.').pop().toLowerCase());
+    const effectiveDb = database || (v ? v.database : '');
+    const parsed = parseCanonicalId(canonicalId, effectiveDb);
+    const resolvedCanonicalId = parsed.canonicalId || canonicalId;
+    const k = resolvedCanonicalId.toLowerCase();
+
     if (!nodeSet.has(k)) {
-      const v = viewLookup.get(k) || viewLookup.get(canonicalId.split('.').pop().toLowerCase());
-      const parsed = parseCanonicalId(canonicalId, database);
       nodeSet.set(k, {
-        id: canonicalId,
-        canonicalId: canonicalId,
+        id: resolvedCanonicalId,
+        canonicalId: resolvedCanonicalId,
         name: parsed.name || canonicalId.split('.').pop(),
         schema: parsed.schema || 'dbo',
-        database: parsed.database || database || (v ? v.database : ''),
+        database: parsed.database || effectiveDb,
         server: parsed.server || server,
         type: role,
+        depth: depth,
         health: v ? (v.healthScore || v.health || 60) : null,
         risk: v ? (v.riskCategory || v.risk || 'medium') : null,
-        isTarget: k === rootKey || k === effectiveRootKey
+        isTarget: k === rootKey || k === effectiveRootKey || canonicalId.toLowerCase() === rootKey
+      });
+    } else {
+      const existing = nodeSet.get(k);
+      if (Math.abs(depth) < Math.abs(existing.depth || 0)) {
+        existing.depth = depth;
+      }
+    }
+    return resolvedCanonicalId;
+  }
+
+  function addNormalizedEdge(from, to, rawEdge, role, targetDb) {
+    const edgeKey = `${from.toLowerCase()}->${to.toLowerCase()}`;
+    if (!edgeDedupe.has(edgeKey)) {
+      edgeDedupe.add(edgeKey);
+      edgeList.push({
+        from,
+        to,
+        sourceCanonicalId: rawEdge.sourceCanonicalId || from,
+        sourceName: rawEdge.sourceName || from.split('.').pop(),
+        targetCanonicalId: to,
+        targetName: rawEdge.targetName || rawEdge.referenced_entity_name || to.split('.').pop(),
+        targetType: role,
+        targetDatabase: targetDb || rawEdge.targetDatabase || '',
+        isLinkedServer: Boolean(rawEdge.isLinkedServer),
+        isSynonym: Boolean(rawEdge.isSynonym)
       });
     }
   }
 
   // Always add root
-  addNode(effectiveRootId, 'TARGET', rootDb);
+  const actualRootId = addNode(effectiveRootId, 'TARGET', rootDb, null, 0) || effectiveRootId;
 
   // Downstream BFS
   if (direction === 'both' || direction === 'downstream') {
-    const queue = [{ id: effectiveRootId, depth: 0 }];
-    const visited = new Set([rootKey, effectiveRootKey]);
+    const queue = [{ id: actualRootId, depth: 0 }];
+    const visited = new Set([rootKey, effectiveRootKey, actualRootId.toLowerCase()]);
 
     while (queue.length > 0) {
       const { id, depth } = queue.shift();
@@ -369,22 +399,28 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
       const edges = outgoing.get(id.toLowerCase()) || [];
       for (const e of edges) {
-        const tId = e.targetCanonicalId || e.targetName || e.target_name || e.referenced_entity_name;
-        if (!tId) continue;
-        const tKey = String(tId).toLowerCase().trim();
+        const rawTId = e.targetCanonicalId || e.targetName || e.target_name || e.referenced_entity_name;
+        if (!rawTId) continue;
+        const tKey = String(rawTId).toLowerCase().trim();
+        const vObj = viewLookup.get(tKey) || viewLookup.get(rawTId.split('.').pop().toLowerCase());
+        const effectiveTId = vObj ? (vObj.canonicalId || vObj.name || rawTId) : rawTId;
+        const effectiveTKey = effectiveTId.toLowerCase().trim();
+
         let role = 'TABLE';
         if (e.isLinkedServer) role = 'LINKED_SERVER';
         else if (e.isOutOfScope) role = 'OUT_OF_SCOPE';
         else if (e.isSynonym) role = 'SYNONYM';
-        else if (e.targetType?.toUpperCase().includes('VIEW') || viewLookup.has(tKey)) role = 'DOWNSTREAM_VIEW';
+        else if (e.targetType?.toUpperCase().includes('VIEW') || viewLookup.has(tKey) || viewLookup.has(effectiveTKey)) role = 'DOWNSTREAM_VIEW';
         else if (e.targetType?.toUpperCase().includes('FUNCTION')) role = 'FUNCTION';
 
-        addNode(tId, role, e.targetDatabase, e.targetServer);
-        edgeSet.add(e);
+        const nodeDb = e.targetDatabase || (vObj ? vObj.database : '');
+        const targetNodeId = addNode(effectiveTId, role, nodeDb, e.targetServer, depth + 1);
+        addNormalizedEdge(id, targetNodeId || effectiveTId, e, role, nodeDb);
 
-        if (!visited.has(tKey) && (role === 'DOWNSTREAM_VIEW' || role === 'SYNONYM')) {
+        if (!visited.has(effectiveTKey) && !visited.has(tKey) && (role === 'DOWNSTREAM_VIEW' || role === 'SYNONYM')) {
+          visited.add(effectiveTKey);
           visited.add(tKey);
-          queue.push({ id: tId, depth: depth + 1 });
+          queue.push({ id: targetNodeId || effectiveTId, depth: depth + 1 });
         }
       }
     }
@@ -392,8 +428,8 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
   // Upstream BFS
   if (direction === 'both' || direction === 'upstream') {
-    const queue = [{ id: effectiveRootId, depth: 0 }];
-    const visited = new Set([rootKey, effectiveRootKey]);
+    const queue = [{ id: actualRootId, depth: 0 }];
+    const visited = new Set([rootKey, effectiveRootKey, actualRootId.toLowerCase()]);
 
     while (queue.length > 0) {
       const { id, depth } = queue.shift();
@@ -401,16 +437,21 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
       const edges = incoming.get(id.toLowerCase()) || [];
       for (const e of edges) {
-        const sId = e.sourceCanonicalId || e.sourceName || e.source_name;
-        if (!sId) continue;
-        const sKey = String(sId).toLowerCase().trim();
+        const rawSId = e.sourceCanonicalId || e.sourceName || e.source_name;
+        if (!rawSId) continue;
+        const sKey = String(rawSId).toLowerCase().trim();
+        const vObj = viewLookup.get(sKey) || viewLookup.get(rawSId.split('.').pop().toLowerCase());
+        const effectiveSId = vObj ? (vObj.canonicalId || vObj.name || rawSId) : rawSId;
+        const effectiveSKey = effectiveSId.toLowerCase().trim();
 
-        addNode(sId, 'UPSTREAM_VIEW', e.sourceDatabase);
-        edgeSet.add(e);
+        const nodeDb = e.sourceDatabase || (vObj ? vObj.database : '');
+        const srcNodeId = addNode(effectiveSId, 'UPSTREAM_VIEW', nodeDb, null, -(depth + 1));
+        addNormalizedEdge(srcNodeId || effectiveSId, id, e, 'UPSTREAM_VIEW', nodeDb);
 
-        if (!visited.has(sKey)) {
+        if (!visited.has(effectiveSKey) && !visited.has(sKey)) {
+          visited.add(effectiveSKey);
           visited.add(sKey);
-          queue.push({ id: sId, depth: depth + 1 });
+          queue.push({ id: srcNodeId || effectiveSId, depth: depth + 1 });
         }
       }
     }
@@ -418,7 +459,7 @@ function extractSubGraph(rootCanonicalId, views = [], rawEdges = [], options = {
 
   return {
     nodes: Array.from(nodeSet.values()),
-    edges: Array.from(edgeSet),
+    edges: edgeList,
     dynamicSqlLimitation: 'Dynamic SQL dependencies cannot be fully discovered from catalog metadata.'
   };
 }

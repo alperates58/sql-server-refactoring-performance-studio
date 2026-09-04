@@ -300,13 +300,13 @@
             <select id="graphDbSelect" class="setting-input select-styled" style="min-width:180px;max-width:320px;height:30px;font-size:12px" title="Harita Veritabanı">
               <option value="all">Tüm Veritabanları</option>
             </select>
-            <select id="graphDepthSelect" class="setting-input select-styled" style="width:110px" title="Bağımlılık Derinliği">
+            <select id="graphDepthSelect" class="setting-input select-styled" style="width:115px" title="Bağımlılık Derinliği">
               <option value="1">Derinlik: 1</option>
               <option value="2" selected>Derinlik: 2</option>
               <option value="3">Derinlik: 3</option>
               <option value="all">Tüm Yol</option>
             </select>
-            <select id="graphDirectionSelect" class="setting-input select-styled" style="width:160px" title="Bağımlılık Yönü">
+            <select id="graphDirectionSelect" class="setting-input select-styled" style="width:195px" title="Bağımlılık Yönü">
               <option value="both" selected>Upstream + Downstream</option>
               <option value="downstream">Yalnız Downstream</option>
               <option value="upstream">Yalnız Upstream</option>
@@ -337,6 +337,7 @@
             </div>
             <h3 id="inspectorNodeName">STOK_HAREKETLERI</h3>
             <span class="object-pill" id="inspectorNodeType">TEMEL TABLO</span>
+            <div class="inspector-metric" id="inspectorDbRow"><span>Veritabanı</span><strong id="inspectorNodeDb">—</strong></div>
             <div class="inspector-metric"><span>Kullanan View Sayısı</span><strong id="inspectorMetricRefs">183</strong></div>
             <div class="inspector-metric"><span>Bağımlılık Yolları</span><strong id="inspectorMetricPaths">647</strong></div>
             <div class="inspector-metric"><span>Kritik Tüketiciler</span><strong class="danger-text" id="inspectorMetricCritical">27</strong></div>

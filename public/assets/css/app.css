@@ -1221,7 +1221,7 @@ button, input, select, textarea {
 
 .views-workspace {
   display: grid;
-  grid-template-columns: 350px 1fr;
+  grid-template-columns: 390px 1fr;
 }
 
 .view-list-pane {
@@ -1806,7 +1806,8 @@ button, input, select, textarea {
   position: absolute;
   top: calc(100% + 4px);
   left: 0;
-  right: 0;
+  width: 520px;
+  max-width: 90vw;
   background: #131722;
   border: 1px solid #32384a;
   border-radius: 10px;
@@ -1828,6 +1829,7 @@ button, input, select, textarea {
   font-size: 13px;
   color: var(--text-primary);
   transition: background 0.12s;
+  gap: 8px;
 }
 
 .autocomplete-item:last-child {
@@ -1843,6 +1845,8 @@ button, input, select, textarea {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 .graph-legend {
@@ -1940,8 +1944,8 @@ body.graph-grid-off .graph-stage {
 .graph-node {
   position: absolute;
   transform: translate(-50%, -50%);
-  min-width: 160px;
-  max-width: 240px;
+  min-width: 190px;
+  max-width: 300px;
   padding: 12px 14px;
   border-radius: 12px;
   border: 1px solid #333a4e;
@@ -1991,8 +1995,23 @@ body.graph-grid-off .graph-stage {
   display: inline-block;
 }
 
+.node-db-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  background: rgba(80, 216, 255, 0.12);
+  color: #6edaff;
+  border: 1px solid rgba(80, 216, 255, 0.25);
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.2px;
+}
+
 .target-node {
-  min-width: 200px;
+  min-width: 230px;
+  max-width: 340px;
   border-color: #7a66e8;
   background: linear-gradient(145deg, #201b3a, #141726);
   box-shadow: 0 0 0 5px rgba(124, 92, 255, 0.1), 0 20px 60px rgba(0, 0, 0, 0.45);

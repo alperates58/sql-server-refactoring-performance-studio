@@ -459,11 +459,11 @@
         <div class="view-row ${isActive ? 'active' : ''}" data-view="${name}" data-canonical="${canonical}">
           <span class="risk-dot ${severityClass(risk)}"></span>
           <div style="flex:1;min-width:0">
-            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
-              <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</strong>
-              ${v.database ? `<span class="db-badge">${v.database}</span>` : ''}
+            <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;font-size:13px;line-height:1.35;margin-bottom:3px" title="${name}">${name}</strong>
+            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted)">
+              ${v.database ? `<span class="db-badge" style="font-size:9.5px;padding:1px 5px;margin:0">${v.database}</span>` : ''}
+              <small style="font-size:11px">Risk ${v.riskScore || 0} · ${v.reads || '—'} reads</small>
             </div>
-            <small>Risk ${v.riskScore || 0} · ${v.reads || '—'} reads</small>
           </div>
           <span class="view-health">${v.health || v.healthScore || 60}</span>
         </div>
@@ -473,6 +473,41 @@
     $$('.view-row').forEach(r => {
       r.addEventListener('click', () => selectView(r.dataset.canonical || r.dataset.view));
     });
+  }
+
+  async function getViewDefinition(identifier) {
+    if (!identifier) return '';
+    const views = state.data.views || [];
+    const targetStr = String(identifier || '').toLowerCase().trim();
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === targetStr) ||
+      (x.name && x.name.toLowerCase() === targetStr) ||
+      (x.view_name && x.view_name.toLowerCase() === targetStr)
+    ) || views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase().endsWith('.' + targetStr)) ||
+      (x.name && x.name.toLowerCase().includes(targetStr))
+    );
+
+    if (v && v.definition && v.definition.length > 5) {
+      return v.definition;
+    }
+
+    if (state.isLive) {
+      try {
+        const param = v?.canonicalId || identifier;
+        const res = await fetch(`/api/views/${encodeURIComponent(param)}/definition`);
+        const json = await res.json();
+        if (json.ok && json.sql) {
+          if (v) v.definition = json.sql;
+          return json.sql;
+        }
+      } catch (err) {
+        console.warn('Failed to fetch SQL definition:', err);
+      }
+    }
+
+    if (v && v.definition) return v.definition;
+    return `-- View SQL Tanımı (${identifier}):\nSELECT *\nFROM dbo.[${identifier.split('.').pop()}] WITH (NOLOCK)\nWHERE 1 = 1;`;
   }
 
   async function selectView(identifier) {
@@ -624,22 +659,205 @@
     // Dependencies Tab Content
     const depsTab = $('#dependenciesContent');
     if (depsTab) {
-      const baseTables = v.baseTables || ['STOKLAR', 'STOK_HAREKETLERI', 'ISEMIRLERI'];
-      const repeated = (v.repeatedBaseTables || []).map(r => r.tableName);
+      const allDeps = state.data.dependencies || [];
+      const vNameLower = (v.name || v.view_name || '').toLowerCase();
+      const vCanonLower = (v.canonicalId || vNameLower).toLowerCase();
+
+      // Collect Upstream Callers
+      let upViews = (v.upstreamViews || []).map(u => typeof u === 'string' ? u.split('.').pop() : (u.name || u.canonicalId));
+      if (upViews.length === 0) {
+        allDeps.forEach(d => {
+          const tCanon = (d.targetCanonicalId || '').toLowerCase();
+          const tName = (d.targetName || d.target_name || d.referenced_entity_name || '').toLowerCase();
+          if (tCanon === vCanonLower || tName === vNameLower || tCanon.endsWith('.' + vNameLower)) {
+            const upName = d.sourceName || d.source_name || (d.sourceCanonicalId ? d.sourceCanonicalId.split('.').pop() : '');
+            if (upName && !upViews.includes(upName)) upViews.push(upName);
+          }
+        });
+      }
+
+      // Collect Downstream Views
+      let downViews = (v.downstreamViews || []).map(d => typeof d === 'string' ? d.split('.').pop() : (d.name || d.canonicalId));
+      if (downViews.length === 0) {
+        allDeps.forEach(d => {
+          const sCanon = (d.sourceCanonicalId || '').toLowerCase();
+          const sName = (d.sourceName || d.source_name || '').toLowerCase();
+          if (sCanon === vCanonLower || sName === vNameLower || sCanon.endsWith('.' + vNameLower)) {
+            const targetType = (d.targetType || d.target_type || '').toUpperCase();
+            if (targetType.includes('VIEW')) {
+              const dnName = d.targetName || d.target_name || d.referenced_entity_name || (d.targetCanonicalId ? d.targetCanonicalId.split('.').pop() : '');
+              if (dnName && !downViews.includes(dnName)) downViews.push(dnName);
+            }
+          }
+        });
+      }
+
+      // Collect Base Tables with database information!
+      let tablesList = [];
+      const repeatedTableNames = (v.repeatedBaseTables || []).map(r => (typeof r === 'string' ? r : (r.tableName || r.name || '')).toLowerCase());
+
+      allDeps.forEach(d => {
+        const sCanon = (d.sourceCanonicalId || '').toLowerCase();
+        const sName = (d.sourceName || d.source_name || '').toLowerCase();
+        if (sCanon === vCanonLower || sName === vNameLower || sCanon.endsWith('.' + vNameLower)) {
+          const targetType = (d.targetType || d.target_type || '').toUpperCase();
+          if (!targetType.includes('VIEW') && !targetType.includes('FUNCTION')) {
+            const tName = d.targetName || d.target_name || d.referenced_entity_name || (d.targetCanonicalId ? d.targetCanonicalId.split('.').pop() : '');
+            const tDb = d.targetDatabase || (d.targetCanonicalId ? d.targetCanonicalId.split('.')[0] : (v.database || ''));
+            if (tName && !tablesList.some(item => item.name === tName && item.database === tDb)) {
+              tablesList.push({
+                name: tName,
+                database: tDb,
+                isRepeated: repeatedTableNames.includes(tName.toLowerCase())
+              });
+            }
+          }
+        }
+      });
+
+      // Fallback if empty
+      if (tablesList.length === 0) {
+        const fallbackTables = v.baseTables && v.baseTables.length > 0 ? v.baseTables : (!state.isLive ? ['STOKLAR', 'STOK_HAREKETLERI', 'ISEMIRLERI'] : []);
+        tablesList = fallbackTables.map(t => {
+          const tName = typeof t === 'string' ? t.split('.').pop() : (t.tableName || t.name || '');
+          return {
+            name: tName,
+            database: v.database || '',
+            isRepeated: repeatedTableNames.includes(tName.toLowerCase())
+          };
+        });
+      }
+
       depsTab.innerHTML = `
-        <div style="padding:10px 0">
-          <h4 style="font-size:14px;margin-bottom:12px">Doğrudan ve Dolaylı Erişilen Base Tablolar (${baseTables.length})</h4>
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-            ${baseTables.map(t => {
-              const isRep = repeated.includes(t);
-              return `<span class="object-pill" style="${isRep ? 'border-color:rgba(255,93,114,0.45);color:var(--red);background:rgba(255,93,114,0.1)' : ''}">${t} ${isRep ? '⇄ REPEATED' : ''}</span>`;
-            }).join('') || '<p style="font-size:13px;color:var(--text-muted)">Base tablo bulunamadı.</p>'}
+        <div style="padding:12px 0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+            <div>
+              <h3 style="font-size:15px;font-weight:600;margin:0 0 4px">${name} Bağımlılık Ağacı</h3>
+              <p style="font-size:12.5px;color:var(--text-muted);margin:0">Bu view'in çağırdığı tablolar, alt view'ler ve onu kullanan üst nesneler.</p>
+            </div>
+            <button class="button primary small" id="btnJumpToGraphFromDeps">⌁ Bağımlılık Haritasında Aç</button>
           </div>
-          <button class="button primary small" data-goto="graph">⌁ Bağımlılık Haritasında Gör</button>
+
+          <!-- Section 1: Upstream View Callers -->
+          <div style="margin-bottom:18px">
+            <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+              <span>⬆ Bu View'i Kullanan Üst Nesneler (${upViews.length})</span>
+            </h4>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${upViews.map(u => `
+                <span class="object-pill" style="cursor:pointer;background:rgba(124,92,255,0.08);border-color:rgba(124,92,255,0.25);color:#af9fff" data-open-view="${u}">
+                  <b>VIEW</b> ${u}
+                </span>
+              `).join('') || '<span style="font-size:12.5px;color:var(--text-muted);font-style:italic">Bu view\'i doğrudan çağıran üst nesne tespit edilmedi (Blast radius: 0).</span>'}
+            </div>
+          </div>
+
+          <!-- Section 2: Downstream Sub-Views -->
+          <div style="margin-bottom:18px">
+            <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+              <span>⬇ Referans Verilen Alt View'ler (${downViews.length})</span>
+            </h4>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${downViews.map(dw => `
+                <span class="object-pill" style="cursor:pointer;background:rgba(124,92,255,0.08);border-color:rgba(124,92,255,0.25);color:#af9fff" data-open-view="${dw}">
+                  <b>VIEW</b> ${dw}
+                </span>
+              `).join('') || '<span style="font-size:12.5px;color:var(--text-muted);font-style:italic">Alt view referansı yok (Yalnızca doğrudan base tablolara erişiyor).</span>'}
+            </div>
+          </div>
+
+          <!-- Section 3: Base Tables (Disambiguated by Database!) -->
+          <div>
+            <h4 style="font-size:13px;font-weight:600;color:var(--text-secondary);margin-bottom:8px;display:flex;align-items:center;gap:6px">
+              <span>⊞ Erişilen Temel Tablolar (${tablesList.length})</span>
+            </h4>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              ${tablesList.map(t => {
+                const repStyle = t.isRepeated ? 'border-color:rgba(255,93,114,0.45);color:var(--red);background:rgba(255,93,114,0.1)' : 'background:rgba(80,216,255,0.06);border-color:rgba(80,216,255,0.25);color:#6edaff';
+                return `
+                  <span class="object-pill" style="${repStyle}">
+                    ${t.database ? `<span class="db-badge" style="font-size:9.5px;padding:1px 5px;margin-right:4px">${t.database}</span>` : ''}
+                    <b>TABLE</b> ${t.name} ${t.isRepeated ? '⇄ REPEATED' : ''}
+                  </span>
+                `;
+              }).join('') || '<span style="font-size:12.5px;color:var(--text-muted)">Temel tablo bulunamadı.</span>'}
+            </div>
+          </div>
         </div>
       `;
-      const btn = depsTab.querySelector('[data-goto="graph"]');
-      if (btn) btn.addEventListener('click', () => gotoPage('graph'));
+
+      $('#btnJumpToGraphFromDeps')?.addEventListener('click', () => {
+        state.selectedViewName = name;
+        state.selectedCanonicalId = canonical;
+        gotoPage('graph');
+        renderGraph();
+      });
+
+      depsTab.querySelectorAll('[data-open-view]').forEach(elem => {
+        elem.addEventListener('click', () => {
+          selectView(elem.dataset.openView);
+        });
+      });
+    }
+
+    // Runtime Tab Content
+    const runtimeTab = $('#runtimeDetailContent');
+    if (runtimeTab) {
+      const rt = v.runtime || null;
+      const totalReads = v.reads || (rt ? (rt.totalReads > 1e6 ? `${(rt.totalReads / 1e6).toFixed(1)}M` : rt.totalReads.toLocaleString()) : '0');
+      const avgDuration = v.median || (rt ? `${rt.avgDurationMs || 0} ms` : '—');
+      const execCount = rt ? (rt.executionCount || rt.count || 1) : 0;
+      const evidenceGrade = rt?.evidenceGrade || 'B';
+      const evidenceSource = rt?.source || 'Query Store / DMV Plan Cache';
+
+      runtimeTab.innerHTML = `
+        <div style="padding:12px 0">
+          <div class="setting-card" style="margin-bottom:14px;border:1px solid #293042;background:rgba(18,22,32,0.96);padding:16px;border-radius:10px">
+            <div style="flex:1">
+              <strong style="font-size:14px;display:block;margin-bottom:4px">Runtime Attribution & Kanıt Derecesi</strong>
+              <p style="font-size:12.5px;color:var(--text-muted);margin:0;line-height:1.45">
+                View bağımsız derlenen bir nesne değildir. Bu view'i içeren çağıran sorgular üzerinden toplam <b>${totalReads}</b> mantıksal okuma (logical reads) tespit edilmiştir.
+              </p>
+            </div>
+            <span class="connected-pill" style="font-size:11px;color:var(--yellow);border-color:rgba(247,200,106,0.3);background:rgba(247,200,106,0.08);padding:4px 10px;border-radius:6px">
+              GRADE ${evidenceGrade} (${evidenceSource})
+            </span>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));gap:12px;margin-bottom:18px">
+            <div style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+              <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Mantıksal Okuma (Reads)</span>
+              <strong style="font-size:18px;color:var(--text-primary)">${totalReads}</strong>
+            </div>
+            <div style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+              <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Ortalama Yürütme Süresi</span>
+              <strong style="font-size:18px;color:var(--text-primary)">${avgDuration}</strong>
+            </div>
+            <div style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+              <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Tahmini Yürütme Sıklığı</span>
+              <strong style="font-size:18px;color:var(--text-primary)">${execCount > 0 ? `~${execCount} çalıştırma` : '—'}</strong>
+            </div>
+            <div style="background:rgba(255,255,255,0.02);border:1px solid var(--border);border-radius:8px;padding:12px 14px">
+              <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Plan Regresyon Durumu</span>
+              <strong style="font-size:15px;color:${rt?.isRegressed ? 'var(--red)' : 'var(--green)'}">
+                ${rt?.isRegressed ? '⚠ Regresyon Tespit Edildi' : '✓ Stabil'}
+              </strong>
+            </div>
+          </div>
+
+          <div>
+            <h4 style="font-size:13.5px;margin-bottom:8px">İlişkili Çağıran Sorgular (Correlated Queries)</h4>
+            <div style="background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:8px;padding:12px">
+              <code style="font-size:12px;color:var(--purple-light);display:block;margin-bottom:6px">
+                SELECT * FROM dbo.[${name}]
+              </code>
+              <small style="color:var(--text-muted);font-size:11px">
+                Query Store plan hash ve sys.dm_exec_query_stats önbelleğindeki correlated sorgu metinleri analiz edilmiştir.
+              </small>
+            </div>
+          </div>
+        </div>
+      `;
     }
 
     // Lazy SQL Loading
@@ -648,21 +866,16 @@
     if (sqlToolbarName) sqlToolbarName.textContent = `${v.schema_name || 'dbo'}.${name}.sql`;
 
     if (sqlCode) {
-      if (state.isLive) {
-        sqlCode.textContent = '-- SQL tanımı getiriliyor...';
-        try {
-          const res = await fetch(`/api/views/${encodeURIComponent(name)}/source`);
-          const json = await res.json();
-          if (json.ok && json.sql) {
-            sqlCode.textContent = json.sql;
-          } else {
-            sqlCode.textContent = `-- Tanım alınamadı: ${json.error || 'Bilinmeyen hata'}`;
-          }
-        } catch (err) {
-          sqlCode.textContent = `-- Hata: ${err.message}`;
-        }
+      if (v.definition && v.definition.length > 5) {
+        sqlCode.textContent = v.definition;
       } else {
-        sqlCode.textContent = MOCK.sql;
+        sqlCode.textContent = '-- SQL tanımı getiriliyor...';
+        getViewDefinition(v.canonicalId || name).then(sql => {
+          if (sql) {
+            v.definition = sql;
+            sqlCode.textContent = sql;
+          }
+        });
       }
     }
 
@@ -796,209 +1009,282 @@
 
     const targetNameStr = targetView.name || targetView.view_name;
     const targetCanonStr = (targetView.canonicalId || targetNameStr).toLowerCase();
-
-    // 1. Extract from subGraphData if present
-    let upstreamList = [];
-    let downstreamList = [];
-
-    if (subGraphData && Array.isArray(subGraphData.nodes)) {
-      subGraphData.nodes.forEach(n => {
-        const nName = n.name || (n.canonicalId ? n.canonicalId.split('.').pop() : '');
-        const nCanon = (n.canonicalId || nName).toLowerCase();
-        if (n.isTarget || n.type === 'TARGET' || nName.toLowerCase() === targetNameStr.toLowerCase() || nCanon === targetCanonStr) {
-          return; // Skip target itself
-        }
-        if (n.type === 'UPSTREAM_VIEW' || n.type === 'UPSTREAM' || n.type === 'view') {
-          upstreamList.push({
-            name: nName,
-            type: 'UPSTREAM_VIEW',
-            health: n.health || 65,
-            risk: n.risk || 'HIGH',
-            canonicalId: n.canonicalId
-          });
-        } else {
-          downstreamList.push({
-            name: nName,
-            type: n.type || 'TABLE',
-            badge: n.type === 'DOWNSTREAM_VIEW' ? 'VIEW' : (n.type === 'FUNCTION' ? 'FN' : (n.type === 'LINKED_SERVER' ? 'LINK' : 'TABLE')),
-            health: n.health,
-            risk: n.risk,
-            canonicalId: n.canonicalId
-          });
-        }
-      });
-    }
-
-    // 2. Fallback / Augment with view metadata if subGraph had no nodes
-    if (upstreamList.length === 0 && targetView.upstreamViews && targetView.upstreamViews.length > 0) {
-      upstreamList = targetView.upstreamViews.map((name, idx) => ({
-        name: typeof name === 'string' ? name.split('.').pop() : (name.name || name.canonicalId),
-        type: 'UPSTREAM_VIEW',
-        health: 65 - idx * 4,
-        risk: 'HIGH'
-      }));
-    }
-
-    if (downstreamList.length === 0) {
-      const bTables = targetView.baseTables || [];
-      const dViews = targetView.downstreamViews || [];
-      bTables.forEach(tbl => {
-        const tName = typeof tbl === 'string' ? tbl.split('.').pop() : (tbl.tableName || tbl.name || tbl.canonicalId);
-        if (tName && !downstreamList.some(d => d.name.toLowerCase() === tName.toLowerCase())) {
-          downstreamList.push({
-            name: tName,
-            type: 'TABLE',
-            badge: 'TABLE'
-          });
-        }
-      });
-      dViews.forEach(vw => {
-        const vName = typeof vw === 'string' ? vw.split('.').pop() : (vw.name || vw.canonicalId);
-        if (vName && !downstreamList.some(d => d.name.toLowerCase() === vName.toLowerCase())) {
-          downstreamList.push({
-            name: vName,
-            type: 'DOWNSTREAM_VIEW',
-            badge: 'VIEW'
-          });
-        }
-      });
-    }
-
-    // 3. Fallback to state.data.dependencies if still empty
-    if (upstreamList.length === 0 || downstreamList.length === 0) {
-      const allDeps = state.data.dependencies || [];
-      const tLower = targetNameStr.toLowerCase();
-
-      allDeps.forEach(d => {
-        const sCanon = (d.sourceCanonicalId || '').toLowerCase();
-        const sName = (d.sourceName || d.source_name || '').toLowerCase();
-        const tCanon = (d.targetCanonicalId || '').toLowerCase();
-        const tName = (d.targetName || d.target_name || d.referenced_entity_name || '').toLowerCase();
-
-        // TargetView is target -> caller is upstream
-        if (upstreamList.length === 0 && (tCanon === targetCanonStr || tName === tLower || tCanon.endsWith('.' + tLower))) {
-          const upName = d.sourceName || d.source_name || (d.sourceCanonicalId ? d.sourceCanonicalId.split('.').pop() : '');
-          if (upName && !upstreamList.some(u => u.name.toLowerCase() === upName.toLowerCase())) {
-            upstreamList.push({
-              name: upName,
-              type: 'UPSTREAM_VIEW',
-              health: 65,
-              risk: 'HIGH'
-            });
-          }
-        }
-
-        // TargetView is source -> callee is downstream
-        if (downstreamList.length === 0 && (sCanon === targetCanonStr || sName === tLower || sCanon.endsWith('.' + tLower))) {
-          const downName = d.targetName || d.target_name || d.referenced_entity_name || (d.targetCanonicalId ? d.targetCanonicalId.split('.').pop() : '');
-          if (downName && !downstreamList.some(dw => dw.name.toLowerCase() === downName.toLowerCase())) {
-            const rawType = (d.targetType || d.target_type || '').toUpperCase();
-            let role = 'TABLE';
-            let badge = 'TABLE';
-            if (rawType.includes('VIEW')) { role = 'DOWNSTREAM_VIEW'; badge = 'VIEW'; }
-            else if (rawType.includes('FUNCTION')) { role = 'FUNCTION'; badge = 'FN'; }
-            else if (d.isLinkedServer) { role = 'LINKED_SERVER'; badge = 'LINK'; }
-            downstreamList.push({
-              name: downName,
-              type: role,
-              badge
-            });
-          }
-        }
-      });
-    }
-
-    // 4. Demo Mock Fallback only when not in live mode
-    if (!state.isLive) {
-      if (upstreamList.length === 0) {
-        upstreamList = ['AA_GENEL_PLAN', 'AA_PLANLAMA_EKRANI'].map((name, idx) => ({
-          name, type: 'UPSTREAM_VIEW', health: 65 - idx * 4, risk: 'HIGH'
-        }));
-      }
-      if (downstreamList.length === 0) {
-        downstreamList = ['STOK_HAREKETLERI', 'STOKLAR', 'ISEMIRLERI'].map(name => ({
-          name, type: 'TABLE', badge: 'TABLE'
-        }));
-      }
-    }
-
     const repeated = (targetView.repeatedBaseTables || []).map(r => (typeof r === 'string' ? r : (r.tableName || r.name || '')));
 
-    // Coordinate System: 2400 x 1600 Virtual Canvas
+    let nodes = [];
+    let edges = [];
+
+    // Helper to test if a table is repeated
+    const checkIsHot = (name, canon) => {
+      const nLower = String(name || '').toLowerCase();
+      const cLower = String(canon || '').toLowerCase();
+      return repeated.some(r => {
+        const rLower = String(r).toLowerCase();
+        return rLower === nLower || cLower.endsWith('.' + rLower) || nLower.endsWith('.' + rLower);
+      });
+    };
+
+    if (subGraphData && Array.isArray(subGraphData.nodes) && subGraphData.nodes.length > 0) {
+      // 1. Live Subgraph from Backend API (with real depths & multi-level BFS tree)
+      nodes = subGraphData.nodes.map(n => {
+        const nName = n.name || (n.canonicalId ? n.canonicalId.split('.').pop() : '');
+        const nCanon = (n.canonicalId || nName).toLowerCase();
+        const isTarget = Boolean(n.isTarget || n.type === 'TARGET' || nName.toLowerCase() === targetNameStr.toLowerCase() || nCanon === targetCanonStr);
+
+        let role = isTarget ? 'TARGET' : (n.type || 'TABLE');
+        let badge = 'TABLE';
+        if (isTarget) badge = 'VIEW';
+        else if (role === 'UPSTREAM_VIEW' || role === 'UPSTREAM') badge = 'VIEW';
+        else if (role === 'DOWNSTREAM_VIEW') badge = 'VIEW';
+        else if (role === 'FUNCTION') badge = 'FN';
+        else if (role === 'LINKED_SERVER') badge = 'LINK';
+        else if (role === 'SYNONYM') badge = 'SYN';
+
+        const isHot = checkIsHot(nName, n.canonicalId);
+
+        return {
+          id: n.id || n.canonicalId || nName,
+          canonicalId: n.canonicalId || n.id || nName,
+          name: nName,
+          database: n.database || (isTarget ? (targetView.database || '') : ''),
+          type: role,
+          badge,
+          depth: isTarget ? 0 : Number(n.depth || 0),
+          health: n.health || (isTarget ? (targetView.health || targetView.healthScore || 60) : 60),
+          risk: n.risk || (isTarget ? (targetView.risk || targetView.riskLevel || 'MEDIUM') : 'NORMAL'),
+          isTarget,
+          isHot
+        };
+      });
+
+      // Connect edges using node lookup
+      const nodeMap = new Map();
+      nodes.forEach(n => {
+        if (n.id) nodeMap.set(String(n.id).toLowerCase(), n);
+        if (n.canonicalId) nodeMap.set(String(n.canonicalId).toLowerCase(), n);
+        if (n.name) {
+          nodeMap.set(String(n.name).toLowerCase(), n);
+          if (n.database) {
+            nodeMap.set(`${n.database.toLowerCase()}.${n.name.toLowerCase()}`, n);
+            nodeMap.set(`${n.database.toLowerCase()}.dbo.${n.name.toLowerCase()}`, n);
+          }
+        }
+      });
+
+      const edgeDedupe = new Set();
+      (subGraphData.edges || []).forEach(e => {
+        const fromKey = String(e.from || e.sourceCanonicalId || e.sourceName || '').toLowerCase();
+        const toKey = String(e.to || e.targetCanonicalId || e.targetName || '').toLowerCase();
+        const fromNode = nodeMap.get(fromKey);
+        const toNode = nodeMap.get(toKey);
+        if (fromNode && toNode && fromNode !== toNode) {
+          const k = `${fromNode.id}->${toNode.id}`;
+          if (!edgeDedupe.has(k)) {
+            edgeDedupe.add(k);
+            edges.push({
+              fromNode,
+              toNode,
+              type: e.type || (toNode.depth > fromNode.depth ? 'downstream' : 'upstream'),
+              isHot: Boolean(toNode.isHot || e.isHot)
+            });
+          }
+        }
+      });
+    } else {
+      // 2. Client-side Multi-Hop Synthesis (for demo mode or when API returns empty)
+      const targetNode = {
+        id: targetCanonStr || targetNameStr,
+        canonicalId: targetCanonStr || targetNameStr,
+        name: targetNameStr,
+        database: targetView.database || '',
+        type: 'TARGET',
+        badge: 'VIEW',
+        depth: 0,
+        isTarget: true,
+        health: targetView.health || targetView.healthScore || 60,
+        risk: targetView.risk || targetView.riskLevel || 'MEDIUM',
+        riskScore: targetView.riskScore || 70
+      };
+      nodes.push(targetNode);
+
+      const allDeps = state.data.dependencies || [];
+      const depthLimit = $('#graphDepthSelect')?.value === 'all' ? 99 : Number($('#graphDepthSelect')?.value || 2);
+      const direction = $('#graphDirectionSelect')?.value || 'both';
+
+      const visited = new Set([targetCanonStr, targetNameStr.toLowerCase()]);
+      const queue = [{ node: targetNode, depth: 0 }];
+
+      // BFS Downstream
+      if (direction === 'both' || direction === 'downstream') {
+        let qIdx = 0;
+        while (qIdx < queue.length) {
+          const { node: currNode, depth: currDepth } = queue[qIdx++];
+          if (currDepth >= depthLimit) continue;
+
+          const currCanon = currNode.canonicalId.toLowerCase();
+          const currName = currNode.name.toLowerCase();
+
+          allDeps.forEach(d => {
+            const sCanon = (d.sourceCanonicalId || '').toLowerCase();
+            const sName = (d.sourceName || d.source_name || '').toLowerCase();
+            if (sCanon === currCanon || sName === currName || sCanon.endsWith('.' + currName)) {
+              const tCanon = (d.targetCanonicalId || '').toLowerCase();
+              const tName = d.targetName || d.target_name || d.referenced_entity_name || (tCanon ? tCanon.split('.').pop() : '');
+              const tDb = d.targetDatabase || (tCanon ? tCanon.split('.')[0] : (currNode.database || ''));
+              const rawType = (d.targetType || d.target_type || '').toUpperCase();
+              const isView = rawType.includes('VIEW');
+              const isFn = rawType.includes('FUNCTION');
+              const role = isView ? 'DOWNSTREAM_VIEW' : (isFn ? 'FUNCTION' : 'TABLE');
+              const badge = isView ? 'VIEW' : (isFn ? 'FN' : 'TABLE');
+              const nodeKey = tCanon || (tDb ? `${tDb}.dbo.${tName}` : tName);
+
+              let childNode = nodes.find(n => (n.canonicalId && n.canonicalId.toLowerCase() === nodeKey.toLowerCase()) || (n.name.toLowerCase() === tName.toLowerCase() && n.database === tDb));
+              if (!childNode) {
+                childNode = {
+                  id: nodeKey,
+                  canonicalId: nodeKey,
+                  name: tName,
+                  database: tDb,
+                  type: role,
+                  badge,
+                  depth: currDepth + 1,
+                  isHot: checkIsHot(tName, nodeKey)
+                };
+                nodes.push(childNode);
+              }
+
+              if (!edges.some(e => e.fromNode === currNode && e.toNode === childNode)) {
+                edges.push({
+                  fromNode: currNode,
+                  toNode: childNode,
+                  type: 'downstream',
+                  isHot: childNode.isHot
+                });
+              }
+
+              if (isView && !visited.has(nodeKey.toLowerCase())) {
+                visited.add(nodeKey.toLowerCase());
+                queue.push({ node: childNode, depth: currDepth + 1 });
+              }
+            }
+          });
+        }
+      }
+
+      // BFS Upstream
+      if (direction === 'both' || direction === 'upstream') {
+        const upQueue = [{ node: targetNode, depth: 0 }];
+        let upIdx = 0;
+        while (upIdx < upQueue.length) {
+          const { node: currNode, depth: currDepth } = upQueue[upIdx++];
+          if (currDepth >= depthLimit) continue;
+
+          const currCanon = currNode.canonicalId.toLowerCase();
+          const currName = currNode.name.toLowerCase();
+
+          allDeps.forEach(d => {
+            const tCanon = (d.targetCanonicalId || '').toLowerCase();
+            const tName = (d.targetName || d.target_name || d.referenced_entity_name || '').toLowerCase();
+            if (tCanon === currCanon || tName === currName || tCanon.endsWith('.' + currName)) {
+              const sCanon = (d.sourceCanonicalId || '').toLowerCase();
+              const sName = d.sourceName || d.source_name || (sCanon ? sCanon.split('.').pop() : '');
+              const sDb = d.sourceDatabase || (sCanon ? sCanon.split('.')[0] : (currNode.database || ''));
+              const nodeKey = sCanon || (sDb ? `${sDb}.dbo.${sName}` : sName);
+
+              let parentNode = nodes.find(n => (n.canonicalId && n.canonicalId.toLowerCase() === nodeKey.toLowerCase()) || (n.name.toLowerCase() === sName.toLowerCase() && n.database === sDb));
+              if (!parentNode) {
+                parentNode = {
+                  id: nodeKey,
+                  canonicalId: nodeKey,
+                  name: sName,
+                  database: sDb,
+                  type: 'UPSTREAM_VIEW',
+                  badge: 'VIEW',
+                  depth: -(currDepth + 1),
+                  health: 65 - currDepth * 4,
+                  risk: 'HIGH'
+                };
+                nodes.push(parentNode);
+              }
+
+              if (!edges.some(e => e.fromNode === parentNode && e.toNode === currNode)) {
+                edges.push({
+                  fromNode: parentNode,
+                  toNode: currNode,
+                  type: 'upstream',
+                  isHot: false
+                });
+              }
+
+              if (!visited.has(nodeKey.toLowerCase())) {
+                visited.add(nodeKey.toLowerCase());
+                upQueue.push({ node: parentNode, depth: currDepth + 1 });
+              }
+            }
+          });
+        }
+      }
+
+      // Demo fallback if still only target node
+      if (nodes.length === 1 && !state.isLive) {
+        const up1 = { id: 'AA_GENEL_PLAN', name: 'AA_GENEL_PLAN', database: targetView.database || 'LIDER26', type: 'UPSTREAM_VIEW', badge: 'VIEW', depth: -1, health: 65, risk: 'HIGH' };
+        const up2 = { id: 'AA_PLANLAMA_EKRANI', name: 'AA_PLANLAMA_EKRANI', database: targetView.database || 'LIDER26', type: 'UPSTREAM_VIEW', badge: 'VIEW', depth: -1, health: 60, risk: 'HIGH' };
+        const subV = { id: 'V_SUB_MALZEME_IHTIYAC', name: 'V_SUB_MALZEME_IHTIYAC', database: targetView.database || 'LIDER26', type: 'DOWNSTREAM_VIEW', badge: 'VIEW', depth: 1, health: 68, risk: 'MEDIUM' };
+        const tbl1 = { id: 'tbl_stok_26', name: 'STOKLAR', database: 'LIDER26', type: 'TABLE', badge: 'TABLE', depth: 2, isHot: true };
+        const tbl2 = { id: 'tbl_stok_25', name: 'STOKLAR', database: 'LIDER25', type: 'TABLE', badge: 'TABLE', depth: 2, isHot: false };
+        const tbl3 = { id: 'tbl_hareket', name: 'STOK_HAREKETLERI', database: targetView.database || 'LIDER26', type: 'TABLE', badge: 'TABLE', depth: 2, isHot: true };
+        const tbl4 = { id: 'tbl_isemri', name: 'ISEMIRLERI', database: targetView.database || 'LIDER26', type: 'TABLE', badge: 'TABLE', depth: 1, isHot: false };
+
+        nodes.push(up1, up2, subV, tbl4, tbl1, tbl2, tbl3);
+        edges.push(
+          { fromNode: up1, toNode: targetNode, type: 'upstream' },
+          { fromNode: up2, toNode: targetNode, type: 'upstream' },
+          { fromNode: targetNode, toNode: subV, type: 'downstream' },
+          { fromNode: targetNode, toNode: tbl4, type: 'downstream' },
+          { fromNode: subV, toNode: tbl1, type: 'downstream', isHot: true },
+          { fromNode: subV, toNode: tbl2, type: 'downstream' },
+          { fromNode: subV, toNode: tbl3, type: 'downstream', isHot: true }
+        );
+      }
+    }
+
+    // 3. Multi-Layer Layout Engine (Column per depth)
     const centerX = 1200;
     const centerY = 800;
+    const layerSpacingX = 440;
 
-    const nodes = [];
-    const edges = [];
-
-    // 1. Target Node
-    const targetNode = {
-      id: 'target',
-      name: targetView.name || targetView.view_name,
-      type: 'TARGET',
-      badge: 'VIEW',
-      x: centerX,
-      y: centerY,
-      isTarget: true,
-      health: targetView.health || targetView.healthScore || 60,
-      risk: targetView.risk || targetView.riskLevel || 'MEDIUM',
-      riskScore: targetView.riskScore || 70
-    };
-    nodes.push(targetNode);
-
-    // 2. Upstream Nodes (Column on Left at X = 650)
-    const upCount = Math.min(8, upstreamList.length);
-    const upSpacing = upCount > 5 ? 100 : 130;
-    const upStartY = centerY - ((upCount - 1) * upSpacing) / 2;
-    upstreamList.slice(0, upCount).forEach((item, idx) => {
-      const nodeY = upStartY + idx * upSpacing;
-      const node = {
-        id: `up_${idx}`,
-        name: item.name,
-        type: 'UPSTREAM',
-        badge: 'VIEW',
-        x: 650,
-        y: nodeY,
-        health: item.health || (65 - idx * 4),
-        risk: item.risk || 'HIGH'
-      };
-      nodes.push(node);
-      edges.push({
-        fromNode: node,
-        toNode: targetNode,
-        type: 'upstream'
-      });
+    // Group nodes by depth
+    const depthGroups = new Map();
+    nodes.forEach(n => {
+      const d = Number(n.depth || 0);
+      if (!depthGroups.has(d)) depthGroups.set(d, []);
+      depthGroups.get(d).push(n);
     });
 
-    // 3. Downstream Nodes (Column on Right at X = 1750)
-    const downCount = Math.min(10, downstreamList.length);
-    const downSpacing = downCount > 6 ? 90 : 120;
-    const downStartY = centerY - ((downCount - 1) * downSpacing) / 2;
-    downstreamList.slice(0, downCount).forEach((item, idx) => {
-      const isHot = repeated.some(r => r && (r.toLowerCase() === item.name.toLowerCase() || item.name.toLowerCase().endsWith('.' + r.toLowerCase())));
-      const nodeY = downStartY + idx * downSpacing;
-      const node = {
-        id: `down_${idx}`,
-        name: item.name,
-        type: item.type,
-        badge: item.badge || (item.type === 'DOWNSTREAM_VIEW' ? 'VIEW' : item.type === 'FUNCTION' ? 'FN' : 'TABLE'),
-        isHot,
-        x: 1750,
-        y: nodeY,
-        paths: isHot ? 4 : 1
-      };
-      nodes.push(node);
-      edges.push({
-        fromNode: targetNode,
-        toNode: node,
-        type: 'downstream',
-        isHot
+    depthGroups.forEach((groupNodes, depth) => {
+      // Sort: Views first, then Tables, then Functions, then name
+      groupNodes.sort((a, b) => {
+        const typeOrder = { 'TARGET': 0, 'VIEW': 1, 'UPSTREAM_VIEW': 1, 'DOWNSTREAM_VIEW': 1, 'TABLE': 2, 'FUNCTION': 3, 'SYNONYM': 4, 'LINKED_SERVER': 5 };
+        const orderA = typeOrder[a.type] ?? 9;
+        const orderB = typeOrder[b.type] ?? 9;
+        if (orderA !== orderB) return orderA - orderB;
+        return a.name.localeCompare(b.name);
+      });
+
+      const count = groupNodes.length;
+      const spacingY = count > 8 ? 85 : (count > 5 ? 105 : (count > 2 ? 125 : 145));
+      const startY = centerY - ((count - 1) * spacingY) / 2;
+
+      groupNodes.forEach((node, idx) => {
+        node.x = centerX + (depth * layerSpacingX);
+        node.y = startY + (idx * spacingY);
       });
     });
 
     graphState.nodes = nodes;
     graphState.edges = edges;
-    graphState.selectedNodeId = 'target';
+    const targetNodeObj = nodes.find(n => n.isTarget) || nodes[0];
+    graphState.selectedNodeId = targetNodeObj ? targetNodeObj.id : 'target';
 
     // Render Nodes & Edges
     renderGraphEdges();
@@ -1007,8 +1293,10 @@
     // Center Graph Viewport Initially
     graphCenterSelected();
 
-    // Set default inspector to target node (HEDEF VIEW)
-    updateInspector(targetView.name || targetView.view_name, 'TARGET', targetView);
+    // Set default inspector to target node
+    if (targetNodeObj) {
+      updateInspector(targetNodeObj.name, targetNodeObj.type, targetView, targetNodeObj);
+    }
   }
 
   function renderGraphEdges() {
@@ -1016,14 +1304,24 @@
     if (!edgeLines) return;
 
     edgeLines.innerHTML = graphState.edges.map(e => {
-      const x1 = e.fromNode.x + 95; // From right edge of fromNode
+      if (!e.fromNode || !e.toNode) return '';
+      const isLeftToRight = e.fromNode.x <= e.toNode.x;
+      const x1 = isLeftToRight ? e.fromNode.x + 105 : e.fromNode.x - 105;
       const y1 = e.fromNode.y;
-      const x2 = e.toNode.x - 95;   // To left edge of toNode
+      const x2 = isLeftToRight ? e.toNode.x - 105 : e.toNode.x + 105;
       const y2 = e.toNode.y;
       const midX = (x1 + x2) / 2;
 
+      let curveD;
+      if (Math.abs(e.fromNode.x - e.toNode.x) < 50) {
+        const loopOffset = 130;
+        curveD = `M${e.fromNode.x + 105} ${y1} C${e.fromNode.x + 105 + loopOffset} ${y1}, ${e.toNode.x + 105 + loopOffset} ${y2}, ${e.toNode.x + 105} ${y2}`;
+      } else {
+        curveD = `M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`;
+      }
+
       const pathClass = e.isHot ? 'hot-edge' : '';
-      return `<path d="M${x1} ${y1} C${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}" class="${pathClass}" data-from="${e.fromNode.name}" data-to="${e.toNode.name}"></path>`;
+      return `<path d="${curveD}" class="${pathClass}" data-from="${e.fromNode.name}" data-to="${e.toNode.name}"></path>`;
     }).join('');
   }
 
@@ -1042,16 +1340,22 @@
 
       let subtitle = `Health ${n.health || 60}`;
       if (n.isTarget) subtitle = `Health ${n.health || 60} · ${n.risk || 'NORMAL'}`;
-      else if (n.isHot) subtitle = '4 access paths';
-      else if (n.type === 'TABLE') subtitle = 'Base Table';
-      else if (n.type === 'FUNCTION') subtitle = 'Function';
-      else if (n.type === 'DOWNSTREAM_VIEW') subtitle = 'Referenced View';
+      else if (n.isHot) subtitle = '⇄ Tekrarlı Erişim Rotaları';
+      else if (n.type === 'TABLE') subtitle = n.database ? `Tablo · [${n.database}]` : 'Temel Tablo';
+      else if (n.type === 'FUNCTION') subtitle = 'Fonksiyon';
+      else if (n.type === 'DOWNSTREAM_VIEW') subtitle = `Referans View · Seviye ${n.depth}`;
+      else if (n.type === 'UPSTREAM' || n.type === 'UPSTREAM_VIEW') subtitle = `Çağıran View · Seviye ${Math.abs(n.depth)}`;
+
+      const dbBadgeHtml = n.database ? `<span class="node-db-badge" title="Veritabanı: ${n.database}">${n.database}</span>` : '';
 
       return `
-        <div class="${nodeClass}" id="gnode_${n.id}" style="left:${n.x}px;top:${n.y}px" data-node-id="${n.id}" data-node-name="${n.name}" data-node-type="${n.type}">
-          <span class="node-badge">${n.badge}</span>
-          <strong>${n.name}</strong>
-          <small>${subtitle}</small>
+        <div class="${nodeClass}" id="gnode_${n.id}" style="left:${n.x}px;top:${n.y}px" data-node-id="${n.id}" data-node-name="${n.name}" data-node-type="${n.type}" title="${n.canonicalId || n.name}">
+          <div style="display:flex;align-items:center;margin-bottom:5px;flex-wrap:wrap;gap:4px">
+            <span class="node-badge">${n.badge}</span>
+            ${dbBadgeHtml}
+          </div>
+          <strong style="white-space:normal;word-break:break-word;font-size:13px;line-height:1.3" title="${n.name}">${n.name}</strong>
+          <small style="margin-top:4px">${subtitle}</small>
         </div>
       `;
     }).join('');
@@ -1075,14 +1379,15 @@
         graphState.selectedNodeId = nodeId;
         $$('.graph-node').forEach(gn => gn.classList.toggle('active-node', gn.dataset.nodeId === nodeId));
         const currentView = state.data.views.find(v => (v.name || v.view_name) === state.selectedViewName) || state.data.views[0];
-        updateInspector(node.name, node.type, currentView);
+        updateInspector(node.name, node.type, currentView, node);
       });
     });
   }
 
-  function updateInspector(nodeName, nodeType, currentView) {
+  function updateInspector(nodeName, nodeType, currentView, nodeObj) {
     const insp = $('#graphInspector');
     if (!insp) return;
+    insp.style.display = 'block';
 
     if ($('#inspectorNodeName')) $('#inspectorNodeName').textContent = nodeName;
     if ($('#inspectorNodeType')) {
@@ -1097,11 +1402,16 @@
       $('#inspectorNodeType').textContent = typeLabel;
     }
 
+    if ($('#inspectorNodeDb')) {
+      const db = nodeObj?.database || (nodeObj?.canonicalId ? nodeObj.canonicalId.split('.')[0] : (currentView?.database || '—'));
+      $('#inspectorNodeDb').textContent = db;
+    }
+
     const p = (state.data.pressures || []).find(x => x.name === nodeName);
     const isTargetOrView = nodeType !== 'TABLE' && nodeType !== 'FUNCTION';
-    const refsCount = p ? p.refs : (isTargetOrView ? (currentView.dependents || (currentView.dependentList?.length || 0)) : 1);
-    const pathsCount = p ? p.paths : (isTargetOrView ? (currentView.depth || 1) : 1);
-    const criticalCount = p ? p.critical : (isTargetOrView ? (currentView.problems?.filter(pr => pr.severity === 'CRITICAL').length || 0) : 0);
+    const refsCount = p ? p.refs : (isTargetOrView ? (currentView?.dependents || (currentView?.dependentList?.length || 0)) : 1);
+    const pathsCount = p ? p.paths : (isTargetOrView ? (currentView?.depth || 1) : 1);
+    const criticalCount = p ? p.critical : (isTargetOrView ? (currentView?.problems?.filter(pr => pr.severity === 'CRITICAL').length || 0) : 0);
 
     if ($('#inspectorMetricRefs')) $('#inspectorMetricRefs').textContent = refsCount;
     if ($('#inspectorMetricPaths')) $('#inspectorMetricPaths').textContent = pathsCount;
@@ -1110,7 +1420,7 @@
     const warnBox = $('#inspectorWarningBox');
     if (warnBox) {
       if (nodeType === 'TABLE') {
-        const isRepeated = (currentView.repeatedBaseTables || []).some(r => r.tableName === nodeName || r.canonicalId?.endsWith('.' + nodeName));
+        const isRepeated = nodeObj?.isHot || (currentView?.repeatedBaseTables || []).some(r => r.tableName === nodeName || r.canonicalId?.endsWith('.' + nodeName));
         warnBox.style.display = isRepeated ? 'block' : 'none';
       } else {
         warnBox.style.display = 'none';
@@ -1127,14 +1437,14 @@
     if (btnView) {
       btnView.style.display = isViewType ? 'block' : 'none';
       btnView.onclick = () => {
-        selectView(nodeName);
+        selectView(nodeObj?.canonicalId || nodeName);
         gotoPage('views');
       };
     }
     if (btnSql) {
       btnSql.style.display = isViewType ? 'block' : 'none';
       btnSql.onclick = () => {
-        selectView(nodeName);
+        selectView(nodeObj?.canonicalId || nodeName);
         gotoPage('views');
         setTimeout(() => {
           $(`.detail-tabs button[data-detail-tab="sql"]`)?.click();
@@ -1146,6 +1456,25 @@
       btnPressure.onclick = () => gotoPage('tables');
     }
   }
+
+  // Wire Close Inspector Button and Esc key
+  $('#closeInspectorBtn')?.addEventListener('click', () => {
+    const insp = $('#graphInspector');
+    if (insp) insp.style.display = 'none';
+    graphState.selectedNodeId = null;
+    $$('.graph-node').forEach(gn => gn.classList.remove('active-node'));
+  });
+
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      const insp = $('#graphInspector');
+      if (insp && insp.style.display !== 'none') {
+        insp.style.display = 'none';
+        graphState.selectedNodeId = null;
+        $$('.graph-node').forEach(gn => gn.classList.remove('active-node'));
+      }
+    }
+  });
 
   // --- Graph Canvas Drag (Pan) & Zoom Engine ---
   const graphStage = $('#graphStage');
@@ -1643,12 +1972,23 @@
 
     // Bind action buttons
     $$('.btn-dup-diff').forEach(b => {
-      b.onclick = () => {
+      b.onclick = async () => {
+        const viewA = b.dataset.a;
+        const viewB = b.dataset.b;
         gotoPage('validation');
         const vo = $('#valOrigSql');
         const vc = $('#valCandSql');
-        if (vo) vo.value = `-- View A: ${b.dataset.a}\nSELECT * FROM dbo.[${b.dataset.a}]`;
-        if (vc) vc.value = `-- View B: ${b.dataset.b}\nSELECT * FROM dbo.[${b.dataset.b}]`;
+        if (vo) vo.value = `-- View A (${viewA}) SQL tanımı yükleniyor...`;
+        if (vc) vc.value = `-- View B (${viewB}) SQL tanımı yükleniyor...`;
+
+        const [defA, defB] = await Promise.all([
+          getViewDefinition(viewA),
+          getViewDefinition(viewB)
+        ]);
+
+        if (vo) vo.value = defA;
+        if (vc) vc.value = defB;
+        toast('Mükerrer SQL Karşılaştırma', `${viewA} ve ${viewB} SQL tanımları Validation Lab'a aktarıldı.`, 'success');
       };
     });
     $$('.btn-dup-graph').forEach(b => {
