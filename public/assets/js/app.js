@@ -29,6 +29,7 @@
     connectionInfo: null,
     capabilities: null,
     isLive: false,
+    aiConfig: null,
     activePrefix: 'AA_',
     primaryDatabase: MOCK.primaryDatabase || 'MikroDB_V16_LIDER25',
     selectedDatabases: MOCK.selectedDatabases || ['MikroDB_V16_LIDER25', 'RAPOR_DB', 'MikroDB_V16_TEST'],
@@ -67,6 +68,7 @@
     isPanning: false,
     isDraggingNode: false,
     draggedNodeId: null,
+    draggedElem: null,
     dragStartX: 0,
     dragStartY: 0,
     nodeOrigX: 0,
@@ -125,6 +127,9 @@
 
     if (name === 'graph') {
       renderGraph();
+    }
+    if (name === 'refactor') {
+      renderRefactorPage(state.selectedCanonicalId || state.selectedViewName);
     }
   }
 
@@ -651,6 +656,11 @@
       });
       $$('.btn-spc-ai').forEach(b => {
         b.onclick = () => {
+          if (b.dataset.view) {
+            state.selectedViewName = b.dataset.view;
+            const targetV = (state.data.views || []).find(x => (x.name || x.view_name) === b.dataset.view);
+            if (targetV && targetV.canonicalId) state.selectedCanonicalId = targetV.canonicalId;
+          }
           gotoPage('refactor');
         };
       });
@@ -1370,6 +1380,7 @@
 
         graphState.isDraggingNode = true;
         graphState.draggedNodeId = nodeId;
+        graphState.draggedElem = elem;
         graphState.dragStartX = e.clientX;
         graphState.dragStartY = e.clientY;
         graphState.nodeOrigX = node.x;
@@ -1509,7 +1520,7 @@
           node.x = graphState.nodeOrigX + dx;
           node.y = graphState.nodeOrigY + dy;
 
-          const elem = $(`#gnode_${node.id}`);
+          const elem = graphState.draggedElem || document.getElementById(`gnode_${node.id}`) || document.querySelector(`[data-node-id="${CSS.escape(node.id)}"]`);
           if (elem) {
             elem.style.left = `${node.x}px`;
             elem.style.top = `${node.y}px`;
@@ -1527,6 +1538,7 @@
       if (graphState.isDraggingNode) {
         graphState.isDraggingNode = false;
         graphState.draggedNodeId = null;
+        graphState.draggedElem = null;
       }
     });
 
@@ -2000,6 +2012,11 @@
     });
     $$('.btn-dup-ai').forEach(b => {
       b.onclick = () => {
+        if (b.dataset.a) {
+          state.selectedViewName = b.dataset.a;
+          const targetV = (state.data.views || []).find(x => (x.name || x.view_name) === b.dataset.a);
+          if (targetV && targetV.canonicalId) state.selectedCanonicalId = targetV.canonicalId;
+        }
         gotoPage('refactor');
       };
     });
@@ -2061,7 +2078,95 @@
       triggerScan();
     });
 
-    // 4. AI Provider Test Connection
+    // Load saved settings from backend on init
+    async function loadSettingsFromBackend() {
+      try {
+        const res = await fetch('/api/settings/config');
+        const json = await res.json();
+        if (json.ok && json.data) {
+          const cfg = json.data;
+          if (cfg.activePrefix && $('#settingViewPrefix')) {
+            $('#settingViewPrefix').value = cfg.activePrefix;
+            state.activePrefix = cfg.activePrefix;
+          }
+          if (cfg.ai) {
+            state.aiConfig = cfg.ai;
+            if (cfg.ai.provider && $('#settingAiProvider')) $('#settingAiProvider').value = cfg.ai.provider;
+            if (cfg.ai.baseUrl && $('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = cfg.ai.baseUrl;
+            if (cfg.ai.model && $('#settingAiModel')) $('#settingAiModel').value = cfg.ai.model;
+            if (cfg.ai.temperature !== undefined && $('#settingAiTemp')) $('#settingAiTemp').value = cfg.ai.temperature;
+            if (cfg.ai.maxTokens !== undefined && $('#settingAiTokens')) $('#settingAiTokens').value = cfg.ai.maxTokens;
+            if (cfg.ai.hasApiKey && $('#settingAiKey')) {
+              $('#settingAiKey').placeholder = '•••••••••••••••• (Kayıtlı)';
+            }
+          }
+          if (cfg.scoring) {
+            if (cfg.scoring.runtimeWeight !== undefined && $('#weightRuntime')) $('#weightRuntime').value = cfg.scoring.runtimeWeight;
+            if (cfg.scoring.regressionWeight !== undefined && $('#weightRegression')) $('#weightRegression').value = cfg.scoring.regressionWeight;
+            if (cfg.scoring.repeatedWeight !== undefined && $('#weightRepeated')) $('#weightRepeated').value = cfg.scoring.repeatedWeight;
+            if (cfg.scoring.depthWeight !== undefined && $('#weightDepth')) $('#weightDepth').value = cfg.scoring.depthWeight;
+            if (cfg.scoring.sargableWeight !== undefined && $('#weightSargable')) $('#weightSargable').value = cfg.scoring.sargableWeight;
+            if (cfg.scoring.blastWeight !== undefined && $('#weightBlast')) $('#weightBlast').value = cfg.scoring.blastWeight;
+          }
+        }
+      } catch (err) {
+        console.warn('[Settings] Ayarlar yüklenemedi:', err);
+      }
+    }
+    loadSettingsFromBackend();
+
+    // 4. Save AI Settings Button
+    $('#btnSaveAi')?.addEventListener('click', async () => {
+      const btn = $('#btnSaveAi');
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '💾 Kaydediliyor...';
+
+      const aiPayload = {
+        provider: $('#settingAiProvider')?.value,
+        baseUrl: $('#settingAiBaseUrl')?.value,
+        model: $('#settingAiModel')?.value,
+        temperature: Number($('#settingAiTemp')?.value || 0.15),
+        maxTokens: Number($('#settingAiTokens')?.value || 4096)
+      };
+
+      const keyVal = $('#settingAiKey')?.value?.trim();
+      if (keyVal) {
+        aiPayload.apiKey = keyVal;
+      }
+
+      try {
+        const res = await fetch('/api/settings/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ai: aiPayload })
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || 'Ayarlar kaydedilemedi.');
+
+        state.aiConfig = {
+          provider: aiPayload.provider,
+          baseUrl: aiPayload.baseUrl,
+          model: aiPayload.model,
+          temperature: aiPayload.temperature,
+          maxTokens: aiPayload.maxTokens,
+          hasApiKey: true
+        };
+
+        if (json.data?.ai?.hasApiKey) {
+          $('#settingAiKey').value = '';
+          $('#settingAiKey').placeholder = '•••••••••••••••• (Kayıtlı)';
+        }
+        toast('AI Ayarları Kaydedildi', 'Yerel yapılandırma başarıyla güncellendi.', 'success');
+      } catch (err) {
+        toast('Hata', err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
+
+    // 4b. AI Provider Test Connection
     $('#btnTestAi')?.addEventListener('click', async () => {
       const btn = $('#btnTestAi');
       const oldText = btn.textContent;
@@ -2081,12 +2186,26 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
-        const json = await res.json();
-        if (!res.ok || !json.ok) throw new Error(json.error || 'AI bağlantısı kurulamadı.');
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || `Bağlantı kurulamadı (HTTP ${res.status}).`);
+        }
 
-        toast('AI Bağlantısı Başarılı', `${json.data.model} modeliyle iletişim doğrulandı.`, 'success');
+        // Güvenli parsing ve model eşleşme kontrolü (deepseek-v4-flash -> deepseek-flash)
+        const respModel = json.data?.respondedModel || json.data?.model || json.respondedModel || json.model || payload.model;
+        const reqModel = json.data?.requestedModel || json.requestedModel || payload.model;
+        const modelText = (reqModel && respModel && reqModel !== respModel)
+          ? `${respModel} (istek: ${reqModel})`
+          : (respModel || 'AI Modeli');
+
+        if ($('#settingAiKey')?.value?.trim()) {
+          $('#settingAiKey').value = '';
+          $('#settingAiKey').placeholder = '•••••••••••••••• (Kayıtlı)';
+        }
+
+        toast('AI Bağlantısı Başarılı', `${modelText} ile iletişim doğrulandı.`, 'success');
       } catch (err) {
-        toast('AI Bağlantı Hatası', err.message, 'error');
+        toast('AI Bağlantı Hatası', err.message || 'Bilinmeyen bir bağlantı hatası oluştu.', 'error');
       } finally {
         btn.disabled = false;
         btn.textContent = oldText;
@@ -2308,7 +2427,25 @@
 
   // --- 10. Modal & Connection Lifecycle ---
   const modal = $('#connectionModal');
-  function openModal() { modal?.classList.remove('hidden'); }
+  async function openModal() {
+    modal?.classList.remove('hidden');
+    try {
+      const res = await fetch('/api/connection/saved');
+      const json = await res.json();
+      if (json.ok && json.data) {
+        const saved = json.data;
+        if (saved.server && $('#inputServer')) $('#inputServer').value = saved.server;
+        if (saved.port && $('#inputPort')) $('#inputPort').value = saved.port;
+        if (saved.user && $('#inputUser')) $('#inputUser').value = saved.user;
+        if (saved.encrypt !== undefined && $('#checkEncrypt')) $('#checkEncrypt').checked = saved.encrypt;
+        if (saved.trustServerCertificate !== undefined && $('#checkTrustCert')) $('#checkTrustCert').checked = saved.trustServerCertificate;
+        if (saved.hasSavedPassword && $('#inputPassword')) {
+          $('#inputPassword').placeholder = '•••••••• (Kayıtlı Şifre)';
+          $('#inputPassword').required = false;
+        }
+      }
+    } catch (_) {}
+  }
   function closeModal() { modal?.classList.add('hidden'); }
 
   $('#connectButton')?.addEventListener('click', openModal);
@@ -2585,47 +2722,244 @@
     }
   });
 
-  // --- 11. AI Refactor Demo Runner ---
-  $('#runRefactor')?.addEventListener('click', () => {
+  // --- 11. Real AI Refactor Engine & Dynamic View Inspector ---
+  async function renderRefactorPage(identifier) {
+    const views = state.data.views || [];
+    const select = $('#refactorViewSelect');
+    if (!select) return;
+
+    // 1. Populate View Selector dropdown if options don't match view list
+    const currentDbKey = state.activeDatabase || 'all';
+    if (select.children.length !== views.length || select.dataset.db !== currentDbKey) {
+      select.innerHTML = '';
+      views.forEach(v => {
+        const cId = v.canonicalId || v.name || v.view_name;
+        const displayName = v.name || v.view_name;
+        const dbPrefix = v.database ? `[${v.database}] ` : '';
+        const opt = document.createElement('option');
+        opt.value = cId;
+        opt.textContent = `${dbPrefix}${displayName}`;
+        select.appendChild(opt);
+      });
+      select.dataset.db = currentDbKey;
+    }
+
+    // 2. Identify target view
+    const targetVal = identifier || state.selectedCanonicalId || state.selectedViewName || (views[0]?.canonicalId || views[0]?.name || views[0]?.view_name);
+    const targetStr = String(targetVal || '').toLowerCase().trim();
+
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === targetStr) ||
+      (x.name && x.name.toLowerCase() === targetStr) ||
+      (x.view_name && x.view_name.toLowerCase() === targetStr)
+    ) || views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase().endsWith('.' + targetStr)) ||
+      (x.name && x.name.toLowerCase().includes(targetStr))
+    ) || views[0];
+
+    if (!v) {
+      if ($('#refactorSourceCode')) {
+        $('#refactorSourceCode').textContent = '-- Görüntülenecek view bulunamadı. Lütfen önce bir veritabanı taraması gerçekleştirin.';
+      }
+      return;
+    }
+
+    const currentName = v.name || v.view_name;
+    const currentCanonical = v.canonicalId || currentName;
+    state.selectedViewName = currentName;
+    state.selectedCanonicalId = currentCanonical;
+    select.value = currentCanonical;
+
+    // 3. Update Risk Pill & Class
+    const riskBadge = $('#refactorRiskBadge');
+    if (riskBadge) {
+      const rLevel = String(v.riskLevel || v.risk || 'LOW').toUpperCase();
+      const rScore = v.riskScore !== undefined ? v.riskScore : (rLevel === 'CRITICAL' ? 85 : rLevel === 'HIGH' ? 65 : 30);
+      riskBadge.className = `severity-pill ${severityClass(rLevel)}`;
+      riskBadge.textContent = `RISK ${rScore} · ${rLevel}`;
+    }
+
+    // 4. Update Context Pack Numbers
+    if ($('#refactorChainCount')) {
+      const depth = v.depth || (v.sourceChain ? v.sourceChain.length : 1);
+      $('#refactorChainCount').textContent = `${depth} view`;
+    }
+    if ($('#refactorTableCount')) {
+      const tblCount = v.tables || v.baseTableCount || (v.baseTables ? v.baseTables.length : 0);
+      $('#refactorTableCount').textContent = `${tblCount}`;
+    }
+    if ($('#refactorIndexCount')) {
+      const idxCount = v.indexes ? v.indexes.length : (v.indexCount || 0);
+      $('#refactorIndexCount').textContent = idxCount > 0 ? `${idxCount}` : '—';
+    }
+    if ($('#refactorFindingCount')) {
+      const fCount = (v.problems || []).length;
+      $('#refactorFindingCount').textContent = `${fCount}`;
+    }
+
+    // 5. Update Provider Pill
+    const provPill = $('#refactorProviderPill');
+    if (provPill) {
+      const provider = state.aiConfig?.provider || 'deepseek';
+      const providerName = provider.toLowerCase() === 'openai' ? 'OpenAI' : 'DeepSeek';
+      const modelName = state.aiConfig?.model || (providerName === 'OpenAI' ? 'gpt-4o' : 'deepseek-chat');
+      provPill.textContent = `${providerName} (${modelName})`;
+    }
+
+    // 6. Reset candidate panel if viewing a different view
+    const candPanel = $('#candidatePanel');
+    if (candPanel && !candPanel.classList.contains('hidden')) {
+      if (candPanel.dataset.loadedView && candPanel.dataset.loadedView !== currentCanonical) {
+        candPanel.classList.add('hidden');
+      }
+    }
+
+    // 7. Fetch and Render View SQL
+    const codeElem = $('#refactorSourceCode');
+    const lineElem = $('#refactorLineCount');
+    if (codeElem) {
+      codeElem.textContent = `-- View SQL tanımı getiriliyor (${currentName})...`;
+      try {
+        const sql = await getViewDefinition(currentCanonical);
+        codeElem.textContent = sql || '-- SQL tanımı bulunamadı.';
+        const lineCount = (sql || '').split('\n').length;
+        if (lineElem) lineElem.textContent = `${lineCount} satır`;
+      } catch (err) {
+        codeElem.textContent = `-- SQL tanımı yüklenirken hata oluştu: ${err.message}`;
+      }
+    }
+  }
+
+  // Bind View Dropdown Change Event
+  $('#refactorViewSelect')?.addEventListener('change', (e) => {
+    const selectedVal = e.target.value;
+    renderRefactorPage(selectedVal);
+  });
+
+  // Real AI Refactor Runner Execution
+  $('#runRefactor')?.addEventListener('click', async () => {
     const btn = $('#runRefactor');
     const progress = $('#aiProgress');
     const panel = $('#candidatePanel');
-    const bar = progress?.querySelector('i');
-    const head = progress?.querySelector('.progress-head span');
-    const pct = progress?.querySelector('.progress-head b');
+    const bar = $('#aiProgressBar');
+    const head = $('#aiProgressText');
+    const pct = $('#aiProgressPct');
+    const sub = $('#aiProgressSub');
 
-    if (!btn || !progress || !panel) return;
+    const viewName = state.selectedViewName;
+    const sql = $('#refactorSourceCode')?.textContent || '';
+    if (!viewName || !sql || sql.startsWith('-- View SQL tanımı getiriliyor') || sql.startsWith('-- Görüntülenecek view')) {
+      toast('Uyarı', 'Lütfen geçerli bir view seçildiğinden ve SQL tanımının yüklendiğinden emin olun.', 'warning');
+      return;
+    }
+
+    const views = state.data.views || [];
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === (state.selectedCanonicalId || '').toLowerCase()) ||
+      (x.name && x.name.toLowerCase() === viewName.toLowerCase()) ||
+      (x.view_name && x.view_name.toLowerCase() === viewName.toLowerCase())
+    ) || {};
+
+    const options = {
+      inlineRepeated: $('#optInlineRepeated')?.checked ?? true,
+      setBasedApply: $('#optSetBasedApply')?.checked ?? true,
+      indexSuggestions: $('#optIndexSuggestions')?.checked ?? false,
+      lockColumns: $('#optLockColumns')?.checked ?? true
+    };
 
     btn.disabled = true;
-    progress.classList.remove('hidden');
-    panel.classList.add('hidden');
+    if (progress) progress.classList.remove('hidden');
+    if (panel) panel.classList.add('hidden');
 
     const stages = [
-      [18, 'Dependency context hazırlanıyor...'],
-      [38, 'Index ve statistics metadata ekleniyor...'],
-      [57, 'Plan findings normalize ediliyor...'],
-      [76, 'AI candidate üretiliyor...'],
-      [92, 'Semantic guardrail kontrolleri hazırlanıyor...'],
-      [100, 'Candidate V2 hazır']
+      [15, 'Dependency ve metadata context hazırlanıyor...', 'Katalog bağımlılıkları inceleniyor'],
+      [35, 'AI modeline prompt iletiliyor...', 'Semantik invariantlar kilitleniyor'],
+      [65, 'AI refactoring analizi ve candidate SQL üretiliyor...', 'Sözleşme kuralları denetleniyor'],
+      [85, 'Semantik guardrail kontrolleri doğrulanıyor...', 'Tekrarlayan tarama ve SARGable optimizasyonu']
     ];
-    let ix = 0;
+    let stageIdx = 0;
+    if (bar) bar.style.width = '10%';
+    if (pct) pct.textContent = '10%';
+    if (head) head.textContent = stages[0][1];
+    if (sub) sub.textContent = stages[0][2];
 
-    const timer = setInterval(() => {
-      if (ix >= stages.length) {
-        clearInterval(timer);
-        setTimeout(() => {
-          panel.classList.remove('hidden');
-          btn.disabled = false;
-          toast('Candidate V2 Hazır', 'Henüz doğrulanmadı (UNVALIDATED). Deploy edilmez.', 'success');
-          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 300);
-        return;
+    const progressTimer = setInterval(() => {
+      if (stageIdx < stages.length) {
+        const [n, msg, subMsg] = stages[stageIdx++];
+        if (bar) bar.style.width = `${n}%`;
+        if (pct) pct.textContent = `${n}%`;
+        if (head) head.textContent = msg;
+        if (sub && subMsg) sub.textContent = subMsg;
       }
-      const [n, msg] = stages[ix++];
-      if (bar) bar.style.width = `${n}%`;
-      if (pct) pct.textContent = `${n}%`;
-      if (head) head.textContent = msg;
-    }, 450);
+    }, 1200);
+
+    try {
+      const res = await fetch('/api/ai/refactor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          viewName,
+          sql,
+          problems: v.problems || [],
+          baseTables: v.baseTables || [],
+          options
+        })
+      });
+
+      clearInterval(progressTimer);
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `AI Refactor başarısız (HTTP ${res.status}).`);
+      }
+
+      if (bar) bar.style.width = '100%';
+      if (pct) pct.textContent = '100%';
+      if (head) head.textContent = 'Candidate V2 hazır!';
+      if (sub) sub.textContent = 'Guardrail kontrolleri tamamlandı';
+
+      const data = json.data || {};
+      const candSql = data.candidateSql || '-- Aday SQL üretilemedi.';
+      const candNotes = data.notes || '';
+      const usedModel = data.model || state.aiConfig?.model || 'AI Modeli';
+
+      if ($('#candidateSqlText')) $('#candidateSqlText').value = candSql;
+
+      let notesContent = `-- Guardrail & Doğrulama Çerçevesi:\n`;
+      notesContent += `-- [DURUM] SEMANTICALLY_PROPOSED (UNVALIDATED)\n`;
+      notesContent += `-- [MODEL] ${usedModel}\n`;
+      notesContent += `-- [GÜVENLİK KURALI] Üretim ortamına doğrudan uygulanmaz. Validation Lab ile doğrulayınız.\n\n`;
+      if (candNotes) {
+        notesContent += `-- AI Analiz ve Gerekçeler:\n${candNotes}\n`;
+      }
+      if ($('#candidateNotes')) $('#candidateNotes').textContent = notesContent;
+
+      if ($('#candidateStatusBadge')) {
+        $('#candidateStatusBadge').textContent = 'SEMANTICALLY_PROPOSED (UNVALIDATED)';
+        $('#candidateStatusBadge').className = 'needs-validation';
+      }
+      if ($('#candidateIoEstimate')) {
+        $('#candidateIoEstimate').textContent = 'Validation Lab ile Kanıtlayın';
+      }
+
+      if (panel) panel.dataset.loadedView = state.selectedCanonicalId || viewName;
+
+      setTimeout(() => {
+        if (progress) progress.classList.add('hidden');
+        if (panel) {
+          panel.classList.remove('hidden');
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+        toast('Candidate V2 Hazır', `${viewName} için AI refactor adayı üretildi. Henüz doğrulanmadı (UNVALIDATED).`, 'success');
+      }, 400);
+
+    } catch (err) {
+      clearInterval(progressTimer);
+      if (progress) progress.classList.add('hidden');
+      toast('AI Refactor Hatası', err.message || 'Bilinmeyen bir hata oluştu.', 'error');
+    } finally {
+      btn.disabled = false;
+    }
   });
 
   // ============================================================
@@ -2980,7 +3314,7 @@ WHERE sth_tarih >= '2026-01-01';`;
     // Candidate panel -> Send to Validation Lab
     $$('[data-detail-tab-jump="validation"]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const origSql = $('#sqlCode')?.textContent || '';
+        const origSql = $('#refactorSourceCode')?.textContent || $('#sqlCode')?.textContent || '';
         const candSql = $('#candidateSqlText')?.value || '';
         if ($('#valOrigSql') && origSql) $('#valOrigSql').value = origSql;
         if ($('#valCandSql') && candSql) $('#valCandSql').value = candSql;
@@ -3955,8 +4289,18 @@ WHERE sth_tarih >= '2026-01-01';`;
     initCommandPalette();
 
     try {
-      const res = await fetch('/api/connection');
-      const conn = await res.json();
+      let res = await fetch('/api/connection');
+      let conn = await res.json();
+      if (!conn.connected && conn.hasSavedConnection) {
+        // Arka plandaki otomatik bağlantının tamamlanmasını kısa bir süre bekle
+        for (let i = 0; i < 3; i++) {
+          await new Promise(r => setTimeout(r, 600));
+          res = await fetch('/api/connection');
+          conn = await res.json();
+          if (conn.connected) break;
+        }
+      }
+
       if (conn.connected) {
         state.connected = true;
         state.connectionInfo = conn.connection;

@@ -12,6 +12,7 @@
  */
 
 const sql = require('mssql');
+const settings = require('./settingsService');
 
 let masterPool = null;
 const databasePools = new Map(); // dbName.toLowerCase() -> ConnectionPool
@@ -30,6 +31,8 @@ function sanitizeError(err, secret) {
   }
   msg = msg.replace(/password=[^;]*/gi, 'password=********');
   msg = msg.replace(/pwd=[^;]*/gi, 'pwd=********');
+  msg = msg.replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer ********');
+  msg = msg.replace(/sk-[a-zA-Z0-9_\-\.]{8,}/gi, 'sk-********');
   const safeErr = new Error(msg);
   if (err.code) safeErr.code = err.code;
   if (err.number) safeErr.number = err.number;
@@ -62,6 +65,17 @@ async function testServerConnection(input) {
     throw new Error('Server ve kullanıcı adı zorunludur.');
   }
 
+  let effectivePassword = input.password;
+  if (!effectivePassword) {
+    const saved = settings.getSavedDbConnection();
+    if (saved && saved.password && (!input.server || saved.server === input.server) && (!input.user || saved.user === input.user)) {
+      effectivePassword = saved.password;
+    }
+  }
+  if (!effectivePassword) {
+    throw new Error('Şifre zorunludur.');
+  }
+
   // Close existing master pool if present
   if (masterPool) {
     try { await masterPool.close(); } catch (_) {}
@@ -69,7 +83,8 @@ async function testServerConnection(input) {
   }
 
   try {
-    const config = buildConfig(input, 'master');
+    const connInput = { ...input, password: effectivePassword };
+    const config = buildConfig(connInput, 'master');
     const pool = new sql.ConnectionPool(config);
     masterPool = await pool.connect();
 
@@ -77,10 +92,20 @@ async function testServerConnection(input) {
       server: input.server,
       port: config.port,
       user: input.user,
-      password: input.password,
+      password: effectivePassword,
       encrypt: config.options.encrypt,
       trustServerCertificate: config.options.trustServerCertificate
     };
+
+    // Save to local storage for automatic reconnection
+    settings.saveDbConnection({
+      server: input.server,
+      port: config.port,
+      user: input.user,
+      password: effectivePassword,
+      encrypt: config.options.encrypt,
+      trustServerCertificate: config.options.trustServerCertificate
+    });
 
     // Discover accessible databases
     const discoveryQuery = `
@@ -110,7 +135,7 @@ async function testServerConnection(input) {
       databases: discovered
     };
   } catch (err) {
-    throw sanitizeError(err, input.password);
+    throw sanitizeError(err, effectivePassword);
   }
 }
 
@@ -159,6 +184,12 @@ async function setDatabaseScope({ primaryDatabase, selectedDatabases = [] }) {
     primaryDatabase: primary,
     selectedDatabases: [...selectedDatabases]
   };
+
+  // Persist selected scope locally
+  settings.saveDbConnection({
+    primaryDatabase: primary,
+    selectedDatabases: currentScope.selectedDatabases
+  });
 
   return {
     ok: true,
@@ -234,7 +265,7 @@ async function query(text, params = [], databaseName = null) {
 /**
  * Disconnect and close all pools.
  */
-async function disconnect() {
+async function disconnect(options = {}) {
   if (masterPool) {
     try { await masterPool.close(); } catch (_) {}
     masterPool = null;
@@ -245,6 +276,41 @@ async function disconnect() {
   databasePools.clear();
   serverCredentials = null;
   currentScope = { primaryDatabase: null, selectedDatabases: [] };
+  if (options && options.clearSaved) {
+    settings.clearDbConnection();
+  }
+}
+
+/**
+ * Automatically restores SQL Server connection from locally saved credentials.
+ */
+async function autoConnect() {
+  const saved = settings.getSavedDbConnection();
+  if (!saved || !saved.server || !saved.user || !saved.password) {
+    return { ok: false, message: 'Kayıtlı SQL Server bağlantısı bulunamadı.' };
+  }
+  try {
+    console.log(`[SQL AutoConnect] Kayıtlı bağlantı geri yükleniyor: ${saved.server} (${saved.user})...`);
+    await testServerConnection({
+      server: saved.server,
+      port: saved.port,
+      user: saved.user,
+      password: saved.password,
+      encrypt: saved.encrypt,
+      trustServerCertificate: saved.trustServerCertificate
+    });
+    if (saved.selectedDatabases && saved.selectedDatabases.length > 0) {
+      await setDatabaseScope({
+        primaryDatabase: saved.primaryDatabase,
+        selectedDatabases: saved.selectedDatabases
+      });
+    }
+    console.log(`[SQL AutoConnect] Bağlantı başarıyla kuruldu. Kapsam: ${saved.primaryDatabase || 'master'}`);
+    return { ok: true, server: saved.server, primaryDatabase: saved.primaryDatabase };
+  } catch (err) {
+    console.warn(`[SQL AutoConnect] Otomatik bağlantı kurulamadı:`, err.message);
+    return { ok: false, error: err.message };
+  }
 }
 
 /**
@@ -271,14 +337,16 @@ async function connect(input) {
 
 function status() {
   const isConnected = Boolean((masterPool && masterPool.connected) || databasePools.size > 0);
+  const saved = settings.getConfig().savedDbConnection;
   return {
     connected: isConnected,
-    server: serverCredentials ? serverCredentials.server : null,
-    user: serverCredentials ? serverCredentials.user : null,
-    port: serverCredentials ? serverCredentials.port : 1433,
-    primaryDatabase: currentScope.primaryDatabase,
-    selectedDatabases: currentScope.selectedDatabases,
+    server: serverCredentials ? serverCredentials.server : (saved ? saved.server : null),
+    user: serverCredentials ? serverCredentials.user : (saved ? saved.user : null),
+    port: serverCredentials ? serverCredentials.port : (saved ? saved.port : 1433),
+    primaryDatabase: currentScope.primaryDatabase || (saved ? saved.primaryDatabase : null),
+    selectedDatabases: currentScope.selectedDatabases.length > 0 ? currentScope.selectedDatabases : (saved ? saved.selectedDatabases : []),
     activePools: Array.from(databasePools.keys()),
+    hasSavedConnection: Boolean(saved && saved.hasSavedPassword),
     connection: serverCredentials ? {
       server: serverCredentials.server,
       database: currentScope.primaryDatabase || 'master',
@@ -298,6 +366,7 @@ module.exports = {
   query,
   connect,
   disconnect,
+  autoConnect,
   status,
   sanitizeError,
   sql,

@@ -3,6 +3,7 @@ const db = require('../services/sqlServer');
 const scanner = require('../services/scanner');
 const ai = require('../services/aiProvider');
 const capabilities = require('../services/capabilities');
+const settings = require('../services/settingsService');
 
 const router = express.Router();
 
@@ -28,6 +29,15 @@ router.get('/health', (_req, res) => {
 // 2. Connection status
 router.get('/connection', (_req, res) => {
   res.json(db.status());
+});
+
+// 2b. Saved connection settings (safe copy without password)
+router.get('/connection/saved', (_req, res) => {
+  const saved = settings.getConfig().savedDbConnection;
+  res.json({
+    ok: true,
+    data: saved || null
+  });
 });
 
 // 2b. Step 1: Test Server Connection & Discover Databases
@@ -71,9 +81,10 @@ router.post('/connection/test', async (req, res) => {
 });
 
 // 4. Disconnect
-router.delete('/connection', async (_req, res) => {
+router.delete('/connection', async (req, res) => {
   try {
-    await db.disconnect();
+    const clearSaved = Boolean(req.query.clearSaved === 'true' || req.body?.clearSaved);
+    await db.disconnect({ clearSaved });
     res.json({ ok: true, message: 'Bağlantı kapatıldı.' });
   } catch (error) {
     handleSafeError(res, error);
@@ -159,11 +170,11 @@ router.get('/views/:name/indexes', async (req, res) => {
 // 10. AI Refactor candidate proposal
 router.post('/ai/refactor', async (req, res) => {
   try {
-    const { viewName, sql, problems = [], baseTables = [] } = req.body;
+    const { viewName, sql, problems = [], baseTables = [], options = {} } = req.body;
     if (!viewName || !sql) {
       return res.status(400).json({ ok: false, error: 'viewName ve sql alanları zorunludur.' });
     }
-    const result = await ai.generateCandidate({ viewName, sql, problems, baseTables });
+    const result = await ai.proposeRefactor({ viewName, sql, problems, baseTables, options });
     res.json(result);
   } catch (error) {
     handleSafeError(res, error, 'AI candidate üretilemedi.');
@@ -173,8 +184,19 @@ router.post('/ai/refactor', async (req, res) => {
 // 10b. AI Connection Test
 router.post('/ai/test', async (req, res) => {
   try {
-    const { model, apiKey, baseUrl } = req.body;
-    const result = await ai.testConnection({ model, apiKey, baseUrl });
+    const { provider, model, apiKey, baseUrl } = req.body;
+    const result = await ai.testConnection({ provider, model, apiKey, baseUrl });
+    // Update in-memory settings on verified test so subsequent refactor operations can use them
+    if (apiKey) {
+      settings.updateConfig({
+        ai: {
+          provider: provider || 'deepseek',
+          baseUrl: baseUrl || undefined,
+          model: model || undefined,
+          apiKey
+        }
+      });
+    }
     res.json(result);
   } catch (error) {
     handleSafeError(res, error, 'AI bağlantı testi başarısız.');
@@ -182,7 +204,6 @@ router.post('/ai/test', async (req, res) => {
 });
 
 // 11. Configuration Settings
-const settings = require('../services/settingsService');
 
 router.get('/settings/config', (_req, res) => {
   res.json({ ok: true, data: settings.getConfig() });

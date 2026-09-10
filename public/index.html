@@ -366,68 +366,68 @@
       <section class="page" id="page-refactor">
         <div class="refactor-layout">
           <section class="refactor-source">
-            <div class="pane-head"><div><span class="panel-kicker">TARGET</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">RISK 92</span></div>
-            <div class="context-pack">
-              <div><span>Source chain</span><strong>6 view</strong></div><div><span>Base tables</span><strong>9</strong></div><div><span>Indexes</span><strong>24</strong></div><div><span>Plan findings</span><strong>7</strong></div>
+            <div class="pane-head">
+              <div style="flex:1">
+                <span class="panel-kicker">TARGET VIEW</span>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+                  <select id="refactorViewSelect" class="setting-input select-styled" style="font-size:14px;font-weight:700;color:var(--text-bright);background:var(--card-bg);border:1px solid var(--border);padding:4px 10px;border-radius:var(--radius-sm);max-width:380px"></select>
+                  <span class="severity-pill" id="refactorRiskBadge">RISK --</span>
+                </div>
+              </div>
             </div>
-            <div class="code-label"><span>Current SQL · flattened context preview</span><span>842 lines</span></div>
-            <pre class="code-editor tall"><code>CREATE VIEW dbo.AA_URETIM_MALZEME_PLANLAMA AS
-SELECT
-    a.[Ana İş Emri],
-    a.[İş Kodu],
-    a.[Sipariş No],
-    a.[Ürün Kodu],
-    ISNULL(i.[Kalan Miktar], 0) AS [Kalan Miktar],
-    u.upl_kodu AS [Tüketim Kod],
-    s.sto_isim AS [Stok Adı],
-    ISNULL(sh.ToplamGiris, 0) - ISNULL(sh.ToplamCikis, 0) AS [Mevcut Stok]
-FROM dbo.ISEMIRLERI a
-LEFT JOIN dbo.AA_ISEMRI_MALZEME_DURUMLARI i ON i.[İş Kodu] = a.[İş Kodu]
-LEFT JOIN dbo.URUN_RECETELERI u ON u.upl_ana_kod = a.[Ürün Kodu]
-LEFT JOIN dbo.STOKLAR s ON s.sto_kod = u.upl_kodu
-OUTER APPLY (
-    SELECT
-        SUM(CASE WHEN sth_tip = 0 THEN sth_miktar ELSE 0 END) AS ToplamGiris,
-        SUM(CASE WHEN sth_tip = 1 THEN sth_miktar ELSE 0 END) AS ToplamCikis
-    FROM dbo.STOK_HAREKETLERI
-    WHERE sth_stok_kod = u.upl_kodu
-) sh;</code></pre>
+            <div class="context-pack">
+              <div><span>Source chain</span><strong id="refactorChainCount">--</strong></div>
+              <div><span>Base tables</span><strong id="refactorTableCount">--</strong></div>
+              <div><span>Indexes</span><strong id="refactorIndexCount">--</strong></div>
+              <div><span>Plan findings</span><strong id="refactorFindingCount">--</strong></div>
+            </div>
+            <div class="code-label"><span>Current SQL · context preview</span><span id="refactorLineCount">-- lines</span></div>
+            <pre class="code-editor tall"><code id="refactorSourceCode">-- View seçildiğinde SQL burada görüntülenecektir...</code></pre>
           </section>
 
           <section class="refactor-control">
-            <div class="ai-head"><div class="ai-orb">✦</div><div><span class="panel-kicker">AI ENGINE</span><h3>Refactoring Assistant</h3></div><span class="provider-pill">DeepSeek V3</span></div>
-            <div class="guardrail"><span>🛡</span><div><strong>Semantik Guardrail Aktif</strong><p>Sütun isimleri, tipleri, duplicate multiplicity ve NULL davranışları zorunlu korunur. Deploy kararı asla otomatik verilmez.</p></div></div>
-            <div class="refactor-options"><label><input type="checkbox" checked> Repeated table branch inline et</label><label><input type="checkbox" checked> OUTER APPLY skalar toplanmasını set-based yap</label><label><input type="checkbox"> Missing covering index öner</label><label><input type="checkbox" checked> Output column sırasını ve isimlerini kilitle</label></div>
+            <div class="ai-head">
+              <div class="ai-orb">✦</div>
+              <div>
+                <span class="panel-kicker">AI ENGINE</span>
+                <h3>Refactoring Assistant</h3>
+              </div>
+              <span class="provider-pill" id="refactorProviderPill">DeepSeek</span>
+            </div>
+            <div class="guardrail">
+              <span>🛡</span>
+              <div>
+                <strong>Semantik Guardrail Aktif</strong>
+                <p>Sütun isimleri, tipleri, duplicate multiplicity ve NULL davranışları zorunlu korunur. Deploy kararı asla otomatik verilmez.</p>
+              </div>
+            </div>
+            <div class="refactor-options">
+              <label><input type="checkbox" id="optInlineRepeated" checked> Repeated table branch inline et</label>
+              <label><input type="checkbox" id="optSetBasedApply" checked> OUTER APPLY skalar toplanmasını set-based yap</label>
+              <label><input type="checkbox" id="optIndexSuggestions"> Missing covering index öner</label>
+              <label><input type="checkbox" id="optLockColumns" checked> Output column sırasını ve isimlerini kilitle</label>
+            </div>
             <div class="ai-warning"><p>CTE materialize olmaz. Tekrar eden tablonun yalnız execution plan doğrulamasıyla tek taramaya indiği iddia edilebilir.</p></div>
             <button class="button primary full ai-button" id="runRefactor">✦ Candidate Oluştur</button>
-            <div class="ai-progress hidden" id="aiProgress"><div class="progress-head"><span>AI candidate üretiliyor...</span><b>64%</b></div><div class="progress-track"><i></i></div><small>Sözleşme kuralları denetleniyor</small></div>
+            <div class="ai-progress hidden" id="aiProgress">
+              <div class="progress-head">
+                <span id="aiProgressText">AI candidate üretiliyor...</span>
+                <b id="aiProgressPct">0%</b>
+              </div>
+              <div class="progress-track"><i id="aiProgressBar"></i></div>
+              <small id="aiProgressSub">Sözleşme kuralları denetleniyor</small>
+            </div>
 
             <div class="candidate-panel hidden" id="candidatePanel">
-              <div class="candidate-stats"><span>Status: <b class="needs-validation">UNVALIDATED</b></span><span>Tahmini IO: <b>−84%</b></span></div>
-              <div class="diff-grid" style="margin-top:10px">
-                <textarea class="code-editor" id="candidateSqlText" readonly>-- Candidate V2:
--- Repeated STOK_HAREKETLERI aggregated before outer join
-WITH StockAgg AS (
-  SELECT sth_stok_kod,
-    SUM(CASE WHEN sth_tip = 0 THEN sth_miktar ELSE 0 END) AS Giris,
-    SUM(CASE WHEN sth_tip = 1 THEN sth_miktar ELSE 0 END) AS Cikis
-  FROM dbo.STOK_HAREKETLERI GROUP BY sth_stok_kod
-)
-SELECT 
-  s.sto_kod,
-  s.sto_isim,
-  COALESCE(sa.Giris, 0) AS GirisMiktar,
-  COALESCE(sa.Cikis, 0) AS CikisMiktar,
-  (COALESCE(sa.Giris, 0) - COALESCE(sa.Cikis, 0)) AS NetMiktar
-FROM dbo.STOKLAR s WITH (NOLOCK)
-LEFT JOIN StockAgg sa ON sa.sth_stok_kod = s.sto_kod;</textarea>
-                <div class="code-editor candidate">-- Guardrail Checks:
--- [PASS] Column count: 5/5
--- [PASS] Data types match (int, varchar, numeric)
--- [WARN] Multiplicity requires validation lab proof (EXCEPT + GROUP BY)
--- [GUARD] No mutation, output strictly isolated</div>
+              <div class="candidate-stats">
+                <span>Status: <b class="needs-validation" id="candidateStatusBadge">SEMANTICALLY_PROPOSED (UNVALIDATED)</b></span>
+                <span>Tahmini IO: <b id="candidateIoEstimate">Optimizasyon Hazır</b></span>
               </div>
-              <div class="candidate-actions" style="display:flex;gap:10px">
+              <div class="diff-grid" style="margin-top:10px">
+                <textarea class="code-editor" id="candidateSqlText" readonly placeholder="-- Candidate SQL üretildiğinde burada görünecek..."></textarea>
+                <div class="code-editor candidate" id="candidateNotes" style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;padding:10px;overflow-y:auto;max-height:360px"></div>
+              </div>
+              <div class="candidate-actions" style="display:flex;gap:10px;margin-top:12px">
                 <button class="button primary small" id="btnOpenCandidateInWorkbench">⚡ Workbench'te Aç</button>
                 <button class="button ghost small" data-detail-tab-jump="validation">Validation Lab'a Gönder</button>
               </div>
@@ -897,6 +897,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
               </div>
 
               <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
+                <button class="button ghost" id="btnSaveAi">💾 Ayarları Kaydet</button>
                 <button class="button primary" id="btnTestAi">✦ Test AI Connection</button>
               </div>
             </div>

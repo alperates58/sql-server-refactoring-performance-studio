@@ -1,6 +1,7 @@
 const path = require('path');
 const express = require('express');
 const api = require('./server/routes/api');
+const db = require('./server/services/sqlServer');
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -16,4 +17,6 @@ app.use((_req, res) => {
 
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`SQL Server Refactoring & Performance Studio: http://localhost:${PORT}`);
+  // Asynchronously restore previous connection in the background
+  db.autoConnect().catch(() => {});
 });

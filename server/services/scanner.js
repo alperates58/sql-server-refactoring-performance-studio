@@ -22,8 +22,47 @@ const { calculateHealth, calculateRisk, buildRiskBars } = require('./scoring');
 const { findDuplicates } = require('./duplicateFinder');
 const { collectRuntimeEvidence } = require('./runtimeEvidence');
 
+const RUNTIME_DIR = path.join(__dirname, '..', '..', 'runtime');
+const SCAN_CACHE_FILE = path.join(RUNTIME_DIR, 'latest-scan.local.json');
+
 let latestScan = null;
 const definitionCache = new Map(); // canonicalId.toLowerCase() -> SQL text
+
+function loadPersistedScan() {
+  try {
+    if (!fs.existsSync(SCAN_CACHE_FILE)) return;
+    const raw = fs.readFileSync(SCAN_CACHE_FILE, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && Array.isArray(parsed.views)) {
+      latestScan = parsed;
+      for (const v of parsed.views) {
+        if (v.canonicalId && v.definition) {
+          definitionCache.set(v.canonicalId.toLowerCase(), v.definition);
+        }
+        if (v.name && v.definition) {
+          definitionCache.set(v.name.toLowerCase(), v.definition);
+        }
+      }
+      console.log(`[Scanner] Yerel son tarama verisi yüklendi: ${parsed.views.length} view.`);
+    }
+  } catch (err) {
+    console.warn('[Scanner] Yerel tarama verisi okunamadı:', err.message);
+  }
+}
+
+function savePersistedScan(data) {
+  try {
+    if (!fs.existsSync(RUNTIME_DIR)) {
+      fs.mkdirSync(RUNTIME_DIR, { recursive: true });
+    }
+    fs.writeFileSync(SCAN_CACHE_FILE, JSON.stringify(data), 'utf8');
+  } catch (err) {
+    console.error('[Scanner] Yerel tarama verisi kaydedilemedi:', err.message);
+  }
+}
+
+// Load on initialization
+loadPersistedScan();
 
 function getDefinition(identifier) {
   if (!identifier) return null;
@@ -400,6 +439,7 @@ async function scan(prefix = 'AA_', explicitScope = null) {
   };
 
   latestScan = result;
+  savePersistedScan(result);
   return result;
 }
 
