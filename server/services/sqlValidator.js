@@ -164,11 +164,17 @@ function validateReadOnly(rawSql) {
   // Check for any prohibited keywords anywhere in the statement tokens
   for (const token of tokens) {
     for (const forbidden of PROHIBITED_KEYWORDS) {
-      if (token === forbidden || token.startsWith(forbidden)) {
+      const isMatch = forbidden === 'XP_' 
+        ? token.startsWith('XP_')
+        : forbidden === 'SP_'
+          ? ['SP_EXECUTESQL', 'SP_CONFIGURE', 'SP_OACREATE', 'SP_OAMETHOD', 'SP_OADESTROY'].includes(token)
+          : token === forbidden;
+
+      if (isMatch) {
         return {
           valid: false,
           keyword: token,
-          reason: `Read-only safety policy blocked this statement: "${token}" anahtar kelimesi salt-okunur kuralını ihlal ediyor.`
+          reason: `Salt-okunur güvenlik politikası bu ifadeyi engelledi: "${token}" komutu salt-okunur kuralını ihlal ediyor.`
         };
       }
     }

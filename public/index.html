@@ -113,12 +113,12 @@
           </section>
 
           <section class="panel span-4">
-            <div class="panel-header"><div><span class="panel-kicker">BASE TABLE PRESSURE</span><h3>En Çok Baskı Alan Tablolar</h3></div><button class="link-button" data-goto="tables">Tümü →</button></div>
+            <div class="panel-header"><div><span class="panel-kicker">TABLO BASKISI</span><h3>En Çok Baskı Alan Tablolar</h3></div><button class="link-button" data-goto="tables">Tümü →</button></div>
             <div class="pressure-list" id="pressureList"></div>
           </section>
 
           <section class="panel span-7">
-            <div class="panel-header"><div><span class="panel-kicker">PERFORMANCE REGRESSION</span><h3>Son 24 Saat</h3></div><span class="live-pill" id="overviewRegressionPill"><span></span> Query Store</span></div>
+            <div class="panel-header"><div><span class="panel-kicker">PERFORMANS REGRESYONU</span><h3>Son 24 Saat</h3></div><span class="live-pill" id="overviewRegressionPill"><span></span> Query Store</span></div>
             <div class="chart-wrap">
               <svg id="regressionChart" viewBox="0 0 760 240" preserveAspectRatio="none" aria-label="Performans regresyon grafiği">
                 <defs><linearGradient id="areaGrad" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#7c5cff" stop-opacity=".32"/><stop offset="1" stop-color="#7c5cff" stop-opacity="0"/></linearGradient></defs>
@@ -133,11 +133,11 @@
           </section>
 
           <section class="panel span-5">
-            <div class="panel-header"><div><span class="panel-kicker">SON BULGULAR</span><h3>Analyzer Feed</h3></div><button class="icon-button" id="refreshFeedBtn">↻</button></div>
+            <div class="panel-header"><div><span class="panel-kicker">SON BULGULAR</span><h3>Analiz Akışı</h3></div><button class="icon-button" id="refreshFeedBtn">↻</button></div>
             <div class="feed" id="overviewFeed">
-              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Cardinality explosion</strong><p>Estimate 1 → Actual 187,431</p><small>AA_ISEMRI_MALZEME_DURUMLARI · 1 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Repeated base table access</strong><p>STOK_HAREKETLERI x4 logical path</p><small>AA_URETIM_MALZEME_PLANLAMA · 3 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>Non-SARGable predicate</strong><p>CONVERT(date, sth_tarih)</p><small>AA_STOK_HAREKET_OZET · 8 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Patlaması</strong><p>Tahmin 1 → Gerçek 187,431</p><small>AA_ISEMRI_MALZEME_DURUMLARI · 1 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>STOK_HAREKETLERI x4 mantıksal yol</p><small>AA_URETIM_MALZEME_PLANLAMA · 3 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT(date, sth_tarih)</p><small>AA_STOK_HAREKET_OZET · 8 dk önce</small></div></div>
             </div>
           </section>
         </div>
@@ -162,33 +162,33 @@
               <div class="detail-score"><div class="score-ring"><strong id="detailHealth">38</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">CRITICAL · 92</strong></div></div>
             </div>
             <div class="detail-tabs">
-              <button class="active" data-detail-tab="overview">Overview</button>
+              <button class="active" data-detail-tab="overview">Genel Bakış</button>
               <button data-detail-tab="sql">SQL</button>
-              <button data-detail-tab="dependencies">Dependencies</button>
-              <button data-detail-tab="runtime">Runtime</button>
-              <button data-detail-tab="plans">Execution Plans</button>
-              <button data-detail-tab="indexes">Indexes</button>
-              <button data-detail-tab="problems">Problems <span id="tabProblemCount">6</span></button>
-              <button data-detail-tab="ai">AI Refactor</button>
-              <button data-detail-tab="history">History</button>
+              <button data-detail-tab="dependencies">Bağımlılıklar</button>
+              <button data-detail-tab="runtime">Çalışma Zamanı</button>
+              <button data-detail-tab="plans">Çalıştırma Planları</button>
+              <button data-detail-tab="indexes">İndeksler</button>
+              <button data-detail-tab="problems">Sorunlar <span id="tabProblemCount">6</span></button>
+              <button data-detail-tab="ai">AI Refaktör</button>
+              <button data-detail-tab="history">Geçmiş</button>
             </div>
 
             <div class="detail-tab active" id="detail-tab-overview">
               <div class="stat-strip">
-                <div><span>Depth</span><strong id="statDepth">6</strong><small id="statDepthWarn">⚠ &gt; 3</small></div><div><span>Base Tables</span><strong id="statTables">9</strong><small id="statTablesWarn">3 repeated</small></div><div><span>Dependents</span><strong id="statDependents">27</strong><small>Blast radius</small></div><div><span>24h Reads</span><strong id="statReads">4.1B</strong><small id="statReadsDelta">+186%</small></div><div><span>Median</span><strong id="statMedian">284s</strong><small id="statMedianDelta">was 0.94s</small></div>
+                <div><span>Derinlik</span><strong id="statDepth">6</strong><small id="statDepthWarn">⚠ &gt; 3</small></div><div><span>Temel Tablolar</span><strong id="statTables">9</strong><small id="statTablesWarn">3 mükerrer</small></div><div><span>Bağımlılar</span><strong id="statDependents">27</strong><small>Etki alanı</small></div><div><span>24s Okuma</span><strong id="statReads">4.1B</strong><small id="statReadsDelta">+186%</small></div><div><span>Medyan</span><strong id="statMedian">284s</strong><small id="statMedianDelta">önce 0.94s</small></div>
               </div>
               <div class="detail-grid">
                 <section class="inner-panel">
-                  <div class="inner-head"><h4>Risk Breakdown</h4><span>Health penalties</span></div>
+                  <div class="inner-head"><h4>Risk Dağılımı</h4><span>Sağlık cezaları</span></div>
                   <div class="risk-bars" id="riskBars"></div>
                 </section>
                 <section class="inner-panel">
-                  <div class="inner-head"><h4>Top Problems</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">6 bulgu</span> →</button></div>
+                  <div class="inner-head"><h4>Önemli Sorunlar</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">6 bulgu</span> →</button></div>
                   <div class="problem-list" id="topProblems"></div>
                 </section>
               </div>
               <section class="inner-panel impact-panel">
-                <div class="inner-head"><div><h4>Blast Radius</h4><span>Bu view değişirse etkilenebilecek üst nesneler</span></div><button class="button ghost small" data-goto="graph">Haritada Gör</button></div>
+                <div class="inner-head"><div><h4>Etki Alanı (Blast Radius)</h4><span>Bu view değişirse etkilenebilecek üst nesneler</span></div><button class="button ghost small" data-goto="graph">Haritada Gör</button></div>
                 <div class="impact-chain" id="impactChain"><span>AA_GENEL_PLAN</span><i>→</i><span>AA_PLANLAMA_EKRANI</span><i>→</i><b>AA_URETIM_MALZEME_PLANLAMA</b><i>→</i><span>4 rapor</span><i>+</i><span>23 view</span></div>
               </section>
             </div>
@@ -292,9 +292,9 @@
           </div>
           <div class="graph-legend">
             <span><i class="legend-dot target"></i>Hedef View</span>
-            <span><i class="legend-dot view"></i>Dependent View</span>
-            <span><i class="legend-dot table"></i>Base Table</span>
-            <span><i class="legend-dot function"></i>Function</span>
+            <span><i class="legend-dot view"></i>Bağımlı View</span>
+            <span><i class="legend-dot table"></i>Temel Tablo</span>
+            <span><i class="legend-dot function"></i>Fonksiyon</span>
           </div>
           <div class="toolbar-group">
             <select id="graphDbSelect" class="setting-input select-styled" style="min-width:180px;max-width:320px;height:30px;font-size:12px" title="Harita Veritabanı">
@@ -355,11 +355,11 @@
       </section>
 
       <section class="page" id="page-runtime">
-        <div class="section-intro"><div><span class="hero-kicker"><span class="pulse"></span> Query Store + Plan Cache</span><h2>Regresyonları <em>olduğu anda</em> yakala.</h2><p>View'lar bağımsız executable object değildir. Studio, view tanımlarını calling-query metni ve execution plan ile ilişkilendirerek runtime maliyetini kanıt seviyesine göre sınıflandırır.</p></div><div class="data-quality"><span>Runtime evidence</span><strong>A</strong><small>Query Store available</small></div></div>
+        <div class="section-intro"><div><span class="hero-kicker"><span class="pulse"></span> Query Store + Plan Cache</span><h2>Regresyonları <em>olduğu anda</em> yakala.</h2><p>View'lar bağımsız executable object değildir. Studio, view tanımlarını calling-query metni ve execution plan ile ilişkilendirerek runtime maliyetini kanıt seviyesine göre sınıflandırır.</p></div><div class="data-quality"><span>Çalışma Zamanı Kanıtı</span><strong>A</strong><small>Query Store devrede</small></div></div>
         <div class="runtime-grid">
-          <section class="panel span-12"><div class="panel-header"><div><span class="panel-kicker">ACTIVE REGRESSIONS</span><h3>14 anomali</h3></div><div class="toolbar-group"><button class="button ghost small">24 saat⌄</button><button class="button ghost small">Export</button></div></div><div class="regression-table" id="regressionTable"></div></section>
-          <section class="panel span-7"><div class="panel-header"><div><span class="panel-kicker">PLAN X-RAY</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">CRITICAL</span></div><div class="plan-xray"><div class="operator good"><small>Index Seek</small><strong>ISEMIRLERI</strong><span>18K rows</span></div><i>→</i><div class="operator danger"><small>Nested Loops</small><strong>Estimate 1</strong><span>Actual 187,431</span></div><i>→</i><div class="operator warning"><small>Key Lookup</small><strong>STOK_HAREKETLERI</strong><span>4.8M executions</span></div></div><div class="xray-foot"><span>⚠ Cardinality error: <strong>187,431×</strong></span><span>Logical reads: <strong>3,482,771</strong></span><span>Memory grant: <strong>24 MB</strong></span></div></section>
-          <section class="panel span-5"><div class="panel-header"><div><span class="panel-kicker">ROOT CAUSE CANDIDATES</span><h3>Neden Değişti?</h3></div></div><div class="cause-list"><div><span class="cause-score">92%</span><div><strong>Statistics stale</strong><p>STOK_HAREKETLERI · modification 31.4%</p></div></div><div><span class="cause-score">87%</span><div><strong>Plan changed</strong><p>Hash Match → Nested Loops</p></div></div><div><span class="cause-score">74%</span><div><strong>Parameter sensitivity</strong><p>Yeni plan belirli cardinality aralığında kötü.</p></div></div></div></section>
+          <section class="panel span-12"><div class="panel-header"><div><span class="panel-kicker">AKTİF REGRESYONLAR</span><h3>14 anomali</h3></div><div class="toolbar-group"><button class="button ghost small">24 saat⌄</button><button class="button ghost small">Dışa Aktar</button></div></div><div class="regression-table" id="regressionTable"></div></section>
+          <section class="panel span-7"><div class="panel-header"><div><span class="panel-kicker">PLAN X-RAY</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">KRİTİK</span></div><div class="plan-xray"><div class="operator good"><small>Index Seek</small><strong>ISEMIRLERI</strong><span>18K satır</span></div><i>→</i><div class="operator danger"><small>Nested Loops</small><strong>Tahmin 1</strong><span>Gerçek 187,431</span></div><i>→</i><div class="operator warning"><small>Key Lookup</small><strong>STOK_HAREKETLERI</strong><span>4.8M çalıştırma</span></div></div><div class="xray-foot"><span>⚠ Kardinalite hatası: <strong>187,431×</strong></span><span>Mantıksal okuma: <strong>3,482,771</strong></span><span>Bellek tahsisi: <strong>24 MB</strong></span></div></section>
+          <section class="panel span-5"><div class="panel-header"><div><span class="panel-kicker">KÖK NEDEN ADAYLARI</span><h3>Neden Değişti?</h3></div></div><div class="cause-list"><div><span class="cause-score">92%</span><div><strong>İstatistikler Güncel Değil</strong><p>STOK_HAREKETLERI · %31.4 değişim</p></div></div><div><span class="cause-score">87%</span><div><strong>Plan Değişti</strong><p>Hash Match → Nested Loops</p></div></div><div><span class="cause-score">74%</span><div><strong>Parametre Duyarlılığı</strong><p>Yeni plan belirli kardinalite aralığında yetersiz.</p></div></div></div></section>
         </div>
       </section>
 
@@ -368,7 +368,7 @@
           <section class="refactor-source">
             <div class="pane-head">
               <div style="flex:1">
-                <span class="panel-kicker">TARGET VIEW</span>
+                <span class="panel-kicker">HEDEF VIEW</span>
                 <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
                   <select id="refactorViewSelect" class="setting-input select-styled" style="font-size:14px;font-weight:700;color:var(--text-bright);background:var(--card-bg);border:1px solid var(--border);padding:4px 10px;border-radius:var(--radius-sm);max-width:380px"></select>
                   <span class="severity-pill" id="refactorRiskBadge">RISK --</span>
@@ -376,12 +376,12 @@
               </div>
             </div>
             <div class="context-pack">
-              <div><span>Source chain</span><strong id="refactorChainCount">--</strong></div>
-              <div><span>Base tables</span><strong id="refactorTableCount">--</strong></div>
-              <div><span>Indexes</span><strong id="refactorIndexCount">--</strong></div>
-              <div><span>Plan findings</span><strong id="refactorFindingCount">--</strong></div>
+              <div><span>Kaynak Zinciri</span><strong id="refactorChainCount">--</strong></div>
+              <div><span>Temel Tablolar</span><strong id="refactorTableCount">--</strong></div>
+              <div><span>İndeksler</span><strong id="refactorIndexCount">--</strong></div>
+              <div><span>Plan Bulguları</span><strong id="refactorFindingCount">--</strong></div>
             </div>
-            <div class="code-label"><span>Current SQL · context preview</span><span id="refactorLineCount">-- lines</span></div>
+            <div class="code-label"><span>Mevcut SQL · Bağlam Önizleme</span><span id="refactorLineCount">-- satır</span></div>
             <pre class="code-editor tall"><code id="refactorSourceCode">-- View seçildiğinde SQL burada görüntülenecektir...</code></pre>
           </section>
 
@@ -389,8 +389,8 @@
             <div class="ai-head">
               <div class="ai-orb">✦</div>
               <div>
-                <span class="panel-kicker">AI ENGINE</span>
-                <h3>Refactoring Assistant</h3>
+                <span class="panel-kicker">AI MOTORU</span>
+                <h3>Refaktör Asistanı</h3>
               </div>
               <span class="provider-pill" id="refactorProviderPill">DeepSeek</span>
             </div>
@@ -402,16 +402,16 @@
               </div>
             </div>
             <div class="refactor-options">
-              <label><input type="checkbox" id="optInlineRepeated" checked> Repeated table branch inline et</label>
-              <label><input type="checkbox" id="optSetBasedApply" checked> OUTER APPLY skalar toplanmasını set-based yap</label>
-              <label><input type="checkbox" id="optIndexSuggestions"> Missing covering index öner</label>
-              <label><input type="checkbox" id="optLockColumns" checked> Output column sırasını ve isimlerini kilitle</label>
+              <label><input type="checkbox" id="optInlineRepeated" checked> Tekrar eden tablo dallarını satır içine (inline) al</label>
+              <label><input type="checkbox" id="optSetBasedApply" checked> OUTER APPLY skalar toplamlarını küme bazlı (set-based) yap</label>
+              <label><input type="checkbox" id="optIndexSuggestions"> Eksik kapsayıcı indeks (covering index) öner</label>
+              <label><input type="checkbox" id="optLockColumns" checked> Çıktı sütun sırasını ve adlarını kilitle</label>
             </div>
             <div class="ai-warning"><p>CTE materialize olmaz. Tekrar eden tablonun yalnız execution plan doğrulamasıyla tek taramaya indiği iddia edilebilir.</p></div>
-            <button class="button primary full ai-button" id="runRefactor">✦ Candidate Oluştur</button>
+            <button class="button primary full ai-button" id="runRefactor">✦ Aday Refaktör Oluştur</button>
             <div class="ai-progress hidden" id="aiProgress">
               <div class="progress-head">
-                <span id="aiProgressText">AI candidate üretiliyor...</span>
+                <span id="aiProgressText">AI refaktör adayı üretiliyor...</span>
                 <b id="aiProgressPct">0%</b>
               </div>
               <div class="progress-track"><i id="aiProgressBar"></i></div>
@@ -420,16 +420,22 @@
 
             <div class="candidate-panel hidden" id="candidatePanel">
               <div class="candidate-stats">
-                <span>Status: <b class="needs-validation" id="candidateStatusBadge">SEMANTICALLY_PROPOSED (UNVALIDATED)</b></span>
-                <span>Tahmini IO: <b id="candidateIoEstimate">Optimizasyon Hazır</b></span>
+                <span>Durum: <b class="needs-validation" id="candidateStatusBadge">SEMANTİK OLARAK ÖNERİLDİ (DOĞRULANMADI)</b></span>
+                <span>Tahmini IO / Kazanç: <b id="candidateIoEstimate" style="color:var(--green)">Optimizasyon Hazır</b></span>
               </div>
               <div class="diff-grid" style="margin-top:10px">
-                <textarea class="code-editor" id="candidateSqlText" readonly placeholder="-- Candidate SQL üretildiğinde burada görünecek..."></textarea>
-                <div class="code-editor candidate" id="candidateNotes" style="white-space:pre-wrap;font-family:var(--font-mono);font-size:12px;padding:10px;overflow-y:auto;max-height:360px"></div>
+                <div class="candidate-sql-col">
+                  <div class="code-label"><span>Aday Refaktör SQL (V2)</span><button type="button" class="button ghost mini" id="btnCopyCandidateSql" title="Aday SQL'i Kopyala">Kopyala</button></div>
+                  <textarea class="code-editor" id="candidateSqlText" spellcheck="false" placeholder="-- Candidate SQL üretildiğinde burada görünecek..."></textarea>
+                </div>
+                <div class="candidate-notes-col">
+                  <div class="code-label"><span>Semantik Analiz & Gerekçeler</span></div>
+                  <div class="candidate-analysis-wrap" id="candidateNotes"></div>
+                </div>
               </div>
-              <div class="candidate-actions" style="display:flex;gap:10px;margin-top:12px">
-                <button class="button primary small" id="btnOpenCandidateInWorkbench">⚡ Workbench'te Aç</button>
-                <button class="button ghost small" data-detail-tab-jump="validation">Validation Lab'a Gönder</button>
+              <div class="candidate-actions">
+                <button type="button" class="button primary small" id="btnOpenCandidateInWorkbench">⚡ Workbench'te Aç</button>
+                <button type="button" class="button ghost small" id="btnSendCandidateToValidation" data-detail-tab-jump="validation">✓ Doğrulama Laboratuvarına Gönder</button>
               </div>
             </div>
           </section>
@@ -591,8 +597,8 @@
       <section class="page" id="page-workbench">
         <div class="workbench-toolbar">
           <div class="wb-toolbar-left">
-            <span class="panel-kicker">SQL WORKBENCH</span>
-            <span class="status-pill status-ready" id="wbStatusPill">● READY</span>
+            <span class="panel-kicker">SQL ÇALIŞMA ALANI</span>
+            <span class="status-pill status-ready" id="wbStatusPill">● HAZIR</span>
             <select id="wbDatabaseSelect" class="setting-input select-styled wb-db-select" style="min-width:200px;max-width:320px;height:28px;font-size:12px;margin-left:4px" title="Aktif Çalışma Veritabanı">
               <option value="MikroDB_V16_LIDER25">MikroDB_V16_LIDER25</option>
             </select>
@@ -671,7 +677,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
               <strong id="wbMetricCpu">—</strong>
             </div>
             <div class="wb-metric-card">
-              <span>Logical Reads</span>
+              <span>Mantıksal Okuma</span>
               <strong id="wbMetricReads">—</strong>
             </div>
             <div class="wb-metric-card">
@@ -689,7 +695,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
               <button class="wb-tab-btn active" data-wb-tab="results">Sonuçlar <span class="tab-badge" id="wbResultBadge">0</span></button>
               <button class="wb-tab-btn" data-wb-tab="messages">Mesajlar <span class="tab-badge" id="wbMessageBadge">0</span></button>
               <button class="wb-tab-btn" data-wb-tab="statistics">Statistics IO / Time</button>
-              <button class="wb-tab-btn" data-wb-tab="plan">Execution Plan <span class="tab-badge" id="wbPlanBadge" style="display:none">●</span></button>
+              <button class="wb-tab-btn" data-wb-tab="plan">Çalıştırma Planı <span class="tab-badge" id="wbPlanBadge" style="display:none">●</span></button>
               <button class="wb-tab-btn" data-wb-tab="history">Geçmiş</button>
             </div>
 
@@ -809,24 +815,24 @@ ORDER BY IslemAdedi DESC;"></textarea>
       <section class="page" id="page-settings">
         <div class="settings-layout">
           <section class="settings-nav">
-            <button class="active" data-settings-tab="connection">Database Connection</button>
-            <button data-settings-tab="ai">AI Provider</button>
-            <button data-settings-tab="scoring">Risk Scoring</button>
-            <button data-settings-tab="runtime">Runtime Evidence</button>
-            <button data-settings-tab="safety">Safety & Permissions</button>
-            <button data-settings-tab="appearance">Appearance</button>
+            <button class="active" data-settings-tab="connection">Veritabanı Bağlantısı</button>
+            <button data-settings-tab="ai">AI Sağlayıcı</button>
+            <button data-settings-tab="scoring">Risk Puanlama</button>
+            <button data-settings-tab="runtime">Çalışma Zamanı Kanıtı</button>
+            <button data-settings-tab="safety">Güvenlik ve Yetkiler</button>
+            <button data-settings-tab="appearance">Görünüm</button>
           </section>
 
           <section class="settings-content-wrap">
             <div class="settings-panel active" id="settings-panel-connection">
-              <span class="panel-kicker">DATABASE CONNECTION</span>
+              <span class="panel-kicker">VERİTABANI BAĞLANTISI</span>
               <h2>Bağlantı & Yetki</h2>
               <p class="settings-lead">Varsayılan çalışma şekli read-only'dir. SQL parolası ve AI anahtarı tarayıcı depolamasına yazılmaz.</p>
               
               <div class="setting-card">
                 <div><strong id="settingsActiveDb">Demo Modu</strong><p id="settingsActiveHost">Mock dataset aktif · Bağlantı yok</p></div>
                 <div style="display:flex;align-items:center;gap:8px">
-                  <span class="connected-pill" id="settingsConnStatusPill" style="color:var(--yellow);border-color:rgba(247,200,106,.2)">○ DEMO MODE</span>
+                  <span class="connected-pill" id="settingsConnStatusPill" style="color:var(--yellow);border-color:rgba(247,200,106,.2)">○ DEMO MODU</span>
                   <button class="button ghost small" id="btnSettingsOpenModal">Bağlantıyı Değiştir</button>
                 </div>
               </div>
@@ -857,12 +863,12 @@ ORDER BY IslemAdedi DESC;"></textarea>
             </div>
 
             <div class="settings-panel" id="settings-panel-ai">
-              <span class="panel-kicker">AI PROVIDER CONFIGURATION</span>
+              <span class="panel-kicker">AI SAĞLAYICI YAPILANDIRMASI</span>
               <h2>AI Motoru & API Bağlantısı</h2>
               <p class="settings-lead">AI anahtarı yalnızca Node.js süreç belleğinde tutulur; tarayıcı depolamasına veya loglara kesinlikle yazılmaz.</p>
               
               <div class="setting-card">
-                <div><strong>Provider</strong><p>Kullanılacak AI model sağlayıcısı</p></div>
+                <div><strong>Sağlayıcı</strong><p>Kullanılacak AI model sağlayıcısı</p></div>
                 <select id="settingAiProvider" class="setting-input wide select-styled">
                   <option value="deepseek" selected>DeepSeek (Önerilen)</option>
                   <option value="openai">OpenAI</option>
@@ -872,79 +878,79 @@ ORDER BY IslemAdedi DESC;"></textarea>
               </div>
 
               <div class="setting-card">
-                <div><strong>API Base URL</strong><p>Sağlayıcı API uç noktası</p></div>
+                <div><strong>API Temel URL'si</strong><p>Sağlayıcı API uç noktası</p></div>
                 <input id="settingAiBaseUrl" class="setting-input wide" value="https://api.deepseek.com/v1" />
               </div>
 
               <div class="setting-card">
-                <div><strong>API Key</strong><p>Kimlik doğrulama anahtarı (Bellekte saklanır)</p></div>
+                <div><strong>API Anahtarı</strong><p>Kimlik doğrulama anahtarı (Bellekte saklanır)</p></div>
                 <input id="settingAiKey" type="password" class="setting-input wide" placeholder="••••••••••••••••••••••••••••••••" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Model Name</strong><p>Kullanılacak spesifik model adı</p></div>
+                <div><strong>Model Adı</strong><p>Kullanılacak spesifik model adı</p></div>
                 <input id="settingAiModel" class="setting-input wide" value="deepseek-coder" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Temperature</strong><p>Deterministik SQL refactoring için düşük değer önerilir (0.0 - 0.3)</p></div>
+                <div><strong>Sıcaklık (Temperature)</strong><p>Deterministik SQL refactoring için düşük değer önerilir (0.0 - 0.3)</p></div>
                 <input id="settingAiTemp" type="number" step="0.05" min="0" max="1" class="setting-input" value="0.15" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Max Tokens</strong><p>Maksimum yanıt belirteç sayısı</p></div>
+                <div><strong>Maksimum Belirteç (Tokens)</strong><p>Maksimum yanıt belirteç sayısı</p></div>
                 <input id="settingAiTokens" type="number" class="setting-input" value="4096" />
               </div>
 
               <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px">
                 <button class="button ghost" id="btnSaveAi">💾 Ayarları Kaydet</button>
-                <button class="button primary" id="btnTestAi">✦ Test AI Connection</button>
+                <button class="button primary" id="btnTestAi">✦ AI Bağlantısını Test Et</button>
               </div>
             </div>
 
             <div class="settings-panel" id="settings-panel-scoring">
-              <span class="panel-kicker">SCORING WEIGHTS</span>
+              <span class="panel-kicker">PUANLAMA AĞIRLIKLARI</span>
               <h2>Health & Risk Puanlama Ağırlıkları</h2>
               <p class="settings-lead">docs/03-SCORING.md standardına uygun ağırlık katsayıları. View'ların önceliklendirilmesini belirler.</p>
 
               <div class="setting-card">
-                <div><strong>Runtime Cost Weight</strong><p>Query Store / DMV mantıksal okuma yüzdelik dilim ağırlığı</p></div>
+                <div><strong>Çalışma Zamanı Maliyet Ağırlığı</strong><p>Query Store / DMV mantıksal okuma yüzdelik dilim ağırlığı</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightRuntime" value="35" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Active Regression Weight</strong><p>Tespit edilen süre/okuma regresyon şiddeti ağırlığı</p></div>
+                <div><strong>Aktif Regresyon Ağırlığı</strong><p>Tespit edilen süre/okuma regresyon şiddeti ağırlığı</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightRegression" value="25" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Repeated Base-Table Access</strong><p>Aynı base tabloya birden çok dal üzerinden erişim cezası</p></div>
+                <div><strong>Mükerrer Temel Tablo Erişimi</strong><p>Aynı base tabloya birden çok dal üzerinden erişim cezası</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightRepeated" value="15" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Dependency Depth</strong><p>İç içe view derinliği (depth > 3) yapısal ceza ağırlığı</p></div>
+                <div><strong>Bağımlılık Derinliği</strong><p>İç içe view derinliği (depth > 3) yapısal ceza ağırlığı</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightDepth" value="10" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Non-SARGable Predicates</strong><p>WHERE/ON filtrelerinde indeks kullanımını bozan fonksiyon cezası</p></div>
+                <div><strong>SARGable Olmayan Filtreler</strong><p>WHERE/ON filtrelerinde indeks kullanımını bozan fonksiyon cezası</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightSargable" value="10" />
               </div>
 
               <div class="setting-card">
-                <div><strong>Blast Radius (Upstream Dependents)</strong><p>Bu view'ı çağıran üst view ve rapor sayısı etki ağırlığı</p></div>
+                <div><strong>Etki Alanı (Üst Bağımlılar)</strong><p>Bu view'ı çağıran üst view ve rapor sayısı etki ağırlığı</p></div>
                 <input type="number" min="0" max="100" class="setting-input" id="weightBlast" value="5" />
               </div>
 
               <div style="display:flex;justify-content:space-between;margin-top:22px">
-                <button class="button ghost" id="btnResetScoring">Reset to Recommended Defaults</button>
+                <button class="button ghost" id="btnResetScoring">Varsayılan Ağırlıklara Sıfırla</button>
                 <button class="button primary" id="btnSaveScoring">Ağırlıkları Kaydet & Yeniden Puanla</button>
               </div>
             </div>
 
             <div class="settings-panel" id="settings-panel-runtime">
-              <span class="panel-kicker">EVIDENCE SOURCES</span>
+              <span class="panel-kicker">KANIT KAYNAKLARI</span>
               <h2>Runtime Kanıt & Zaman Aralığı</h2>
               <p class="settings-lead">View bağımsız executable bir nesne değildir. Runtime maliyeti calling queries üzerinden korelasyonla hesaplanır.</p>
 
@@ -976,33 +982,33 @@ ORDER BY IslemAdedi DESC;"></textarea>
             </div>
 
             <div class="settings-panel" id="settings-panel-safety">
-              <span class="panel-kicker">SECURITY POLICY</span>
+              <span class="panel-kicker">GÜVENLİK POLİTİKASI</span>
               <h2>Güvenlik Kalkanı & İzin Matrisi</h2>
               <p class="settings-lead">Stüdyo sıfır veritabanı değişikliği (zero DB mutation) ilkesiyle çalışır.</p>
 
               <div class="setting-card">
                 <div><strong>DDL Koruma Kalkanı</strong><p>CREATE, ALTER, DROP, TRUNCATE komutları kesinlikle engellenir</p></div>
-                <span class="severity-pill critical">● BLOCKED</span>
+                <span class="severity-pill critical">● ENGELLENDİ</span>
               </div>
 
               <div class="setting-card">
                 <div><strong>DML Koruma Kalkanı</strong><p>INSERT, UPDATE, DELETE, MERGE komutları kesinlikle engellenir</p></div>
-                <span class="severity-pill critical">● BLOCKED</span>
+                <span class="severity-pill critical">● ENGELLENDİ</span>
               </div>
 
               <div class="setting-card">
                 <div><strong>SELECT Sorguları</strong><p>Salt-okunur veri ve metadata okumalarına izin verilir</p></div>
-                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● ALLOWED (READ-ONLY)</span>
+                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● İZİN VERİLDİ (SALT-OKUNUR)</span>
               </div>
 
               <div class="setting-card">
                 <div><strong>Sys Katalogları & DMVs</strong><p>sys.views, sys.sql_expression_dependencies, Query Store metadata</p></div>
-                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● ALLOWED (METADATA)</span>
+                <span class="severity-pill warning" style="color:var(--green);border-color:rgba(67,217,156,0.3);background:rgba(67,217,156,0.08)">● İZİN VERİLDİ (METADATA)</span>
               </div>
 
               <div class="setting-card">
                 <div><strong>Query Benchmark & Plan X-Ray</strong><p>Yalnızca kullanıcı açıkça butonla talep ettiğinde kontrollü çalışır</p></div>
-                <span class="severity-pill warning">● USER CONTROLLED</span>
+                <span class="severity-pill warning">● KULLANICI KONTROLLÜ</span>
               </div>
             </div>
 
@@ -1114,8 +1120,8 @@ ORDER BY IslemAdedi DESC;"></textarea>
           <label><span>Kullanıcı Adı</span><input name="user" id="inputUser" placeholder="sa veya audit_user" required /></label>
           <label class="wide"><span>Şifre</span><input name="password" id="inputPassword" type="password" placeholder="••••••••••" required /></label>
           <div class="form-checks wide">
-            <label><input type="checkbox" name="trustServerCertificate" id="checkTrustCert" checked> Trust server certificate</label>
-            <label><input type="checkbox" name="encrypt" id="checkEncrypt"> Encrypt connection</label>
+            <label><input type="checkbox" name="trustServerCertificate" id="checkTrustCert" checked> Sunucu sertifikasına güven (Trust Certificate)</label>
+            <label><input type="checkbox" name="encrypt" id="checkEncrypt"> Bağlantıyı şifrele (Encrypt)</label>
           </div>
           <div class="modal-actions wide">
             <span class="connection-test" id="connectionTestStatus">Henüz test edilmedi</span>
@@ -1132,7 +1138,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
         <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px">Erişilebilir online veritabanları tespit edildi. Analiz etmek istediğiniz veritabanlarını ve başlangıç çalışma bağlamını seçin.</p>
         <div style="margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-            <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin:0">ANALİZ EDİLECEK VERİTABANLARI (MULTI-SELECT)</label>
+            <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin:0">ANALİZ EDİLECEK VERİTABANLARI (ÇOKLU SEÇİM)</label>
             <div style="display:flex;gap:8px;font-size:11.5px">
               <button type="button" id="btnScopeSelectAll" style="background:none;border:none;color:var(--accent);cursor:pointer;padding:0;font-weight:600">Tümünü Seç</button>
               <span style="color:var(--text-muted)">|</span>
@@ -1147,7 +1153,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
           </div>
         </div>
         <div style="margin-bottom:16px">
-          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">PRIMARY DATABASE (Varsayılan Workbench Bağlamı)</label>
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">BİRİNCİL VERİTABANI (Varsayılan Çalışma Alanı Bağlamı)</label>
           <select id="primaryDbSelect" class="setting-input select-styled" style="width:100%"></select>
         </div>
         <div class="modal-actions wide" style="display:flex;justify-content:space-between;align-items:center">

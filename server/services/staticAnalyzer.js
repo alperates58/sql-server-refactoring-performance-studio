@@ -40,7 +40,7 @@ function analyzeStaticSql(definition = '') {
     signals.hasDistinct = true;
     findings.push({
       code: 'DISTINCT_USAGE',
-      title: 'SELECT DISTINCT pattern detected',
+      title: 'SELECT DISTINCT Deseni Tespit Edildi',
       severity: 'WARNING',
       healthPenalty: 5,
       symbol: '⌘',
@@ -57,7 +57,7 @@ function analyzeStaticSql(definition = '') {
     signals.hasUnionWithoutAll = true;
     findings.push({
       code: 'UNION_WITHOUT_ALL',
-      title: 'UNION without ALL',
+      title: 'ALL Olmadan UNION Kullanımı',
       severity: 'WARNING',
       healthPenalty: 6,
       symbol: '∪',
@@ -75,7 +75,7 @@ function analyzeStaticSql(definition = '') {
     signals.windowFunctionCount = windowMatches.length;
     findings.push({
       code: 'WINDOW_FUNCTIONS',
-      title: 'Window function usage',
+      title: 'Pencere (Window) Fonksiyonu Kullanımı',
       severity: 'INFO',
       healthPenalty: 4,
       symbol: '∿',
@@ -107,7 +107,7 @@ function analyzeStaticSql(definition = '') {
     const penalty = Math.min(12, nonSargableCount * 4);
     findings.push({
       code: 'NON_SARGABLE_EXPRESSION',
-      title: 'Non-SARGable predicate expressions',
+      title: 'SARGable Olmayan Koşul İfadeleri',
       severity: nonSargableCount >= 3 ? 'HIGH' : 'WARNING',
       healthPenalty: penalty,
       symbol: 'ƒ',
@@ -127,7 +127,7 @@ function analyzeStaticSql(definition = '') {
     const penalty = Math.min(10, filteredUdfs.length * 5);
     findings.push({
       code: 'SCALAR_UDF',
-      title: 'Scalar UDF call detected',
+      title: 'Skalar UDF Çağrısı Tespit Edildi',
       severity: 'HIGH',
       healthPenalty: penalty,
       symbol: 'λ',
@@ -143,7 +143,7 @@ function analyzeStaticSql(definition = '') {
     signals.hasWildcardSelect = true;
     findings.push({
       code: 'WILDCARD_SELECT',
-      title: 'Wildcard SELECT * detected',
+      title: 'Joker Karakter SELECT * Kullanımı',
       severity: 'WARNING',
       healthPenalty: 3,
       symbol: '*',
@@ -159,7 +159,7 @@ function analyzeStaticSql(definition = '') {
     signals.hasLeadingWildcardLike = true;
     findings.push({
       code: 'LEADING_WILDCARD_LIKE',
-      title: 'Leading wildcard in LIKE predicate',
+      title: 'LIKE Koşulunda Başta Joker Karakter (%...)',
       severity: 'WARNING',
       healthPenalty: 4,
       symbol: '%',
@@ -175,7 +175,7 @@ function analyzeStaticSql(definition = '') {
     signals.hasApply = true;
     findings.push({
       code: 'APPLY_OPERATOR',
-      title: 'APPLY operator detected',
+      title: 'APPLY Operatörü Kullanımı',
       severity: 'INFO',
       healthPenalty: 2,
       symbol: '⋈',

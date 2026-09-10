@@ -94,6 +94,7 @@ async function scan(prefix = 'AA_', explicitScope = null) {
   }
 
   const sanitizedPrefix = prefix.replace(/'/g, "''");
+  const likePrefix = sanitizedPrefix.replace(/\[/g, '[[]').replace(/%/g, '[%]').replace(/_/g, '[_]');
 
   const allRawViews = [];
   const allRawEdges = [];
@@ -112,11 +113,12 @@ async function scan(prefix = 'AA_', explicitScope = null) {
 
     let dbStatus = 'FULL ACCESS';
     let dbError = null;
+    const safeDbName = dbName.replace(/'/g, "''");
 
     // 1A. Views Query
     const viewsSql = `
       SELECT
-        '${dbName}' AS database_name,
+        '${safeDbName}' AS database_name,
         s.name AS schema_name,
         v.name AS view_name,
         v.object_id,
@@ -126,14 +128,14 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       FROM sys.views AS v
       JOIN sys.schemas AS s ON s.schema_id = v.schema_id
       WHERE v.is_ms_shipped = 0
-        AND v.name LIKE '${sanitizedPrefix}%'
+        AND v.name LIKE '${likePrefix}%'
       ORDER BY v.name;
     `;
 
     // 1B. Dependencies Query (captures cross-db 4-part names)
     const depsSql = `
       SELECT
-        '${dbName}' AS source_database,
+        '${safeDbName}' AS source_database,
         OBJECT_SCHEMA_NAME(d.referencing_id) AS source_schema,
         OBJECT_NAME(d.referencing_id) AS source_name,
         d.referencing_id AS source_object_id,
@@ -149,14 +151,14 @@ async function scan(prefix = 'AA_', explicitScope = null) {
         d.is_ambiguous
       FROM sys.sql_expression_dependencies AS d
       LEFT JOIN sys.objects AS o ON o.object_id = d.referenced_id
-      WHERE OBJECT_NAME(d.referencing_id) LIKE '${sanitizedPrefix}%'
+      WHERE OBJECT_NAME(d.referencing_id) LIKE '${likePrefix}%'
       ORDER BY source_name, d.referenced_entity_name;
     `;
 
     // 1C. Synonyms Query
     const synSql = `
       SELECT
-        '${dbName}' AS database_name,
+        '${safeDbName}' AS database_name,
         s.name AS schema_name,
         syn.name AS synonym_name,
         syn.base_object_name
@@ -262,17 +264,25 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     const health = calculateHealth(signals);
     const risk = calculateRisk({
       health,
+      depth: signals.depth,
+      repeatedCount: signals.repeatedBaseTableCount,
       dependentCount: signals.dependentCount,
-      reads: rt ? rt.totalReads : 0,
-      isRegressed: rt ? rt.isRegressed : false
+      runtime: rt ? {
+        executions: rt.executionCount || 1,
+        avgLogicalReads: rt.executionCount > 0 ? Math.round(rt.totalReads / rt.executionCount) : rt.totalReads,
+        totalReads: rt.totalReads,
+        avgDurationMs: rt.avgDurationUs ? Math.round(rt.avgDurationUs / 1000) : 0,
+        isRegression: Boolean(rt.isRegressed),
+        evidenceGrade: rt.evidenceGrade || 'B'
+      } : null
     });
 
     const problems = [];
     if (signals.repeatedBaseTableCount > 0) {
       problems.push({
         symbol: '⇄',
-        title: 'Repeated base table access',
-        detail: `Base table is reached through ${signals.repeatedBaseTableCount + 1} paths across databases.`,
+        title: 'Mükerrer Temel Tablo Erişimi',
+        detail: `Temel tabloya veritabanları arası ${signals.repeatedBaseTableCount + 1} farklı yoldan erişiliyor.`,
         severity: 'CRITICAL',
         penalty: 18
       });
@@ -280,8 +290,8 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     if (signals.depth > 3) {
       problems.push({
         symbol: '∞',
-        title: 'Cross-DB Dependency depth',
-        detail: `${signals.depth} levels deep cross-database tree.`,
+        title: 'Veritabanları Arası Bağımlılık Derinliği',
+        detail: `${signals.depth} seviye derinliğinde çapraz veritabanı hiyerarşisi tespit edildi.`,
         severity: 'HIGH',
         penalty: 10
       });
@@ -289,8 +299,8 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     if (signals.outOfScopeCount > 0) {
       problems.push({
         symbol: '⊘',
-        title: 'Out of analysis scope dependency',
-        detail: `${signals.outOfScopeCount} referenced objects belong to unscanned databases.`,
+        title: 'Kapsam Dışı Veritabanı Bağımlılığı',
+        detail: `Referans verilen ${signals.outOfScopeCount} nesne analiz kapsamına dahil edilmeyen veritabanlarında bulunuyor.`,
         severity: 'MEDIUM',
         penalty: 6
       });
@@ -298,8 +308,8 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     if (signals.linkedServerCount > 0) {
       problems.push({
         symbol: '⌁',
-        title: 'Linked Server Hop',
-        detail: `${signals.linkedServerCount} distributed queries detected (latency/distributed transaction risk).`,
+        title: 'Linked Server Geçişi',
+        detail: `${signals.linkedServerCount} adet dağıtık sorgu bulundu (ağ gecikmesi ve dağıtık transaction riski).`,
         severity: 'HIGH',
         penalty: 12
       });
@@ -307,8 +317,8 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     if (signals.unresolvedCount > 0) {
       problems.push({
         symbol: '?',
-        title: 'Unresolved entities',
-        detail: `${signals.unresolvedCount} objects could not be resolved in catalog.`,
+        title: 'Çözümlenemeyen Nesneler',
+        detail: `${signals.unresolvedCount} adet nesne veritabanı kataloğunda çözümlenemedi.`,
         severity: 'HIGH',
         penalty: 8
       });
@@ -317,8 +327,10 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     const readsStr = rt
       ? (rt.totalReads > 1e9 ? `${(rt.totalReads / 1e9).toFixed(1)}B` : rt.totalReads > 1e6 ? `${(rt.totalReads / 1e6).toFixed(1)}M` : rt.totalReads.toLocaleString())
       : '—';
-    const medianStr = rt ? `${rt.avgDurationMs || 0}ms` : '—';
+    const medianStr = rt ? (rt.formattedDuration || (rt.avgDurationUs ? `${Math.round(rt.avgDurationUs / 1000)}ms` : '0ms')) : '—';
     const modifiedStr = v.modify_date ? new Date(v.modify_date).toLocaleDateString('tr-TR') : 'Bilinmiyor';
+
+    const riskCategory = (risk.category || risk.level || 'low').toLowerCase();
 
     return {
       canonicalId: v.canonicalId,
@@ -333,9 +345,9 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       definition: v.definition,
       health,
       healthScore: health,
-      risk: risk.category,
-      riskLevel: risk.category,
-      riskCategory: risk.category,
+      risk: riskCategory,
+      riskLevel: risk.level,
+      riskCategory: riskCategory,
       riskScore: risk.score,
       depth: signals.depth,
       tables: signals.baseTableCount,
@@ -350,11 +362,11 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       upstreamViews: (gStats.dependents || []).map(r => (typeof r === 'string' ? r.split('.').pop() : (r.name || r.canonicalId))),
       downstreamViews: (gStats.downstreamViews || []).map(r => (typeof r === 'string' ? r.split('.').pop() : (r.name || r.canonicalId))),
       problems,
-      riskBars: buildRiskBars(signals, risk.score),
+      riskBars: buildRiskBars(signals, rt),
       runtime: rt,
       reads: readsStr,
       median: medianStr,
-      dynamicSqlLimitation: gStats.dynamicSqlLimitation
+      dynamicSqlLimitation: 'Dinamik SQL bağımlılıkları katalog metaverisinden tam olarak tespit edilemez.'
     };
   });
 
@@ -416,7 +428,7 @@ async function scan(prefix = 'AA_', explicitScope = null) {
     primaryDatabase: connStatus.primaryDatabase || selectedDatabases[0],
     selectedDatabases,
     databaseSummaries,
-    dynamicSqlLimitation: 'Dynamic SQL dependencies cannot be fully discovered from catalog metadata.',
+    dynamicSqlLimitation: 'Dinamik SQL bağımlılıkları katalog metaverisinden tam olarak tespit edilemez.',
     summary: {
       totalViews: processedViews.length,
       criticalViews: processedViews.filter(v => v.riskCategory === 'critical').length,
@@ -429,7 +441,7 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       linkedServerEdges: normalizedEdges.filter(e => e.isLinkedServer).length,
       outOfScopeEdges: normalizedEdges.filter(e => e.isOutOfScope).length,
       synonymEdges: normalizedEdges.filter(e => e.isSynonym).length,
-      dynamicSqlLimitation: 'Dynamic SQL dependencies cannot be fully discovered from catalog metadata.'
+      dynamicSqlLimitation: 'Dinamik SQL bağımlılıkları katalog metaverisinden tam olarak tespit edilemez.'
     },
     views: processedViews,
     pressures: pressures.slice(0, 15),

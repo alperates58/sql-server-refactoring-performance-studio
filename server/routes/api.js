@@ -4,6 +4,10 @@ const scanner = require('../services/scanner');
 const ai = require('../services/aiProvider');
 const capabilities = require('../services/capabilities');
 const settings = require('../services/settingsService');
+const metadataCatalog = require('../services/metadataCatalog');
+const workbench = require('../services/workbenchService');
+const planParser = require('../services/planParser');
+const validation = require('../services/validationService');
 
 const router = express.Router();
 
@@ -226,8 +230,6 @@ router.post('/settings/reset-scoring', (_req, res) => {
 // ==========================================
 // 13. SQL Workbench & Plan Execution Engine
 // ==========================================
-const workbench = require('../services/workbenchService');
-const planParser = require('../services/planParser');
 
 // Run Query
 router.post('/workbench/run', async (req, res) => {
@@ -295,7 +297,6 @@ router.get('/workbench/history', (_req, res) => {
 });
 
 // Metadata Catalog for Schema-Aware Autocomplete / IntelliSense
-const metadataCatalog = require('../services/metadataCatalog');
 
 router.get('/workbench/metadata', (req, res) => {
   const catalog = metadataCatalog.getCatalog(req.query.database);
@@ -318,7 +319,6 @@ router.post('/workbench/metadata/refresh', async (req, res) => {
 // ==========================================
 // 14. Validation Lab Equivalence Proof Engine
 // ==========================================
-const validation = require('../services/validationService');
 
 router.post('/validation/verify', async (req, res) => {
   try {

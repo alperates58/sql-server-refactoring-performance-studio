@@ -34,7 +34,7 @@ function parseShowPlanXML(xmlString) {
   const optimizationLevel = optLevelMatch ? optLevelMatch[1] : 'FULL';
 
   // 2. Extract RelOp Operators
-  const relOpRegex = /<RelOp\b([^>]*?)(?:\/?>|>([\s\S]*?)<\/RelOp>)/g;
+  const relOpRegex = /<RelOp\b([^>]*?)(?:\/>|>([\s\S]*?)(?=<RelOp\b|<\/QueryPlan>|<\/Statements>|<\/Batch>|$))/g;
   let relOpMatch;
 
   while ((relOpMatch = relOpRegex.exec(xmlString)) !== null) {
@@ -97,7 +97,7 @@ function parseShowPlanXML(xmlString) {
       const ratio = actualRows / estRows;
       if (ratio >= 10 || ratio <= 0.1) {
         const severity = (ratio >= 100 || ratio <= 0.01) ? 'CRITICAL' : 'HIGH';
-        const factor = ratio >= 1 ? `${Math.round(ratio)}x Under-estimated` : `${Math.round(1 / ratio)}x Over-estimated`;
+        const factor = ratio >= 1 ? `${Math.round(ratio)}x Eksik Tahmin` : `${Math.round(1 / ratio)}x Fazla Tahmin`;
         cardinalityMismatches.push({
           nodeId: opData.nodeId,
           operator: physicalOp,

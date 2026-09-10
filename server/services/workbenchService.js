@@ -84,6 +84,11 @@ async function execute({
   activeRequests.set(reqId, request);
   request.timeout = Math.min(120000, Math.max(1000, Number(timeoutMs) || 30000));
 
+  // Capture T-SQL informational messages (STATISTICS IO, STATISTICS TIME, PRINT)
+  request.on('info', info => {
+    if (info && info.message) messages.push(info.message);
+  });
+
   const startTime = process.hrtime.bigint();
 
   try {
@@ -123,6 +128,7 @@ async function execute({
       columns,
       rows: truncatedRows,
       totalRows: primaryRecordset.length,
+      rowsReturned: primaryRecordset.length,
       truncated: primaryRecordset.length > maxRows,
       metrics: {
         durationMs,
@@ -130,7 +136,14 @@ async function execute({
         elapsedMs: timeStats.elapsedMs,
         logicalReads: ioStats.totalLogicalReads,
         physicalReads: ioStats.totalPhysicalReads,
-        tableStats: ioStats.tableStats
+        tableStats: ioStats.tableStats,
+        rowsReturned: primaryRecordset.length
+      },
+      statistics: {
+        tables: ioStats.tableStats,
+        totalLogicalReads: ioStats.totalLogicalReads,
+        cpuTimeMs: timeStats.cpuMs,
+        elapsedTimeMs: timeStats.elapsedMs
       },
       messages
     };
@@ -138,11 +151,14 @@ async function execute({
     sessionHistory.unshift({
       id: reqId,
       time: new Date().toISOString(),
+      timestamp: Date.now(),
       database: targetDb,
       sql: sql.slice(0, 160),
+      query: sql.slice(0, 160),
       durationMs,
       logicalReads: ioStats.totalLogicalReads,
-      rowCount: primaryRecordset.length
+      rowCount: primaryRecordset.length,
+      rowsCount: primaryRecordset.length
     });
     if (sessionHistory.length > 50) sessionHistory.pop();
 
@@ -222,16 +238,21 @@ async function executePlan({
         }
       }
     } else {
-      await pool.request().batch('SET SHOWPLAN_XML ON;');
+      const transaction = pool.transaction();
+      await transaction.begin();
       try {
-        const estResult = await request.batch(sql);
+        const estReq = transaction.request();
+        estReq.timeout = request.timeout;
+        await estReq.batch('SET SHOWPLAN_XML ON;');
+        const estResult = await estReq.batch(sql);
         if (estResult.recordset && estResult.recordset.length > 0) {
           const row = estResult.recordset[0];
           const key = Object.keys(row)[0];
           rawXml = row[key];
         }
+        await estReq.batch('SET SHOWPLAN_XML OFF;').catch(() => {});
       } finally {
-        await pool.request().batch('SET SHOWPLAN_XML OFF;');
+        await transaction.rollback().catch(() => {});
       }
     }
 
@@ -265,7 +286,7 @@ async function executeBenchmark({
 }) {
   const validation = validateReadOnly(sql);
   if (!validation.valid) {
-    throw new Error(`Read-only benchmark blocked: ${validation.reason}`);
+    throw new Error(`Salt-okunur kural ihlali nedeniyle benchmark engellendi: ${validation.reason}`);
   }
 
   const targetDb = database || db.status().primaryDatabase;
@@ -287,6 +308,10 @@ async function executeBenchmark({
   for (let i = 1; i <= totalRuns; i++) {
     const iterReq = pool.request();
     iterReq.timeout = timeoutMs;
+    const msgs = [];
+    iterReq.on('info', info => {
+      if (info && info.message) msgs.push(info.message);
+    });
     const startTime = process.hrtime.bigint();
 
     try {
@@ -300,7 +325,6 @@ async function executeBenchmark({
       const endTime = process.hrtime.bigint();
       const durMs = Number((endTime - startTime) / 1000000n);
 
-      const msgs = [];
       if (res.recordsets) {
         for (const set of res.recordsets) {
           if (set.messages) for (const m of set.messages) msgs.push(m.message);
@@ -315,7 +339,8 @@ async function executeBenchmark({
         durationMs: durMs,
         cpuMs: time.cpuMs,
         logicalReads: io.totalLogicalReads,
-        physicalReads: io.totalPhysicalReads
+        physicalReads: io.totalPhysicalReads,
+        rowCount: (res.recordset || []).length
       });
     } catch (err) {
       iterations.push({
@@ -345,21 +370,41 @@ async function executeBenchmark({
     ? reads[Math.floor(reads.length / 2)]
     : 0;
 
+  const avgDuration = durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0;
+
   return {
     ok: true,
     benchmarkId: bId,
     database: targetDb,
+    totalRuns: totalRuns,
     runsRequested: totalRuns,
     runsCompleted: validRuns.length,
     warmUpApplied: warmUp,
+    warmUpIncluded: false,
     metrics: {
       medianDurationMs: medianDuration,
       p95DurationMs: p95Duration,
       minDurationMs: durations[0] || 0,
       maxDurationMs: durations[durations.length - 1] || 0,
-      avgDurationMs: durations.length > 0 ? Math.round(durations.reduce((a, b) => a + b, 0) / durations.length) : 0,
+      avgDurationMs: avgDuration,
       medianLogicalReads: medianReads
     },
+    summary: {
+      medianMs: medianDuration,
+      p95Ms: p95Duration,
+      minMs: durations[0] || 0,
+      maxMs: durations[durations.length - 1] || 0,
+      avgMs: avgDuration,
+      logicalReadsMedian: medianReads
+    },
+    runs: validRuns.map(r => ({
+      iteration: r.iteration,
+      isWarmUp: false,
+      durationMs: r.durationMs,
+      cpuMs: r.cpuMs,
+      logicalReads: r.logicalReads,
+      rows: r.rowCount || 0
+    })),
     iterations
   };
 }

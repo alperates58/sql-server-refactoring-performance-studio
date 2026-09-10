@@ -81,60 +81,69 @@ function calculateHealth(signals = {}) {
   return clamp(100 - penalty);
 }
 
-function calculateRisk({
-  health = 100,
-  depth = 1,
-  repeatedCount = 0,
-  dependentCount = 0,
-  runtime = null // { executions, avgLogicalReads, avgDurationMs, isRegression, evidenceGrade }
-}) {
+function calculateRisk(options = {}) {
+  const health = Number(options.health != null ? options.health : 100) || 100;
+  const depth = Number(options.depth || 1) || 1;
+  const repeatedCount = Number(options.repeatedCount || 0) || 0;
+  const dependentCount = Number(options.dependentCount || 0) || 0;
+
+  // Support both options.runtime and flat options.reads/options.isRegressed
+  let runtime = options.runtime || null;
+  if (!runtime && (options.reads != null || options.isRegressed != null)) {
+    runtime = {
+      avgLogicalReads: Number(options.reads) || 0,
+      totalReads: Number(options.reads) || 0,
+      executions: 1,
+      isRegression: Boolean(options.isRegressed),
+      evidenceGrade: 'B'
+    };
+  }
+
   let riskScore = 0;
   let evidenceGrade = 'D';
 
-  if (runtime && (runtime.avgLogicalReads != null || runtime.executions != null)) {
-    // Runtime data available (Grade A or B)
+  const avgReads = runtime ? (runtime.avgLogicalReads != null ? runtime.avgLogicalReads : (runtime.totalReads != null ? runtime.totalReads / (runtime.executions || runtime.executionCount || 1) : null)) : null;
+  const executions = runtime ? (runtime.executions != null ? runtime.executions : runtime.executionCount) : null;
+  const isRegression = runtime ? (runtime.isRegression != null ? runtime.isRegression : Boolean(runtime.isRegressed)) : false;
+
+  if (runtime && (avgReads != null || executions != null)) {
     evidenceGrade = runtime.evidenceGrade || 'B';
-
-    // 40% runtime cost percentile
-    const readsScore = Math.min(40, (Math.log10(Math.max(1, runtime.avgLogicalReads || 1)) / 7) * 40);
-
-    // 20% active regression severity
-    const regressionScore = runtime.isRegression ? 20 : 0;
-
-    // 15% structural unhealthiness
+    const readsScore = Math.min(40, (Math.log10(Math.max(1, avgReads || 1)) / 7) * 40);
+    const regressionScore = isRegression ? 20 : 0;
     const healthComponent = ((100 - health) / 100) * 15;
-
-    // 15% blast radius / centrality
     const blastComponent = Math.min(15, (dependentCount / 30) * 15);
-
-    // 10% execution frequency
-    const execComponent = Math.min(10, (Math.log10(Math.max(1, runtime.executions || 1)) / 6) * 10);
-
+    const execComponent = Math.min(10, (Math.log10(Math.max(1, executions || 1)) / 6) * 10);
     riskScore = clamp(readsScore + regressionScore + healthComponent + blastComponent + execComponent);
   } else {
-    // Static scan only - Renormalized weights with lower confidence (Grade D)
     evidenceGrade = 'D';
-
-    // 55% structural health penalty
     const healthComponent = (100 - health) * 0.55;
-
-    // 25% blast radius
     const blastComponent = Math.min(25, dependentCount * 1.1);
-
-    // 20% complexity & repeated base tables
     const complexityComponent = Math.min(20, (repeatedCount * 5) + Math.max(0, depth - 3) * 3);
-
     riskScore = clamp(healthComponent + blastComponent + complexityComponent);
   }
 
   let level = 'LOW';
-  if (riskScore >= 75) level = 'CRITICAL';
-  else if (riskScore >= 55) level = 'HIGH';
-  else if (riskScore >= 35) level = 'MEDIUM';
+  let levelTr = 'DÜŞÜK';
+  let category = 'low';
+  if (riskScore >= 75) {
+    level = 'CRITICAL';
+    levelTr = 'KRİTİK';
+    category = 'critical';
+  } else if (riskScore >= 55) {
+    level = 'HIGH';
+    levelTr = 'YÜKSEK';
+    category = 'high';
+  } else if (riskScore >= 35) {
+    level = 'MEDIUM';
+    levelTr = 'ORTA';
+    category = 'medium';
+  }
 
   return {
-    score: riskScore,
+    score: isNaN(riskScore) ? 10 : riskScore,
     level,
+    levelTr,
+    category, // Alias for backward compatibility
     evidenceGrade
   };
 }
@@ -145,8 +154,11 @@ function buildRiskBars(signals = {}, runtime = null) {
   const nonSargable = signals.nonSargableCount || 0;
   const dependents = signals.dependentCount || 0;
 
-  const runtimeVal = runtime?.isRegression ? 90 : (runtime?.avgLogicalReads > 100000 ? 75 : 15);
-  const runtimePenalty = runtime?.isRegression ? 16 : (runtime?.avgLogicalReads > 100000 ? 10 : 0);
+  const isRegressed = typeof runtime === 'object' && runtime ? (runtime.isRegression || runtime.isRegressed) : false;
+  const reads = typeof runtime === 'object' && runtime ? (runtime.avgLogicalReads != null ? runtime.avgLogicalReads : (runtime.totalReads || 0)) : 0;
+
+  const runtimeVal = isRegressed ? 90 : (reads > 100000 ? 75 : 15);
+  const runtimePenalty = isRegressed ? 16 : (reads > 100000 ? 10 : 0);
 
   const repeatedVal = clamp(repeated * 28);
   const repeatedPenalty = Math.min(18, repeated * 6);
@@ -161,11 +173,11 @@ function buildRiskBars(signals = {}, runtime = null) {
   const blastPenalty = dependents >= 10 ? Math.min(8, Math.floor(dependents / 10) * 2) : 0;
 
   return [
-    { label: 'Runtime / Regression', value: runtimeVal, penalty: runtimePenalty },
-    { label: 'Repeated Access', value: repeatedVal, penalty: repeatedPenalty },
-    { label: 'Dependency Depth', value: depthVal, penalty: depthPenalty },
-    { label: 'SARGability', value: sargVal, penalty: sargPenalty },
-    { label: 'Blast Radius', value: blastVal, penalty: blastPenalty }
+    { label: 'Çalışma Zamanı & Regresyon', value: runtimeVal, penalty: runtimePenalty },
+    { label: 'Mükerrer Tablo Erişimi', value: repeatedVal, penalty: repeatedPenalty },
+    { label: 'Bağımlılık Derinliği', value: depthVal, penalty: depthPenalty },
+    { label: 'SARGable İndeks Uyumu', value: sargVal, penalty: sargPenalty },
+    { label: 'Etki Alanı (Blast Radius)', value: blastVal, penalty: blastPenalty }
   ];
 }
 

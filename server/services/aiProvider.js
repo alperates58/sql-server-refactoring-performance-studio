@@ -11,9 +11,11 @@ function buildRefactorPrompt(payload) {
     `CRITICAL INVARIANTS & SAFETY GUARDRAILS:\n` +
     `1. Preserve EXACT observable output semantics: column count, ordinal column order, column names, SQL data types, nullability, row multiplicity, and filter predicates.\n` +
     `2. Never assume that CTEs (Common Table Expressions) materialize. SQL Server optimizer inlines CTE definitions unless proven otherwise.\n` +
-    `3. Every rewrite recommendation must include explicit technical rationale (e.g. SARGability, eliminating repeated scans, set-based aggregation).\n` +
+    `3. Every rewrite recommendation must include explicit technical rationale in TURKISH (Türkçe) (e.g. SARGability, eliminating repeated scans, set-based aggregation).\n` +
     `4. Preserve duplicate behavior: do NOT convert UNION to UNION ALL or add DISTINCT unless proven mathematically safe under the relational model.\n` +
-    `5. Do NOT execute or propose any DDL/DML mutation on the target server. Output must be an auditable candidate.\n\n` +
+    `5. Do NOT execute or propose any DDL/DML mutation on the target server. Output must be an auditable candidate.\n` +
+    `6. Format candidate SQL as an executable query (WITH ... SELECT or direct SELECT statement). Do NOT wrap in CREATE VIEW or ALTER VIEW so that it can be directly verified in automated subquery equivalence harnesses.\n` +
+    `7. ALL explanations, rationale, bullet points, and notes MUST be written in TURKISH (Türkçe).\n\n` +
     `CONTEXT PACK:\n` +
     JSON.stringify(payload, null, 2);
 }
@@ -220,6 +222,13 @@ async function proposeRefactor(params = {}) {
     candidateSql = content.trim();
   } else {
     candidateSql = `-- AI Refactor Açıklaması:\n${content}`;
+  }
+
+  // Strip CREATE VIEW / ALTER VIEW wrapper if present to ensure subquery compatibility in Validation Lab
+  const viewRegex = /^\s*(?:CREATE|ALTER)\s+VIEW\s+[^\r\n]+?\s+AS\s+([\s\S]+)$/i;
+  const viewMatch = candidateSql.match(viewRegex);
+  if (viewMatch && viewMatch[1]) {
+    candidateSql = viewMatch[1].trim();
   }
 
   // Extract notes / rationale (everything outside the first SQL code block)

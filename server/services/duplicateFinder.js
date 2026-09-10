@@ -24,8 +24,8 @@ function normalizeSqlForFingerprint(sql = '') {
   // 4. Lowercase everything
   s = s.toLowerCase();
 
-  // 5. Remove common boilerplate like CREATE/ALTER VIEW ... AS
-  s = s.replace(/^.*?\bcreate\s+(?:or\s+alter\s+)?view\s+[a-z0-9_.]+\s+as\s+/i, '');
+  // 5. Remove common boilerplate like CREATE/ALTER VIEW ... AS (including multiline, SCHEMABINDING, SET ANSI)
+  s = s.replace(/^[\s\S]*?\bcreate\s+(?:or\s+alter\s+)?view\s+[a-z0-9_.]+(?:\s*\([^)]*\))?(?:\s+with\s+[a-z0-9_,\s]+)?\s+as\s+/i, '');
 
   // 6. Normalize whitespace
   s = s.replace(/\s+/g, ' ').trim();
@@ -82,8 +82,8 @@ function findDuplicates(views = [], threshold = 0.75, maxPairs = 10) {
           similarity: Math.round(sim * 100),
           a: a.viewName,
           b: b.viewName,
-          common: commonTables.length > 0 ? commonTables : ['SQL structure match'],
-          diff: sim > 0.9 ? 'Minor filter / projection variation' : 'Structural variation with common base'
+          common: commonTables.length > 0 ? commonTables : ['Ortak SQL yapısı'],
+          diff: sim > 0.9 ? 'Küçük filtre / projeksiyon varyasyonu' : 'Ortak tablolara dayalı yapısal varyasyon'
         });
       }
     }
