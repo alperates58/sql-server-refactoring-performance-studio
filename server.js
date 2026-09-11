@@ -14,6 +14,7 @@ app.use(express.json({ limit: '2mb' }));
 const monacoLocal = resolveLocalMonacoPath();
 if (monacoLocal.available) {
   app.use('/vendor/monaco/vs', express.static(monacoLocal.path));
+  app.use('/vendor/monaco/vs/vs', express.static(monacoLocal.path));
   console.log(`[Monaco] Offline assets mounted from ${monacoLocal.source}: ${monacoLocal.path}`);
 }
 

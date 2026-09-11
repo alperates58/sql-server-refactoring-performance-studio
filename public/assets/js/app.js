@@ -6610,7 +6610,7 @@ ORDER BY IslemAdedi DESC;`;
           getWorkerUrl: function (workerId, label) {
             return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
               self.MonacoEnvironment = {
-                baseUrl: '${window.location.origin}/vendor/monaco/vs'
+                baseUrl: '${window.location.origin}/vendor/monaco'
               };
               importScripts('${window.location.origin}/vendor/monaco/vs/base/worker/workerMain.js');
             `)}`;
@@ -7461,6 +7461,362 @@ ORDER BY IslemAdedi DESC;`;
       $('#wbMessagesTerminal')?.classList.remove('hidden');
       $('#wbMessagesHumanized')?.classList.add('hidden');
     });
+
+    function renderWbHumanizedMessages(messages, metrics = {}, statistics = {}) {
+      const wrap = $('#wbMessagesHumanized');
+      if (!wrap) return;
+
+      if (!messages || messages.length === 0) {
+        wrap.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Henüz mesaj çıktısı yok.</p></div>';
+        return;
+      }
+
+      const durationMs = metrics.durationMs || (statistics ? statistics.elapsedTimeMs : 0) || 0;
+      const cpuMs = metrics.cpuMs || (statistics ? statistics.cpuTimeMs : 0) || 0;
+      const logicalReads = metrics.logicalReads || (statistics ? statistics.totalLogicalReads : 0) || 0;
+      const mbRead = ((logicalReads * 8) / 1024).toFixed(2);
+      const rows = metrics.rowsReturned != null ? metrics.rowsReturned : (metrics.rows ? metrics.rows.length : 0);
+
+      let parallelismNote = 'Tek iş parçacığı (single-thread)';
+      if (cpuMs > durationMs * 1.15 && durationMs > 20) {
+        const coreEstimate = (cpuMs / durationMs).toFixed(1);
+        parallelismNote = `⚡ Çoklu çekirdek (~${coreEstimate}x paralel)`;
+      } else if (durationMs > cpuMs + 200) {
+        parallelismNote = '⏳ I/O veya Kilit (Wait) bekledi';
+      }
+
+      let tables = (statistics && statistics.tables && statistics.tables.length > 0) ? [...statistics.tables] : [];
+      if (tables.length === 0) {
+        const tableRegex = /Table '([^']+)'.*?Scan count (\d+).*?logical reads (\d+).*?(?:physical reads (\d+))?/gi;
+        let match;
+        const msgStr = (messages || []).join('\n');
+        while ((match = tableRegex.exec(msgStr)) !== null) {
+          tables.push({
+            table: match[1],
+            scanCount: parseInt(match[2], 10) || 0,
+            logicalReads: parseInt(match[3], 10) || 0,
+            physicalReads: parseInt(match[4], 10) || 0
+          });
+        }
+      }
+
+      tables.sort((a, b) => (b.logicalReads || 0) - (a.logicalReads || 0));
+
+      let tablesHtml = '';
+      if (tables.length > 0) {
+        tablesHtml = `
+          <div style="margin-top:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <strong style="font-size:13px;color:var(--text-bright)">Tablo Bazlı Fiziksel & Mantıksal Yük Dağılımı</strong>
+              <small style="color:var(--text-muted);font-size:11.5px">En çok okuma yapan tablodan aza doğru</small>
+            </div>
+            <table class="wb-table" style="font-size:12px">
+              <thead>
+                <tr>
+                  <th>Tablo Adı</th>
+                  <th>Tarama (Scan)</th>
+                  <th>Mantıksal Okuma (Sayfa)</th>
+                  <th>Bellek Hacmi (MB)</th>
+                  <th>Fiziksel Disk Okuma</th>
+                  <th>Değerlendirme</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${tables.map(t => {
+                  const tMb = ((t.logicalReads * 8) / 1024).toFixed(2);
+                  let badge = '<span class="status-pill status-ready" style="font-size:10px">Hafif Yük</span>';
+                  if (t.logicalReads > 20000) {
+                    badge = '<span class="status-pill status-danger" style="font-size:10px">🚨 Aşırı I/O</span>';
+                  } else if (t.logicalReads > 3000) {
+                    badge = '<span class="status-pill status-warning" style="font-size:10px">⚠️ Yüksek Okuma</span>';
+                  } else if (t.scanCount > 1) {
+                    badge = '<span class="status-pill status-warning" style="font-size:10px">🔄 Mükerrer Scan</span>';
+                  }
+                  return `
+                    <tr>
+                      <td><b>${escapeHtml(t.table)}</b></td>
+                      <td>${t.scanCount} kez</td>
+                      <td style="font-family:var(--font-family-mono, monospace);font-weight:600;color:${t.logicalReads > 5000 ? 'var(--red)' : 'var(--text-bright)'}">${t.logicalReads.toLocaleString()}</td>
+                      <td style="font-family:var(--font-family-mono, monospace)">${tMb} MB</td>
+                      <td>${t.physicalReads ? `<b style="color:var(--red)">${t.physicalReads} sayfa (Disk)</b>` : '<span style="color:var(--text-muted)">0 (Önbellekten)</span>'}</td>
+                      <td>${badge}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+
+      wrap.innerHTML = `
+        <div class="msg-summary-card">
+          <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:12px">
+            <div>
+              <h4 style="margin:0;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:6px">
+                <span>📊</span> Yürütme ve Kaynak Tüketim Raporu
+              </h4>
+              <small style="color:var(--text-muted);font-size:11.5px">SQL Server STATISTICS IO & TIME verilerinden türetilmiştir</small>
+            </div>
+            <span class="status-pill status-ready" style="font-size:11px">● Başarılı</span>
+          </div>
+
+          <div class="msg-time-grid">
+            <div class="msg-time-item">
+              <span>Geçen Süre (Elapsed)</span>
+              <strong style="color:var(--accent)">${durationMs.toLocaleString()} ms</strong>
+              <p style="margin:4px 0 0;font-size:11.5px;color:var(--text-muted)">Beklenen gerçek süre</p>
+            </div>
+            <div class="msg-time-item">
+              <span>CPU Tüketim Süresi</span>
+              <strong style="color:var(--purple,#a855f7)">${cpuMs.toLocaleString()} ms</strong>
+              <p style="margin:4px 0 0;font-size:11.5px;color:var(--text-muted)">İşlemci aktif zamanı</p>
+            </div>
+            <div class="msg-time-item">
+              <span>Toplam Mantıksal Okuma</span>
+              <strong style="color:${logicalReads > 20000 ? 'var(--red)' : 'var(--green)'}">${logicalReads.toLocaleString()} sayfa</strong>
+              <p style="margin:4px 0 0;font-size:11.5px;color:var(--text-muted)">Hacim: <b>${mbRead} MB</b> (8KB/sayfa)</p>
+            </div>
+            <div class="msg-time-item">
+              <span>Dönen Satır Sayısı</span>
+              <strong>${rows.toLocaleString()} satır</strong>
+              <p style="margin:4px 0 0;font-size:11.5px;color:var(--text-muted)">${parallelismNote}</p>
+            </div>
+          </div>
+
+          ${tablesHtml}
+        </div>
+      `;
+    }
+
+    function renderWbStatistics(stats, metrics = null) {
+      const statsWrap = $('#wbStatisticsContent');
+      if (!statsWrap) return;
+
+      const s = stats || (metrics ? {
+        tables: metrics.tableStats || [],
+        totalLogicalReads: metrics.logicalReads || 0,
+        cpuTimeMs: metrics.cpuMs || 0,
+        elapsedTimeMs: metrics.elapsedMs || metrics.durationMs || 0
+      } : null);
+
+      if (!s || (!s.tables?.length && !s.totalLogicalReads)) {
+        statsWrap.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Statistics IO verisi alınamadı.</p></div>';
+        return;
+      }
+
+      statsWrap.innerHTML = `
+        <div class="wb-stats-grid">
+          <div class="setting-card">
+            <div><strong>Toplam Logical Reads</strong><p>Tüm tablolardan okunan 8KB bellek sayfaları</p></div>
+            <strong style="font-size:20px;color:var(--accent)">${(s.totalLogicalReads || 0).toLocaleString()}</strong>
+          </div>
+          <div class="setting-card">
+            <div><strong>Süre Dağılımı</strong><p>CPU Süresi vs Toplam Geçen Zaman</p></div>
+            <strong>${s.cpuTimeMs || 0} ms CPU · ${s.elapsedTimeMs || 0} ms Elapsed</strong>
+          </div>
+          <div>
+            <h4 style="font-size:14px;margin-bottom:10px">Tablo Bazlı IO Dökümü</h4>
+            <table class="wb-stats-table">
+              <thead><tr><th>Tablo</th><th>Scan Count</th><th>Logical Reads</th><th>Physical Reads</th></tr></thead>
+              <tbody>
+                ${(s.tables || []).map(t => `
+                  <tr>
+                    <td><b>${escapeHtml(t.table)}</b></td>
+                    <td>${t.scanCount}</td>
+                    <td style="color:${t.logicalReads > 5000 ? 'var(--red)' : 'var(--text-primary)'}">${(t.logicalReads || 0).toLocaleString()}</td>
+                    <td>${t.physicalReads || 0}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderWbPlan(planType, parsed) {
+      const planWrap = $('#wbPlanContent');
+      if (!planWrap) return;
+
+      if (!parsed) {
+        planWrap.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Plan ayrıştırılamadı.</p></div>';
+        return;
+      }
+
+      const isActual = planType === 'ACTUAL';
+      const badgeClass = isActual ? 'status-pill status-ready' : 'status-pill';
+      const planTitle = isActual ? 'GERÇEK ÇALIŞTIRMA PLANI (ACTUAL PLAN)' : 'TAHMİNİ ÇALIŞTIRMA PLANI (ESTIMATED PLAN)';
+
+      let html = `
+        <div class="wb-plan-header">
+          <div>
+            <span class="${badgeClass}">${planTitle}</span>
+            <strong style="margin-left:12px">Alt Ağaç Maliyeti: ${parsed.totalSubTreeCost || 0}</strong>
+            <small style="margin-left:8px;color:var(--text-muted)">(Optimizasyon Seviyesi: ${parsed.optimizationLevel || 'FULL'})</small>
+          </div>
+          <span>${parsed.operatorCount || 0} operatör</span>
+        </div>
+      `;
+
+      // Warnings
+      if (parsed.warnings?.length > 0) {
+        html += `
+          <div style="margin-bottom:14px">
+            ${parsed.warnings.map(w => `
+              <div class="permission-box" style="border-color:rgba(255,93,114,0.3);background:rgba(255,93,114,0.06);margin-bottom:8px">
+                <strong style="color:var(--red)">⚠ ${escapeHtml(w.title || w.kind || '')}</strong>
+                <p style="margin-top:4px">${escapeHtml(w.detail || w.explanation || w.message || '')}</p>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // Cardinality Mismatches
+      if (parsed.cardinalityMismatches?.length > 0) {
+        html += `
+          <div style="margin-bottom:14px">
+            <h4 style="font-size:14px;margin-bottom:8px;color:var(--red)">Kardinalite Tahmin Hataları (${parsed.cardinalityMismatches.length})</h4>
+            ${parsed.cardinalityMismatches.map(cm => `
+              <div class="setting-card" style="border-left:3px solid var(--red);margin-bottom:6px">
+                <div>
+                  <strong>${escapeHtml(cm.operator)} — ${escapeHtml(cm.object || 'Node ' + cm.nodeId)}</strong>
+                  <p>Tahmin: <b>${(cm.estimated || 0).toLocaleString()}</b> satır → Gerçek: <b style="color:var(--red)">${(cm.actual || 0).toLocaleString()}</b> satır</p>
+                  <small style="color:var(--text-muted);display:block;margin-top:2px">Optimizatörün beklediğinden çok farklı satır dönmesi yanlış join veya index seek kararlarına yol açar.</small>
+                </div>
+                <span class="severity-pill critical">${escapeHtml(cm.factor || '')}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      // Top Operators
+      if (parsed.topOperators?.length > 0) {
+        html += `
+          <div style="margin-bottom:14px">
+            <h4 style="font-size:14px;margin-bottom:10px">En Yüksek Maliyetli Operatörler</h4>
+            <div class="wb-op-list">
+              ${parsed.topOperators.map(op => {
+                const opBadge = op.isScan ? 'SCAN' : op.isLookup ? 'LOOKUP' : 'OP';
+                return `
+                  <div class="wb-op-card">
+                    <div class="wb-op-title">
+                      <span class="node-badge" style="font-size:11px">${opBadge}</span>
+                      <div>
+                        <strong>${escapeHtml(op.physicalOp)}</strong>
+                        <small style="display:block;color:var(--text-muted)">${op.targetObject ? '· Tablo: ' + escapeHtml(op.targetObject) : ''} · Tahmin: ${(op.estimatedRows || 0).toLocaleString()} satır${op.actualRows != null ? ' · Gerçek: ' + op.actualRows.toLocaleString() + ' satır' : ''}</small>
+                      </div>
+                    </div>
+                    <span class="wb-op-cost">%${op.costPercent}</span>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      // Missing Indexes
+      if (parsed.missingIndexes?.length > 0) {
+        html += `
+          <div style="margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <h4 style="font-size:14px;margin:0;color:var(--green)">Tavsiye Edilen İndeksler (Missing Indexes)</h4>
+              <small style="color:var(--yellow);font-size:11.5px">⚠ Bu indeks otomatik oluşturulmaz; DBA onayıyla test edilmelidir.</small>
+            </div>
+            ${parsed.missingIndexes.map((mi, miIdx) => `
+              <div class="full-problem" style="margin-bottom:8px">
+                <div style="width:100%">
+                  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <strong>Tahmini Etki: +%${mi.impact}</strong>
+                      <span class="object-pill">${escapeHtml(mi.table)}</span>
+                    </div>
+                    <button class="button ghost mini btn-copy-missing-idx" data-idx="${miIdx}">Scripti Kopyala</button>
+                  </div>
+                  <pre class="wb-terminal" style="max-height:80px;font-size:12px;overflow-x:auto" id="missingIdxPre-${miIdx}">${escapeHtml(mi.ddl || mi.indexDdl)}</pre>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      planWrap.innerHTML = html;
+      if ($('#wbPlanBadge')) $('#wbPlanBadge').style.display = 'inline-block';
+
+      // Bind missing index copy buttons
+      $$('.btn-copy-missing-idx').forEach(btn => {
+        btn.onclick = () => {
+          const idx = btn.dataset.idx;
+          const pre = $(`#missingIdxPre-${idx}`);
+          if (pre) {
+            navigator.clipboard.writeText(pre.textContent);
+            toast('Kopyalandı', 'İndeks oluşturma DDL scripti panoya kopyalandı.', 'success');
+          }
+        };
+      });
+    }
+
+    function renderWbBenchmark(data) {
+      const statsWrap = $('#wbStatisticsContent');
+      if (!statsWrap) return;
+
+      const s = data.summary || {
+        medianMs: data.metrics?.medianDurationMs != null ? data.metrics.medianDurationMs : 0,
+        p95Ms: data.metrics?.p95DurationMs != null ? data.metrics.p95DurationMs : 0,
+        minMs: data.metrics?.minDurationMs != null ? data.metrics.minDurationMs : 0,
+        maxMs: data.metrics?.maxDurationMs != null ? data.metrics.maxDurationMs : 0,
+        avgMs: data.metrics?.avgDurationMs != null ? data.metrics.avgDurationMs : 0,
+        logicalReadsMedian: data.metrics?.medianLogicalReads != null ? data.metrics.medianLogicalReads : 0
+      };
+
+      const totalRuns = data.totalRuns || data.runsRequested || data.runsCompleted || (data.iterations ? data.iterations.length : 3);
+      const runsList = data.runs || (data.iterations || []).map(r => ({
+        iteration: r.iteration,
+        isWarmUp: Boolean(r.isWarmUp),
+        durationMs: r.durationMs,
+        cpuMs: r.cpuMs,
+        logicalReads: r.logicalReads,
+        rows: r.rowCount || r.rows || 0
+      }));
+
+      statsWrap.innerHTML = `
+        <div class="wb-stats-grid">
+          <div class="permission-box" style="margin-bottom:12px">
+            <strong>Benchmark Sonuç Özeti (${totalRuns} Tekrar)</strong>
+            <p style="margin-top:4px">Tüm tekrarlar için median, P95 ve varyans değerleri hesaplandı. (Warm-up hariç tutuldu).</p>
+          </div>
+          <div class="workbench-metrics-strip" style="margin-bottom:14px">
+            <div class="wb-metric-card"><span>Median Süre</span><strong style="color:var(--green)">${s.medianMs != null ? s.medianMs : 0} ms</strong></div>
+            <div class="wb-metric-card"><span>P95 Süre</span><strong style="color:var(--yellow)">${s.p95Ms != null ? s.p95Ms : 0} ms</strong></div>
+            <div class="wb-metric-card"><span>Min / Max</span><strong>${s.minMs != null ? s.minMs : 0} / ${s.maxMs != null ? s.maxMs : 0} ms</strong></div>
+            <div class="wb-metric-card"><span>Ortalama</span><strong>${s.avgMs != null ? s.avgMs : 0} ms</strong></div>
+            <div class="wb-metric-card"><span>Median Reads</span><strong>${(s.logicalReadsMedian || 0).toLocaleString()}</strong></div>
+          </div>
+          <div>
+            <h4 style="font-size:14px;margin-bottom:10px">İterasyon Detayları</h4>
+            <table class="wb-stats-table">
+              <thead><tr><th>İterasyon</th><th>Tip</th><th>Süre (ms)</th><th>CPU (ms)</th><th>Logical Reads</th><th>Satır</th></tr></thead>
+              <tbody>
+                ${runsList.map(r => `
+                  <tr>
+                    <td><b>Run #${r.iteration}</b></td>
+                    <td>${r.isWarmUp ? '<span class="status-pill status-warning">WARM-UP</span>' : '<span class="status-pill status-ready">ÖLÇÜLDÜ</span>'}</td>
+                    <td><b>${r.durationMs != null ? r.durationMs : 0} ms</b></td>
+                    <td>${r.cpuMs != null ? r.cpuMs : 0} ms</td>
+                    <td>${(r.logicalReads || 0).toLocaleString()}</td>
+                    <td>${r.rows != null ? r.rows : 0}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
 
     // --------------------------------------------------------
     // Plan Analysis
