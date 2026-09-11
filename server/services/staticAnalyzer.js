@@ -1,10 +1,5 @@
-/**
- * Static SQL Analyzer (V1 Heuristics)
- *
- * Scans T-SQL view definitions for structural risk patterns.
- * In accordance with AGENTS.md and docs/04-SQL-ANALYSIS.md:
- * Patterns are categorized as HEURISTICS or SIGNALS, not confirmed bugs.
- */
+const { parseSql } = require('./ast/astParser');
+const { analyzeAst } = require('./ast/astAnalyzer');
 
 function stripCommentsAndLiterals(sql = '') {
   // Remove block comments /* ... */
@@ -18,8 +13,53 @@ function analyzeStaticSql(definition = '') {
   const cleanSql = stripCommentsAndLiterals(definition);
   const upper = cleanSql.toUpperCase();
 
+  let ast = null;
+  try {
+    ast = parseSql(definition);
+  } catch (_) {
+    ast = null;
+  }
+
+  // If AST is successfully available, use AST analysis as primary
+  if (ast && ast.status === 'AST_AVAILABLE' && ast.analysisSource === 'AST') {
+    const astAnalysis = analyzeAst(ast);
+    const signals = {
+      analysisSource: 'AST',
+      hasDistinct: Boolean(ast.hasDistinct),
+      hasUnionWithoutAll: (ast.unions || []).some(u => u.isDistinct),
+      hasWindowFunctions: (ast.windowFunctions || []).length > 0,
+      windowFunctionCount: (ast.windowFunctions || []).length,
+      nonSargableCount: astAnalysis.findings.filter(f => f.category === 'indexing').length,
+      scalarUdfCount: (ast.functions || []).filter(f => f.includes('fn_') || f.includes('dbo.')).length,
+      hasWildcardSelect: Boolean(ast.hasWildcardSelect),
+      hasLeadingWildcardLike: astAnalysis.findings.some(f => f.code === 'LEADING_WILDCARD_LIKE'),
+      hasApply: (ast.joins || []).some(j => (j.type || '').includes('APPLY')),
+      hasOrInPredicate: (ast.predicates || []).some(p => p.logicalOp === 'OR'),
+      lineCount: definition.split('\n').length
+    };
+
+    // Convert AST findings into compatible format with healthPenalty
+    const findings = astAnalysis.findings.map(f => ({
+      code: f.code,
+      title: f.title,
+      severity: f.severity,
+      healthPenalty: f.severity === 'CRITICAL' ? 12 : (f.severity === 'HIGH' ? 8 : (f.severity === 'MEDIUM' ? 5 : 2)),
+      symbol: f.category === 'indexing' ? '⚡' : (f.category === 'correctness' ? '⚠' : '∿'),
+      category: f.category,
+      evidenceGrade: f.evidenceGrade || 'A',
+      source: 'AST',
+      explanation: f.explanation + (f.rewriteHint ? ` Öneri: ${f.rewriteHint}` : ''),
+      expression: f.expression,
+      rewriteHint: f.rewriteHint
+    }));
+
+    return { signals, findings, analysisSource: 'AST', ast };
+  }
+
+  // Fallback to Regex Heuristics
   const findings = [];
   const signals = {
+    analysisSource: 'REGEX_FALLBACK',
     hasDistinct: false,
     hasUnionWithoutAll: false,
     hasWindowFunctions: false,
@@ -185,7 +225,7 @@ function analyzeStaticSql(definition = '') {
     });
   }
 
-  return { signals, findings };
+  return { signals, findings, analysisSource: 'REGEX_FALLBACK', ast: null };
 }
 
 module.exports = { analyzeStaticSql, stripCommentsAndLiterals };

@@ -225,10 +225,11 @@ function getConfig() {
 function updateConfig(updates = {}) {
   if (updates.activePrefix) inMemoryConfig.activePrefix = String(updates.activePrefix).trim();
   if (updates.scoring) {
-    inMemoryConfig.scoring = {
+    const { normalizeWeights } = require('./scoring');
+    inMemoryConfig.scoring = normalizeWeights({
       ...inMemoryConfig.scoring,
       ...updates.scoring
-    };
+    });
   }
   if (updates.ai) {
     const aiUpdates = { ...updates.ai };
@@ -245,6 +246,11 @@ function updateConfig(updates = {}) {
     };
   }
   if (updates.runtime) {
+    const validWindows = ['1h', '24h', '7d', '30d'];
+    if (updates.runtime.historyWindow) {
+      const keyNorm = String(updates.runtime.historyWindow).toLowerCase().trim();
+      updates.runtime.historyWindow = validWindows.includes(keyNorm) ? keyNorm : '24h';
+    }
     inMemoryConfig.runtime = {
       ...inMemoryConfig.runtime,
       ...updates.runtime

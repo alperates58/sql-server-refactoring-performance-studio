@@ -18,6 +18,38 @@ const db = require('./sqlServer');
 const { validateReadOnly } = require('./sqlValidator');
 
 /**
+ * Checks if a column data type is comparable and sortable (non-LOB).
+ */
+function isComparableColumn(col) {
+  if (!col || !col.system_type_name) return false;
+  const t = String(col.system_type_name).toLowerCase();
+  if (
+    t.includes('xml') ||
+    t.includes('text') || // covers text, ntext
+    t.includes('image') ||
+    t.includes('varbinary(max)') ||
+    t.includes('varchar(max)') ||
+    t.includes('nvarchar(max)') ||
+    t.includes('geography') ||
+    t.includes('geometry') ||
+    t.includes('hierarchyid')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function getComparableColumns(cols = []) {
+  return (cols || []).filter(isComparableColumn);
+}
+
+function buildDeterministicOrderBy(comparableCols = []) {
+  if (!comparableCols || comparableCols.length === 0) return '';
+  const cols = comparableCols.slice(0, 8).map(c => `[${c.name.replace(/\]/g, ']]')}]`);
+  return `ORDER BY ${cols.join(', ')}`;
+}
+
+/**
  * Splits CTE definition from main SELECT to allow valid top-level T-SQL bounding.
  */
 function splitCteAndSelect(sql) {
@@ -72,7 +104,20 @@ function splitCteAndSelect(sql) {
   return { ctePrefix: '', mainSelect: trimmed };
 }
 
-function buildBoundedTableScript(sql, tableName, limit) {
+function buildCountProbeScript(sql, limit) {
+  const { ctePrefix, mainSelect } = splitCteAndSelect(sql);
+  let cleanedSelect = mainSelect;
+  if (!/\bTOP\b/i.test(cleanedSelect)) {
+    cleanedSelect = cleanedSelect.replace(/\s+ORDER\s+BY\s+[\w\d_.,\s\[\]\(\)]+$/i, '');
+  }
+  const prefixLine = ctePrefix ? `${ctePrefix}\n` : '';
+  return `
+    ${prefixLine}
+    SELECT COUNT_BIG(*) AS RowCnt FROM (SELECT TOP (${limit + 1}) 1 AS _x FROM (${cleanedSelect}) AS _p) _sub;
+  `;
+}
+
+function buildBoundedTableScript(sql, tableName, limit, orderByClause = '', useTop = true) {
   const { ctePrefix, mainSelect } = splitCteAndSelect(sql);
   let cleanedSelect = mainSelect;
 
@@ -82,16 +127,24 @@ function buildBoundedTableScript(sql, tableName, limit) {
   }
 
   const prefixLine = ctePrefix ? `${ctePrefix}\n` : '';
+  const topClause = (useTop && limit) ? `TOP (${limit})` : '';
+  const orderClause = (useTop && limit && orderByClause) ? `\n    ${orderByClause}` : '';
+
   return `
     ${prefixLine}
-    SELECT TOP (${limit}) *
+    SELECT ${topClause} *
     INTO ${tableName}
-    FROM (${cleanedSelect}) AS _bounded;
+    FROM (${cleanedSelect}) AS _bounded${orderClause};
   `;
 }
 
 /**
  * Validates semantic equivalence between an original query and a candidate query.
+ * Produces four distinct verdicts:
+ *   - PASS: Full dataset verified across schema, row count, set (EXCEPT), and multiplicity
+ *   - PASS_WITH_WARNING: Deterministic sample verified across all steps
+ *   - FAIL: Detected schema mismatch, row count divergence, set diff, or multiplicity diff
+ *   - INCONCLUSIVE: LOB/XML types or unbounded dataset without comparable columns
  */
 async function validateEquivalence({ originalSql, candidateSql, database = null, sampleLimit = 1000 }) {
   const cleanOrig = String(originalSql || '').trim().replace(/;+\s*$/, '');
@@ -120,7 +173,7 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
     { id: 'multiplicity', name: 'Satır Çokluğu & Frekans Doğrulaması (COUNT_BIG)', status: 'PENDING', detail: '' }
   ];
 
-  let overallVerdict = 'UNVALIDATED';
+  let overallVerdict = 'INCONCLUSIVE';
 
   // Acquire dedicated transaction to guarantee connection affinity for temp tables
   const transaction = pool.transaction();
@@ -140,10 +193,17 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
     const origCols = origSchemaRes.recordset || [];
     const candCols = candSchemaRes.recordset || [];
 
+    if (origCols.length === 0 || candCols.length === 0) {
+      steps[0].status = 'FAILED';
+      steps[0].detail = 'Sorgu kolon metadata kümesi boş döndü veya çözümlenemedi.';
+      overallVerdict = 'FAIL';
+      return { ok: true, verdict: overallVerdict, steps };
+    }
+
     if (origCols.length !== candCols.length) {
       steps[0].status = 'FAILED';
       steps[0].detail = `Kolon sayısı uyuşmuyor: Orijinal ${origCols.length}, Aday ${candCols.length}.`;
-      overallVerdict = 'SCHEMA MISMATCH';
+      overallVerdict = 'FAIL';
       return { ok: true, verdict: overallVerdict, steps };
     }
 
@@ -164,19 +224,57 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
     if (colMismatch) {
       steps[0].status = 'FAILED';
       steps[0].detail = colMismatch;
-      overallVerdict = 'SCHEMA MISMATCH';
+      overallVerdict = 'FAIL';
       return { ok: true, verdict: overallVerdict, steps };
     }
 
     steps[0].status = 'PASS';
     steps[0].detail = `${origCols.length} kolon, sıralama ve veri tipleri birebir eşleşti.`;
 
-    // Materialize bounded samples into connection-scoped temp tables
+    // Check if total rows are within limit to avoid TOP if possible
+    let origProbe = limit + 1;
+    let candProbe = limit + 1;
+    try {
+      const p1 = await transaction.request().query(buildCountProbeScript(cleanOrig, limit));
+      origProbe = Number(p1.recordset[0]?.RowCnt || 0);
+      const p2 = await transaction.request().query(buildCountProbeScript(cleanCand, limit));
+      candProbe = Number(p2.recordset[0]?.RowCnt || 0);
+    } catch (_) {
+      origProbe = limit + 1;
+      candProbe = limit + 1;
+    }
+
+    const isFullDataset = (origProbe <= limit && candProbe <= limit);
+    const useTop = !isFullDataset;
+
+    // Filter comparable columns (excluding LOB, XML, TEXT)
+    const comparableCols = getComparableColumns(origCols);
+    const hasComparable = comparableCols.length > 0;
+    const orderByClause = hasComparable ? buildDeterministicOrderBy(comparableCols) : '';
+
+    if (useTop && !hasComparable) {
+      // Without comparable columns, deterministic sample cannot be guaranteed
+      steps[1].status = 'WARNING';
+      steps[1].detail = 'Non-LOB karşılaştırılabilir kolon bulunamadığından örneklem sıralaması oluşturulamadı.';
+      steps[2].status = 'WARNING';
+      steps[2].detail = 'LOB kolonlar nedeniyle EXCEPT küme farkı testi uygulanamadı.';
+      steps[3].status = 'WARNING';
+      steps[3].detail = 'LOB kolonlar nedeniyle frekans testi uygulanamadı.';
+      overallVerdict = 'INCONCLUSIVE';
+      return {
+        ok: true,
+        verdict: overallVerdict,
+        steps,
+        reason: 'Tüm kolonlar LOB/XML türünde olduğundan ve satır sayısı örneklem sınırını aştığından deterministik doğrulama yapılamadı.'
+      };
+    }
+
+    // Materialize into connection-scoped temp tables
     await req.batch(`
       DROP TABLE IF EXISTS #OrigBound;
       DROP TABLE IF EXISTS #CandBound;
-      ${buildBoundedTableScript(cleanOrig, '#OrigBound', limit)}
-      ${buildBoundedTableScript(cleanCand, '#CandBound', limit)}
+      ${buildBoundedTableScript(cleanOrig, '#OrigBound', limit, orderByClause, useTop)}
+      ${buildBoundedTableScript(cleanCand, '#CandBound', limit, orderByClause, useTop)}
     `);
 
     // Step 2: Row Count Verification
@@ -191,15 +289,33 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
 
     if (origCount !== candCount) {
       steps[1].status = 'FAILED';
-      steps[1].detail = `Satır sayısı uyuşmuyor (${limit} sınırında): Orijinal ${origCount}, Aday ${candCount}.`;
-      overallVerdict = 'ROW COUNT MISMATCH';
+      steps[1].detail = `Satır sayısı uyuşmuyor: Orijinal ${origCount}, Aday ${candCount}.`;
+      overallVerdict = 'FAIL';
       return { ok: true, verdict: overallVerdict, steps, origCount, candCount };
     }
 
     steps[1].status = 'PASS';
-    steps[1].detail = `Satır sayısı eşleşti (${origCount} satır).`;
+    steps[1].detail = isFullDataset
+      ? `Tam veri seti satır sayısı eşleşti (${origCount} satır, TOP kullanılmadı).`
+      : `Örneklem satır sayısı eşleşti (${origCount} satır, deterministik sıralı).`;
 
     // Step 3: Dual EXCEPT Comparison (Set Difference)
+    const hasLob = origCols.some(c => !isComparableColumn(c));
+    if (hasLob) {
+      steps[2].status = 'WARNING';
+      steps[2].detail = 'Sorgu LOB/XML kolonları içerdiğinden EXCEPT küme farkı ve multiplicity testi uygulanamadı.';
+      steps[3].status = 'WARNING';
+      steps[3].detail = 'LOB/XML kolonları GROUP BY ve EXCEPT operatörlerini desteklemez.';
+      overallVerdict = 'INCONCLUSIVE';
+      return {
+        ok: true,
+        verdict: overallVerdict,
+        steps,
+        sampleSize: origCount,
+        reason: 'LOB/XML veri tipleri EXCEPT ve GROUP BY operatörlerini desteklemediği için semantik eşitlik kesin kanıtlanamadı.'
+      };
+    }
+
     const exceptCheckSql = `
       SELECT 
         (SELECT COUNT_BIG(*) FROM (SELECT * FROM #OrigBound EXCEPT SELECT * FROM #CandBound) _d1) AS DiffA_Minus_B,
@@ -212,27 +328,15 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
     if (diff1 > 0 || diff2 > 0) {
       steps[2].status = 'FAILED';
       steps[2].detail = `EXCEPT fark buldu: Orijinalde olup Adayda olmayan: ${diff1}, Adayda olup Orijinalde olmayan: ${diff2}.`;
-      overallVerdict = 'SET MISMATCH';
+      overallVerdict = 'FAIL';
       return { ok: true, verdict: overallVerdict, steps, diff1, diff2 };
     }
 
     steps[2].status = 'PASS';
-    steps[2].detail = `Dual EXCEPT = 0 (Her iki yönlü küme farkı boş).`;
+    steps[2].detail = 'Dual EXCEPT = 0 (Her iki yönlü küme farkı boş).';
 
     // Step 4: Multiplicity Proof via GROUP BY + COUNT_BIG(*)
-    const hasLob = origCols.some(c => {
-      const t = String(c.system_type_name || '').toLowerCase();
-      return t.includes('xml') || t.includes('text') || t.includes('image') || t.includes('max');
-    });
-
-    if (hasLob) {
-      steps[3].status = 'WARNING';
-      steps[3].detail = 'Sorgu LOB/XML kolonları içerdiğinden GROUP BY multiplicity testi atlandı (PARTIALLY VALIDATED).';
-      overallVerdict = 'PARTIALLY VALIDATED (MULTIPLICITY NOT VERIFIED)';
-      return { ok: true, verdict: overallVerdict, steps };
-    }
-
-    const colList = origCols.map(c => `[${c.name}]`).join(', ');
+    const colList = origCols.map(c => `[${c.name.replace(/\]/g, ']]')}]`).join(', ');
     const multCheckSql = `
       SELECT 
         (SELECT COUNT_BIG(*) FROM (
@@ -254,19 +358,21 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
     if (mDiff1 > 0 || mDiff2 > 0) {
       steps[3].status = 'FAILED';
       steps[3].detail = `Kopya satır sıklığı uyuşmuyor! Multiplicity hatası: ${mDiff1 + mDiff2} küme frekansı farklı.`;
-      overallVerdict = 'MULTIPLICITY MISMATCH';
-      return { ok: true, verdict: overallVerdict, steps };
+      overallVerdict = 'FAIL';
+      return { ok: true, verdict: overallVerdict, steps, mDiff1, mDiff2 };
     }
 
     steps[3].status = 'PASS';
-    steps[3].detail = `Tüm satırların tekilleştirme adetleri ve frekansları (COUNT_BIG) birebir eşleşti.`;
+    steps[3].detail = 'Tüm satırların tekilleştirme adetleri ve frekansları (COUNT_BIG) birebir eşleşti.';
 
-    overallVerdict = 'EXACT MATCH';
+    overallVerdict = isFullDataset ? 'PASS' : 'PASS_WITH_WARNING';
+
     return {
       ok: true,
       verdict: overallVerdict,
       steps,
-      sampleSize: limit
+      isFullDataset,
+      sampleSize: origCount
     };
   } catch (err) {
     throw err;
@@ -281,5 +387,9 @@ async function validateEquivalence({ originalSql, candidateSql, database = null,
 module.exports = {
   validateEquivalence,
   splitCteAndSelect,
-  buildBoundedTableScript
+  buildBoundedTableScript,
+  buildCountProbeScript,
+  buildDeterministicOrderBy,
+  isComparableColumn,
+  getComparableColumns
 };

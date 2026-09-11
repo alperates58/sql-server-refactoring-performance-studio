@@ -13,6 +13,8 @@
 
 const db = require('./sqlServer');
 const { validateReadOnly } = require('./sqlValidator');
+const { defaultQueryHistoryService } = require('./queryHistoryService');
+const { defaultStorage } = require('./workspaceStorage');
 
 const activeRequests = new Map(); // requestId -> sql.Request
 const sessionHistory = [];
@@ -57,6 +59,23 @@ function parseStatisticsTime(rawMessages = []) {
   }
 
   return { cpuMs, elapsedMs };
+}
+
+function sanitizeRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  const out = {};
+  for (const [key, val] of Object.entries(row)) {
+    if (typeof val === 'bigint') {
+      out[key] = val.toString();
+    } else if (val instanceof Date) {
+      out[key] = val.toISOString();
+    } else if (Buffer.isBuffer(val)) {
+      out[key] = '0x' + val.toString('hex');
+    } else {
+      out[key] = val;
+    }
+  }
+  return out;
 }
 
 /**
@@ -114,24 +133,60 @@ async function execute({
     const ioStats = parseStatisticsIo(messages);
     const timeStats = parseStatisticsTime(messages);
 
-    const primaryRecordset = (result.recordsets && result.recordsets.length > 0)
-      ? result.recordsets[0]
-      : [];
+    const rawRecordsets = (result.recordsets && result.recordsets.length > 0)
+      ? result.recordsets
+      : [[]];
 
-    const rowLimit = maxRows !== undefined && maxRows !== null ? Number(maxRows) : 500;
-    const truncatedRows = rowLimit > 0 ? primaryRecordset.slice(0, rowLimit) : primaryRecordset;
-    const columns = truncatedRows.length > 0 ? Object.keys(truncatedRows[0]) : [];
+    const DEFAULT_MAX_ROWS = 10000;
+    const rowLimit = maxRows !== undefined && maxRows !== null && Number(maxRows) > 0
+      ? Math.min(50000, Number(maxRows))
+      : DEFAULT_MAX_ROWS;
+
+    const resultSets = rawRecordsets.map((rs, idx) => {
+      const isTruncated = rowLimit > 0 && rs.length > rowLimit;
+      const rawSlice = rowLimit > 0 ? rs.slice(0, rowLimit) : rs;
+      const truncated = rawSlice.map(sanitizeRow);
+      const cols = truncated.length > 0 ? Object.keys(truncated[0]) : (rs.columns ? Object.keys(rs.columns) : []);
+      const columnMeta = rs.columns ? Object.entries(rs.columns).map(([colName, col]) => ({
+        name: colName,
+        type: col.type?.name || (typeof col.type === 'string' ? col.type : 'UNKNOWN'),
+        nullable: col.nullable !== false
+      })) : cols.map(c => ({ name: c, type: 'UNKNOWN', nullable: true }));
+
+      return {
+        setIndex: idx + 1,
+        columns: cols,
+        columnMetadata: columnMeta,
+        rows: truncated,
+        totalRows: rs.length,
+        rowsReturned: truncated.length,
+        maxRows: rowLimit,
+        truncated: isTruncated
+      };
+    });
+
+    const primaryResultSet = resultSets[0] || {
+      setIndex: 1,
+      columns: [],
+      columnMetadata: [],
+      rows: [],
+      totalRows: 0,
+      rowsReturned: 0,
+      maxRows: rowLimit,
+      truncated: false
+    };
 
     const response = {
       ok: true,
       requestId: reqId,
       database: targetDb,
-      columns,
-      rows: truncatedRows,
-      totalRows: primaryRecordset.length,
-      rowsReturned: primaryRecordset.length,
+      columns: primaryResultSet.columns,
+      rows: primaryResultSet.rows,
+      totalRows: primaryResultSet.totalRows,
+      rowsReturned: primaryResultSet.rowsReturned,
       maxRows: rowLimit,
-      truncated: rowLimit > 0 && primaryRecordset.length > rowLimit,
+      truncated: primaryResultSet.truncated,
+      resultSets,
       metrics: {
         durationMs,
         cpuMs: timeStats.cpuMs,
@@ -139,7 +194,7 @@ async function execute({
         logicalReads: ioStats.totalLogicalReads,
         physicalReads: ioStats.totalPhysicalReads,
         tableStats: ioStats.tableStats,
-        rowsReturned: primaryRecordset.length
+        rowsReturned: primaryResultSet.rowsReturned
       },
       statistics: {
         tables: ioStats.tableStats,
@@ -150,6 +205,7 @@ async function execute({
       messages
     };
 
+    // In-memory quick session history
     sessionHistory.unshift({
       id: reqId,
       time: new Date().toISOString(),
@@ -159,14 +215,41 @@ async function execute({
       query: sql.slice(0, 160),
       durationMs,
       logicalReads: ioStats.totalLogicalReads,
-      rowCount: primaryRecordset.length,
-      rowsCount: primaryRecordset.length
+      rowCount: primaryResultSet.totalRows,
+      rowsCount: primaryResultSet.totalRows
     });
     if (sessionHistory.length > 50) sessionHistory.pop();
 
+    // Persistent query history (Sprint 7)
+    try {
+      defaultQueryHistoryService.recordExecution({
+        sql,
+        database: targetDb,
+        durationMs,
+        cpuMs: timeStats.cpuMs,
+        logicalReads: ioStats.totalLogicalReads,
+        rowCount: primaryResultSet.totalRows,
+        success: true
+      });
+    } catch (_) {}
+
     return response;
   } catch (err) {
-    throw db.sanitizeError(err);
+    const sanitized = db.sanitizeError(err);
+    try {
+      defaultQueryHistoryService.recordExecution({
+        sql,
+        database: targetDb,
+        durationMs: 0,
+        cpuMs: 0,
+        logicalReads: 0,
+        rowCount: 0,
+        success: false,
+        errorCode: sanitized.code || 'SQL_ERROR',
+        errorMessage: sanitized.message
+      });
+    } catch (_) {}
+    throw sanitized;
   } finally {
     activeRequests.delete(reqId);
     // Unconditional session state cleanup on this database's pool
@@ -185,12 +268,16 @@ function cancelRequest(requestId) {
     try {
       req.cancel();
       activeRequests.delete(requestId);
-      return { ok: true, message: `Request ${requestId} iptal edildi.` };
+      return {
+        ok: true,
+        status: 'QUERY_CANCELLED',
+        message: `Request ${requestId} başarıyla iptal edildi.`
+      };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   }
-  return { ok: false, error: `Request ${requestId} bulunamadı veya tamamlandı.` };
+  return { ok: false, error: `Request ${requestId} bulunamadı veya zaten tamamlandı.` };
 }
 
 /**
@@ -415,10 +502,29 @@ function getHistory() {
   return sessionHistory;
 }
 
+function getWorkbenchSessions() {
+  return defaultStorage.getWorkbenchSessions();
+}
+
+function saveWorkbenchSessions(tabs) {
+  return defaultStorage.saveWorkbenchSessions(tabs);
+}
+
+function clearWorkbenchSessions() {
+  return defaultStorage.clearWorkbenchSessions();
+}
+
 module.exports = {
   execute,
   cancelRequest,
   executePlan,
   executeBenchmark,
-  getHistory
+  getHistory,
+  getWorkbenchSessions,
+  saveWorkbenchSessions,
+  clearWorkbenchSessions,
+  parseStatisticsIo,
+  parseStatisticsTime,
+  sanitizeRow
 };
+

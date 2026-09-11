@@ -6,6 +6,90 @@
 
 const settings = require('./settingsService');
 
+const DEFAULT_AI_TIMEOUT_MS = 30000; // 30s default timeout
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = DEFAULT_AI_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      const sec = Math.round(timeoutMs / 1000);
+      const timeoutErr = new Error(`AI_TIMEOUT: AI servisi ${sec} saniye içinde yanıt vermedi. Lütfen model seçiminizi veya ağ bağlantınızı kontrol edin.`);
+      timeoutErr.code = 'AI_TIMEOUT';
+      throw timeoutErr;
+    }
+    throw err;
+  }
+}
+
+function estimateAndPruneTokenBudget(pack, maxChars = 24000) {
+  if (!pack || typeof pack !== 'object') return pack;
+  const jsonStr = JSON.stringify(pack);
+  if (jsonStr.length <= maxChars) {
+    return pack;
+  }
+
+  // Deep clone to prune safely without mutating original
+  try {
+    const pruned = JSON.parse(jsonStr);
+
+    // Priority 7: Trim subqueries & secondary CTE details
+    if (pruned.ast && Array.isArray(pruned.ast.subqueries) && pruned.ast.subqueries.length > 3) {
+      pruned.ast.subqueries = pruned.ast.subqueries.slice(0, 3);
+    }
+    if (JSON.stringify(pruned).length <= maxChars) return pruned;
+
+    // Priority 6: Truncate runtime queries
+    if (pruned.runtime && Array.isArray(pruned.runtime.queries) && pruned.runtime.queries.length > 3) {
+      pruned.runtime.queries = pruned.runtime.queries.slice(0, 3);
+    }
+    if (JSON.stringify(pruned).length <= maxChars) return pruned;
+
+    // Priority 5: Compact schema representation
+    if (pruned.schema && typeof pruned.schema === 'object') {
+      const compactSchema = {};
+      for (const [tbl, s] of Object.entries(pruned.schema)) {
+        compactSchema[tbl] = (s.columns || []).map(c => `${c.name} (${c.dataType})`);
+      }
+      pruned.schema = compactSchema;
+    }
+    if (JSON.stringify(pruned).length <= maxChars) return pruned;
+
+    // Priority 4: Limit indexes to top 5
+    if (pruned.indexes && typeof pruned.indexes === 'object') {
+      const compactIndexes = {};
+      for (const [tbl, idxList] of Object.entries(pruned.indexes)) {
+        compactIndexes[tbl] = (idxList || []).slice(0, 5).map(i => ({
+          name: i.name,
+          keys: i.keyColumns || i.keys,
+          includes: (i.includedColumns || i.includes || []).slice(0, 5)
+        }));
+      }
+      pruned.indexes = compactIndexes;
+    }
+    if (JSON.stringify(pruned).length <= maxChars) return pruned;
+
+    // Priority 3: Limit AST predicates to top 15
+    if (pruned.ast && Array.isArray(pruned.ast.predicates) && pruned.ast.predicates.length > 15) {
+      pruned.ast.predicates = pruned.ast.predicates.slice(0, 15);
+    }
+
+    // Priority 1 & 2 (SQL, Semantic Constraints, Plan Warnings) are NEVER pruned!
+    return pruned;
+  } catch (_) {
+    return pack;
+  }
+}
+
 function buildRefactorPrompt(payload) {
   return `You are a principal Microsoft SQL Server query performance engineer and database architect.\n\n` +
     `CRITICAL INVARIANTS & SAFETY GUARDRAILS:\n` +
@@ -15,7 +99,10 @@ function buildRefactorPrompt(payload) {
     `4. Preserve duplicate behavior: do NOT convert UNION to UNION ALL or add DISTINCT unless proven mathematically safe under the relational model.\n` +
     `5. Do NOT execute or propose any DDL/DML mutation on the target server. Output must be an auditable candidate.\n` +
     `6. Format candidate SQL as an executable query (WITH ... SELECT or direct SELECT statement). Do NOT wrap in CREATE VIEW or ALTER VIEW so that it can be directly verified in automated subquery equivalence harnesses.\n` +
-    `7. ALL explanations, rationale, bullet points, and notes MUST be written in TURKISH (Türkçe).\n\n` +
+    `7. ALL explanations, rationale, bullet points, and notes MUST be written in TURKISH (Türkçe).\n` +
+    `8. PERFORMANCE CLAIMS GUARDRAIL (STRICT): Asla kanıtsız ve abartılı performans iddialarında bulunma (örn: "%80 daha hızlı çalışacak", "10x hızlanacak" gibi uydurma yüzdeler YASAKTIR). T-SQL motorunun gerçek çalışma süresi donanıma, I/O durumuna ve veri hacmine bağlıdır. Yüzde uydurmak yerine somut mühendislik hipotezi sun (örn: "Index Seek dönüşümü ve scalar fonksiyonun kaldırılması ile Logical Reads ve CPU tüketiminin belirgin biçimde azalması beklenmektedir; net kazanım Validation Lab benchmark ve plan karşılaştırması ile ölçülmelidir").\n` +
+    `9. EVIDENCE-DRIVEN REFACTORING (V2): Review all provided multi-layer evidence: AST structural findings (non-SARGable functions, join cartesian risks), SCHEMA metadata (column datatypes, nullability), EXISTING INDEXES (coverage status), and EXECUTION PLAN / RUNTIME warnings. Ground every optimization in this evidence.\n` +
+    `10. INDEX ADVICE GUARDRAIL: Do not suggest creating indexes that already exist in the provided existing indexes list. Distinctly label any new indexing suggestion as a hypothesis requiring DBA review.\n\n` +
     `CONTEXT PACK:\n` +
     JSON.stringify(payload, null, 2);
 }
@@ -68,11 +155,8 @@ async function testConnection({ provider, baseUrl, apiKey, model }) {
     targetModel = 'deepseek-flash';
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -82,11 +166,8 @@ async function testConnection({ provider, baseUrl, apiKey, model }) {
         model: targetModel,
         max_tokens: 10,
         messages: [{ role: 'user', content: 'Respond with OK.' }]
-      }),
-      signal: controller.signal
-    });
-
-    clearTimeout(timeoutId);
+      })
+    }, 10000);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
@@ -154,6 +235,11 @@ async function proposeRefactor(params = {}) {
     problems = [],
     baseTables = [],
     options = {},
+    astContext = null,
+    schemaContext = null,
+    indexContext = null,
+    runtimeContext = null,
+    planContext = null,
     payload: directPayload,
     apiKey,
     baseUrl,
@@ -176,15 +262,28 @@ async function proposeRefactor(params = {}) {
   const activeTemp = temperature ?? conf.temperature ?? 0.15;
   const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
 
-  const contextPack = directPayload || {
-    targetView: viewName,
-    originalSql: sql,
+  const rawContextPack = directPayload || {
+    target: {
+      viewName,
+      database: params.database || null
+    },
+    sql: {
+      original: sql,
+      lineCount: (sql || '').split('\n').length
+    },
+    ast: astContext,
+    schema: schemaContext,
+    indexes: indexContext,
+    runtime: runtimeContext,
+    plan: planContext,
     problems,
     baseTables,
     refactorOptions: options
   };
 
-  const response = await fetch(url, {
+  const contextPack = estimateAndPruneTokenBudget(rawContextPack);
+
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -209,7 +308,7 @@ async function proposeRefactor(params = {}) {
         }
       ]
     })
-  });
+  }, DEFAULT_AI_TIMEOUT_MS);
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
@@ -336,7 +435,7 @@ async function analyzeQuery(params = {}) {
     options
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -359,7 +458,7 @@ async function analyzeQuery(params = {}) {
         }
       ]
     })
-  });
+  }, DEFAULT_AI_TIMEOUT_MS);
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
@@ -452,7 +551,7 @@ async function deepAnalyzeQuery(params = {}) {
     options
   };
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -475,7 +574,7 @@ async function deepAnalyzeQuery(params = {}) {
         }
       ]
     })
-  });
+  }, DEFAULT_AI_TIMEOUT_MS);
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
@@ -510,5 +609,8 @@ module.exports = {
   analyzeQuery,
   deepAnalyzeQuery,
   generateCandidate: proposeRefactor,
-  testConnection
+  testConnection,
+  estimateAndPruneTokenBudget,
+  DEFAULT_AI_TIMEOUT_MS,
+  fetchWithTimeout
 };

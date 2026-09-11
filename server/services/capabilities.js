@@ -102,6 +102,21 @@ async function detect() {
   const anyQsActive = databaseMatrix.some(d => d.queryStoreState === 'READ_WRITE' || d.queryStoreState === 'READ_ONLY');
   const primaryQs = databaseMatrix.find(d => d.database === status.primaryDatabase)?.queryStoreState || (anyQsActive ? 'ACTIVE' : 'OFF');
 
+  let canViewServerState = false;
+  let canViewServerPerfState = false;
+  try {
+    const srvPool = db.getPool('master') || db.getPool();
+    if (srvPool) {
+      const srvRes = await srvPool.request().query(`
+        SELECT 
+          HAS_PERMS_BY_NAME(null, null, 'VIEW SERVER STATE') AS can_view_server_state,
+          HAS_PERMS_BY_NAME(null, null, 'VIEW SERVER PERFORMANCE STATE') AS can_view_server_perf_state;
+      `);
+      canViewServerState = Boolean(srvRes.recordset[0]?.can_view_server_state);
+      canViewServerPerfState = Boolean(srvRes.recordset[0]?.can_view_server_perf_state);
+    }
+  } catch (_) {}
+
   return {
     ...instanceInfo,
     primaryDatabase: status.primaryDatabase,
@@ -113,7 +128,14 @@ async function detect() {
     },
     permissions: {
       canViewDefinition: databaseMatrix.length > 0 && databaseMatrix.every(d => d.canViewDefinition),
-      canViewDatabaseState: databaseMatrix.length > 0 && databaseMatrix.every(d => d.canViewDatabaseState)
+      canViewDatabaseState: databaseMatrix.length > 0 && databaseMatrix.every(d => d.canViewDatabaseState),
+      canViewServerState,
+      canViewServerPerformanceState: canViewServerPerfState
+    },
+    liveActivityCapability: {
+      capability: 'LIVE_ACTIVITY',
+      available: Boolean(canViewServerState || canViewServerPerfState),
+      requiredPermissions: ['VIEW SERVER PERFORMANCE STATE', 'VIEW SERVER STATE']
     }
   };
 }

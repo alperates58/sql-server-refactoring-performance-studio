@@ -2,6 +2,11 @@
  * SQL Server Refactoring & Performance Studio
  * Read-Only T-SQL Statement Validator
  *
+ * GÜVENLİK BİLDİRİMİ (Defense in Depth):
+ * Bu doğrulayıcı uygulama seviyesinde (Application-Level Guardrail) bir güvenlik katmanıdır.
+ * SQL Server tarafında kötü niyetli veya kazara mutasyonları %100 önlemek için
+ * veritabanı bağlantı kullanıcısının db_datareader / READ ONLY yetkilerine kısıtlanması ŞARTTIR.
+ *
  * Guardrail Enforcement:
  * - Strips single-line comments (-- ...) and block comments (/* ... *\/)
  * - Strips single-quoted string literals ('...') so that strings like 'DROP TABLE' are NOT false positives.
@@ -10,7 +15,7 @@
  * - Rejects multiple statements if any non-read-only keyword is present.
  */
 
-// Forbidden mutation and administrative command tokens
+// Forbidden mutation, batch control, and administrative command tokens
 const PROHIBITED_KEYWORDS = [
   'INSERT',
   'UPDATE',
@@ -33,7 +38,14 @@ const PROHIBITED_KEYWORDS = [
   'RECONFIGURE',
   'KILL',
   'BULK',
-  'DBCC'
+  'DBCC',
+  'INTO',
+  'OPENROWSET',
+  'OPENDATASOURCE',
+  'OPENQUERY',
+  'WRITETEXT',
+  'UPDATETEXT',
+  'GO'
 ];
 
 /**
@@ -45,6 +57,7 @@ function stripCommentsAndLiterals(sql) {
   let inMultiLineComment = false;
   let inString = false;
   let inBracket = false;
+  let inQuotedIdent = false;
   let result = '';
 
   const len = sql.length;
@@ -92,6 +105,20 @@ function stripCommentsAndLiterals(sql) {
       continue;
     }
 
+    // Handle double-quoted identifier "Table"
+    if (inQuotedIdent) {
+      if (char === '"') {
+        if (next === '"') {
+          // Escaped double quote ("")
+          i++;
+        } else {
+          inQuotedIdent = false;
+          result += '"';
+        }
+      }
+      continue;
+    }
+
     // Comment starts
     if (char === '-' && next === '-') {
       inSingleLineComment = true;
@@ -115,6 +142,13 @@ function stripCommentsAndLiterals(sql) {
     if (char === '[') {
       inBracket = true;
       result += '[';
+      continue;
+    }
+
+    // Quoted identifier starts
+    if (char === '"') {
+      inQuotedIdent = true;
+      result += '"';
       continue;
     }
 
@@ -171,6 +205,13 @@ function validateReadOnly(rawSql) {
           : token === forbidden;
 
       if (isMatch) {
+        if (token === 'GO') {
+          return {
+            valid: false,
+            keyword: 'GO',
+            reason: 'GO batch separator bu Workbench sürümünde desteklenmiyor. Lütfen sorguları noktalı virgül (;) ile ayırarak çalıştırın.'
+          };
+        }
         return {
           valid: false,
           keyword: token,
@@ -195,5 +236,6 @@ function validateReadOnly(rawSql) {
 
 module.exports = {
   validateReadOnly,
-  stripCommentsAndLiterals
+  stripCommentsAndLiterals,
+  PROHIBITED_KEYWORDS
 };

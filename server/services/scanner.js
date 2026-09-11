@@ -18,9 +18,10 @@ const db = require('./sqlServer');
 const { createObjectRef, parseCanonicalId } = require('./canonicalObject');
 const { analyzeStaticSql } = require('./staticAnalyzer');
 const { buildDependencyStats, extractSubGraph } = require('./dependencyEngine');
-const { calculateHealth, calculateRisk, buildRiskBars } = require('./scoring');
+const { calculateHealth, calculateRisk, calculateOpportunityScore, buildRiskBars } = require('./scoring');
 const { findDuplicates } = require('./duplicateFinder');
 const { collectRuntimeEvidence } = require('./runtimeEvidence');
+const settingsService = require('./settingsService');
 
 const RUNTIME_DIR = path.join(__dirname, '..', '..', 'runtime');
 const SCAN_CACHE_FILE = path.join(RUNTIME_DIR, 'latest-scan.local.json');
@@ -233,8 +234,12 @@ async function scan(prefix = 'AA_', explicitScope = null) {
   // 3. Compute cross-database dependency topology
   const { statsMap, normalizedEdges } = buildDependencyStats(allRawViews, allRawEdges, selectedDatabases, synonymMap);
 
-  // 4. Collect runtime evidence across databases
-  const runtimeResult = await collectRuntimeEvidence(allRawViews, selectedDatabases).catch(() => ({
+  // 4. Collect runtime evidence across databases using configured time window
+  const appConfig = settingsService.getConfig();
+  const historyWindow = appConfig.runtime?.historyWindow || '24h';
+  const scoringConfig = appConfig.scoring;
+
+  const runtimeResult = await collectRuntimeEvidence(allRawViews, selectedDatabases, historyWindow).catch(() => ({
     source: 'NONE',
     evidenceGrade: 'D',
     isVolatile: false,
@@ -267,14 +272,23 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       depth: signals.depth,
       repeatedCount: signals.repeatedBaseTableCount,
       dependentCount: signals.dependentCount,
+      nonSargableCount: signals.nonSargableCount,
       runtime: rt ? {
         executions: rt.executionCount || 1,
-        avgLogicalReads: rt.executionCount > 0 ? Math.round(rt.totalReads / rt.executionCount) : rt.totalReads,
+        avgLogicalReads: rt.current?.avgLogicalReads != null ? rt.current.avgLogicalReads : (rt.executionCount > 0 ? Math.round(rt.totalReads / rt.executionCount) : rt.totalReads),
         totalReads: rt.totalReads,
-        avgDurationMs: rt.avgDurationUs ? Math.round(rt.avgDurationUs / 1000) : 0,
+        avgDurationMs: rt.current?.avgDurationMs != null ? rt.current.avgDurationMs : (rt.avgDurationUs ? Math.round(rt.avgDurationUs / 1000) : 0),
         isRegression: Boolean(rt.isRegressed),
+        regression: rt.regression || null,
         evidenceGrade: rt.evidenceGrade || 'B'
       } : null
+    }, scoringConfig);
+
+    const opportunityScore = calculateOpportunityScore({
+      riskScore: risk.score,
+      severityScore: rt?.regression?.severityScore || 0,
+      totalReads: rt?.totalReads || 0,
+      blastRadius: signals.dependentCount || 0
     });
 
     const problems = [];
@@ -349,6 +363,7 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       riskLevel: risk.level,
       riskCategory: riskCategory,
       riskScore: risk.score,
+      opportunityScore,
       depth: signals.depth,
       tables: signals.baseTableCount,
       baseTableCount: signals.baseTableCount,
@@ -443,6 +458,9 @@ async function scan(prefix = 'AA_', explicitScope = null) {
       synonymEdges: normalizedEdges.filter(e => e.isSynonym).length,
       dynamicSqlLimitation: 'Dinamik SQL bağımlılıkları katalog metaverisinden tam olarak tespit edilemez.'
     },
+    runtimeSource: runtimeResult.source || 'PLAN_CACHE',
+    runtimePerDbStatus: runtimeResult.perDbStatus || {},
+    timeseries: runtimeResult.timeseries || null,
     views: processedViews,
     pressures: pressures.slice(0, 15),
     duplicates,

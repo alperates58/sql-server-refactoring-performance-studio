@@ -81,11 +81,67 @@ function calculateHealth(signals = {}) {
   return clamp(100 - penalty);
 }
 
-function calculateRisk(options = {}) {
+const DEFAULT_WEIGHTS = {
+  runtimeWeight: 35,
+  regressionWeight: 25,
+  repeatedWeight: 15,
+  depthWeight: 10,
+  sargableWeight: 10,
+  blastWeight: 5
+};
+
+function normalizeWeights(raw = {}) {
+  const getVal = (primary, fallback) => {
+    const v = raw[primary] !== undefined ? raw[primary] : raw[fallback];
+    if (v === null || v === undefined || v === '') return null;
+    const num = Number(v);
+    return (Number.isFinite(num) && num >= 0) ? num : null;
+  };
+
+  const runtimeWeight = getVal('runtimeWeight', 'weightRuntime') ?? DEFAULT_WEIGHTS.runtimeWeight;
+  const regressionWeight = getVal('regressionWeight', 'weightRegression') ?? DEFAULT_WEIGHTS.regressionWeight;
+  const repeatedWeight = getVal('repeatedWeight', 'weightRepeated') ?? DEFAULT_WEIGHTS.repeatedWeight;
+  const depthWeight = getVal('depthWeight', 'weightDepth') ?? DEFAULT_WEIGHTS.depthWeight;
+  const sargableWeight = getVal('sargableWeight', 'weightSargable') ?? DEFAULT_WEIGHTS.sargableWeight;
+  const blastWeight = getVal('blastWeight', 'weightBlast') ?? DEFAULT_WEIGHTS.blastWeight;
+
+  const sum = runtimeWeight + regressionWeight + repeatedWeight + depthWeight + sargableWeight + blastWeight;
+
+  if (sum <= 0) {
+    return { ...DEFAULT_WEIGHTS };
+  }
+
+  // Normalize to 100 if sum deviates from 100
+  if (Math.abs(sum - 100) > 0.001) {
+    const factor = 100 / sum;
+    return {
+      runtimeWeight: runtimeWeight * factor,
+      regressionWeight: regressionWeight * factor,
+      repeatedWeight: repeatedWeight * factor,
+      depthWeight: depthWeight * factor,
+      sargableWeight: sargableWeight * factor,
+      blastWeight: blastWeight * factor
+    };
+  }
+
+  return {
+    runtimeWeight,
+    regressionWeight,
+    repeatedWeight,
+    depthWeight,
+    sargableWeight,
+    blastWeight
+  };
+}
+
+function calculateRisk(options = {}, customWeights = null) {
   const health = Number(options.health != null ? options.health : 100) || 100;
   const depth = Number(options.depth || 1) || 1;
   const repeatedCount = Number(options.repeatedCount || 0) || 0;
   const dependentCount = Number(options.dependentCount || 0) || 0;
+  const nonSargableCount = Number(options.nonSargableCount || 0) || 0;
+
+  const weights = normalizeWeights(customWeights || options.weights || {});
 
   // Support both options.runtime and flat options.reads/options.isRegressed
   let runtime = options.runtime || null;
@@ -108,18 +164,36 @@ function calculateRisk(options = {}) {
 
   if (runtime && (avgReads != null || executions != null)) {
     evidenceGrade = runtime.evidenceGrade || 'B';
-    const readsScore = Math.min(40, (Math.log10(Math.max(1, avgReads || 1)) / 7) * 40);
-    const regressionScore = isRegression ? 20 : 0;
-    const healthComponent = ((100 - health) / 100) * 15;
-    const blastComponent = Math.min(15, (dependentCount / 30) * 15);
-    const execComponent = Math.min(10, (Math.log10(Math.max(1, executions || 1)) / 6) * 10);
-    riskScore = clamp(readsScore + regressionScore + healthComponent + blastComponent + execComponent);
+    const readsRatio = Math.min(1, Math.log10(Math.max(1, avgReads || 1)) / 7);
+    const readsScore = readsRatio * weights.runtimeWeight;
+
+    // Scale regression weight proportionally with severityScore if available, else binary fallback
+    let regFactor = 0;
+    if (runtime.regression && typeof runtime.regression.severityScore === 'number') {
+      regFactor = Math.min(1, Math.max(0, runtime.regression.severityScore / 100));
+    } else if (isRegression) {
+      regFactor = 1;
+    }
+    const regressionScore = regFactor * weights.regressionWeight;
+
+    const repeatedScore = Math.min(weights.repeatedWeight, (repeatedCount / 3) * weights.repeatedWeight);
+    const depthScore = Math.min(weights.depthWeight, (Math.max(0, depth - 1) / 5) * weights.depthWeight);
+    const sargableScore = Math.min(weights.sargableWeight, (nonSargableCount / 3) * weights.sargableWeight);
+    const blastScore = Math.min(weights.blastWeight, (dependentCount / 30) * weights.blastWeight);
+
+    riskScore = clamp(readsScore + regressionScore + repeatedScore + depthScore + sargableScore + blastScore);
   } else {
     evidenceGrade = 'D';
-    const healthComponent = (100 - health) * 0.55;
-    const blastComponent = Math.min(25, dependentCount * 1.1);
-    const complexityComponent = Math.min(20, (repeatedCount * 5) + Math.max(0, depth - 3) * 3);
-    riskScore = clamp(healthComponent + blastComponent + complexityComponent);
+    const staticBase = weights.repeatedWeight + weights.depthWeight + weights.sargableWeight + weights.blastWeight;
+    const staticScale = staticBase > 0 ? (100 / staticBase) : 1;
+
+    const healthComponent = ((100 - health) / 100) * 45;
+    const repeatedScore = Math.min(25, (repeatedCount / 3) * weights.repeatedWeight * (staticScale * 0.25));
+    const depthScore = Math.min(15, (Math.max(0, depth - 1) / 4) * weights.depthWeight * (staticScale * 0.2));
+    const sargableScore = Math.min(15, (nonSargableCount / 3) * weights.sargableWeight * (staticScale * 0.2));
+    const blastScore = Math.min(20, (dependentCount / 20) * weights.blastWeight * (staticScale * 0.3));
+
+    riskScore = clamp(healthComponent + repeatedScore + depthScore + sargableScore + blastScore);
   }
 
   let level = 'LOW';
@@ -146,6 +220,27 @@ function calculateRisk(options = {}) {
     category, // Alias for backward compatibility
     evidenceGrade
   };
+}
+
+/**
+ * Calculates Opportunity Score ("Bugün Müdahale Edilecekler"):
+ * Combines structural risk, verified regression severity, normalized reads, and blast radius.
+ */
+function calculateOpportunityScore({
+  riskScore = 0,
+  severityScore = 0,
+  totalReads = 0,
+  blastRadius = 0
+} = {}) {
+  const normRisk = clamp(Number(riskScore) || 0);
+  const normSev = clamp(Number(severityScore) || 0);
+  // Log-scale normalization for logical reads: 10M reads = 100
+  const normReads = clamp(Math.round((Math.log10(Math.max(1, Number(totalReads) || 0)) / 7) * 100));
+  // Blast radius: 20 dependents = 100
+  const normBlast = clamp(Math.round(((Number(blastRadius) || 0) / 20) * 100));
+
+  const opportunity = (normRisk * 0.35) + (normSev * 0.35) + (normReads * 0.20) + (normBlast * 0.10);
+  return clamp(opportunity);
 }
 
 function buildRiskBars(signals = {}, runtime = null) {
@@ -181,4 +276,12 @@ function buildRiskBars(signals = {}, runtime = null) {
   ];
 }
 
-module.exports = { calculateHealth, calculateRisk, buildRiskBars, clamp };
+module.exports = {
+  calculateHealth,
+  calculateRisk,
+  calculateOpportunityScore,
+  buildRiskBars,
+  clamp,
+  DEFAULT_WEIGHTS,
+  normalizeWeights
+};
