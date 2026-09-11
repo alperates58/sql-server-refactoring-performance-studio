@@ -39,11 +39,13 @@
     settings: 'Sistem parametreleri, AI sağlayıcı, puanlama ağırlıkları ve destek tanılaması.',
     activity: 'Canlı SQL Server oturumları, kilitlenmeler, bekleme istatistikleri ve aktif sorgular.',
     indexes: 'Eksik indeks tavsiyeleri, istatistik güncelliği ve parçalanma durumu.',
-    workspaces: 'Kalıcı refaktör oturumları, aşamalar, diff geçmişi ve SQLite kayıtları.'
+    workspaces: 'SQL taslaklarını, aday sürümleri ve doğrulama sonuçlarını tek yerde takip edin.'
   };
 
   let isNavigating = false;
   let loadWorkspacesList = () => {};
+  let openWorkbenchSql = () => {};
+  let invalidateValidation = () => {};
 
   // Central Application State
   const state = {
@@ -207,6 +209,8 @@
 
   function gotoPage(name) {
     if (!name || !pageTitles[name]) name = 'overview';
+    $('.app-shell')?.classList.remove('nav-open');
+    $('#mobileNavToggle')?.setAttribute('aria-expanded', 'false');
 
     // Hash deep linking
     isNavigating = true;
@@ -241,6 +245,16 @@
 
     updateBreadcrumbs(name);
 
+    if (name === 'validation') {
+      const select = $('#validationDatabaseSelect');
+      if (select) {
+        const database = state.validationDatabase || state.activeDatabase || state.primaryDatabase;
+        select.innerHTML = [...new Set([database, ...state.selectedDatabases].filter(Boolean))]
+          .map(db => `<option value="${escapeHtml(db)}">${escapeHtml(db)}</option>`).join('');
+        select.value = database;
+      }
+    }
+
     const main = $('.main');
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -265,8 +279,56 @@
   }
 
   // Bind Navigation
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('[data-copy-code], [data-candidate-code]');
+    if (!button) return;
+    const sql = document.getElementById(button.dataset.copyCode || button.dataset.candidateCode)?.innerText || '';
+    if (!sql.trim()) return;
+    if (button.dataset.copyCode) {
+      try {
+        await navigator.clipboard.writeText(sql);
+        toast('Kopyalandı', 'SQL betiği panoya kopyalandı.', 'success');
+      } catch (_) { toast('Kopyalanamadı', 'Tarayıcı pano erişimine izin vermedi.', 'error'); }
+    } else {
+      $('#candidateSqlText').value = sql;
+      $('#candidateSqlTextSplit').value = sql;
+      switchCandidateTab('sql');
+      toast('Aday SQL Aktarıldı', 'Bu aday henüz doğrulanmadı.', 'info');
+    }
+  });
+  function selectedDatabase() {
+    const view = state.data.views.find(v => v.canonicalId === state.selectedCanonicalId);
+    return view?.database || state.activeDatabase || state.primaryDatabase;
+  }
+
+  async function apiJson(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok || data.ok === false) throw new Error(data.error || 'İşlem tamamlanamadı.');
+    return data;
+  }
+  $('#mobileNavToggle')?.addEventListener('click', () => {
+    const shell = $('.app-shell');
+    shell?.classList.remove('sidebar-collapsed');
+    const open = shell?.classList.toggle('nav-open');
+    $('#mobileNavToggle')?.setAttribute('aria-expanded', String(Boolean(open)));
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && $('.app-shell')?.classList.contains('nav-open')) {
+      $('.app-shell').classList.remove('nav-open');
+      $('#mobileNavToggle')?.setAttribute('aria-expanded', 'false');
+      $('#mobileNavToggle')?.focus();
+    }
+  });
   $$('.nav-item[data-page]').forEach(b => b.addEventListener('click', () => gotoPage(b.dataset.page)));
-  $$('[data-goto]').forEach(b => b.addEventListener('click', () => gotoPage(b.dataset.goto)));
+  $$('[data-goto]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.riskFilter) {
+      state.currentRiskFilter = b.dataset.riskFilter;
+      $$('.filter-chip').forEach(chip => chip.classList.toggle('active', chip.dataset.risk === b.dataset.riskFilter));
+      renderViewList($('#viewSearch')?.value || '');
+    }
+    gotoPage(b.dataset.goto);
+  }));
 
   // --- 1. Connection Status UI ---
   function updateConnectionStatusUI() {
@@ -618,8 +680,13 @@
     let sortedViews = [...views];
     if (sortMode === 'reads') {
       sortedViews.sort((a, b) => {
-        const aReads = a.runtime?.totalReads != null ? Number(a.runtime.totalReads) : (parseInt(String(a.reads || '0').replace(/[^0-9]/g, ''), 10) || 0);
-        const bReads = b.runtime?.totalReads != null ? Number(b.runtime.totalReads) : (parseInt(String(b.reads || '0').replace(/[^0-9]/g, ''), 10) || 0);
+        const numericReads = v => {
+          if (v.runtime?.totalReads != null) return Number(v.runtime.totalReads);
+          const match = String(v.reads || '0').match(/^([\d.]+)\s*([KMB])?$/i);
+          return match ? Number(match[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase()] || 1) : 0;
+        };
+        const aReads = numericReads(a);
+        const bReads = numericReads(b);
         return bReads - aReads;
       });
     } else if (sortMode === 'regression') {
@@ -854,7 +921,7 @@
     }
 
     if (v && v.definition) return v.definition;
-    return `-- View SQL Tanımı (${identifier}):\nSELECT *\nFROM dbo.[${identifier.split('.').pop()}] WITH (NOLOCK)\nWHERE 1 = 1;`;
+    return '';
   }
 
   async function selectView(identifier) {
@@ -1288,11 +1355,7 @@
         </div>
       `;
       $('#btnOpenInWorkbenchFromPlan')?.addEventListener('click', () => {
-        gotoPage('workbench');
-        const input = $('#wbSqlInput');
-        if (input) {
-          input.value = `SELECT TOP 100 * FROM ${v.database ? `[${v.database}].` : ''}[${v.schema_name || 'dbo'}].[${name}];`;
-        }
+        openWorkbenchSql(`SELECT TOP 100 * FROM ${v.database ? `[${v.database}].` : ''}[${v.schema_name || 'dbo'}].[${name}];`, v.database, name);
       });
     }
 
@@ -1401,6 +1464,7 @@
       } else {
         sqlCode.textContent = '-- SQL tanımı getiriliyor...';
         getViewDefinition(v.canonicalId || name).then(sql => {
+          sqlCode.textContent = sql || '-- SQL tanımı alınamadı. Canlı bağlantı ve VIEW DEFINITION iznini kontrol edin.';
           if (sql) {
             v.definition = sql;
             sqlCode.textContent = sql;
@@ -2479,11 +2543,7 @@
       });
 
       $('#btnTpOpenWorkbench')?.addEventListener('click', () => {
-        gotoPage('workbench');
-        const wbInput = $('#wbSqlInput');
-        if (wbInput) {
-          wbInput.value = `SELECT TOP 50 *\nFROM [${p.database || 'MikroDB'}].[dbo].[${p.name}] WITH (NOLOCK);`;
-        }
+        openWorkbenchSql(`SELECT TOP 50 *\nFROM [${p.database || state.primaryDatabase}].[dbo].[${p.name}];`, p.database, p.name);
       });
     }
   }
@@ -2539,6 +2599,11 @@
 
         if (vo) vo.value = defA;
         if (vc) vc.value = defB;
+        invalidateValidation();
+        if (!defA || !defB) {
+          toast('Karşılaştırma Hazır Değil', 'İki view için gerçek SQL tanımı gerekiyor. Bağlantı ve tanım erişimini kontrol edin.', 'warning');
+          return;
+        }
         toast('Mükerrer SQL Karşılaştırma', `${viewA} ve ${viewB} SQL tanımları Validation Lab'a aktarıldı.`, 'success');
       };
     });
@@ -2552,9 +2617,13 @@
     $$('.btn-dup-ai').forEach(b => {
       b.onclick = () => {
         if (b.dataset.a) {
-          state.selectedViewName = b.dataset.a;
           const targetV = (state.data.views || []).find(x => (x.name || x.view_name) === b.dataset.a);
-          if (targetV && targetV.canonicalId) state.selectedCanonicalId = targetV.canonicalId;
+          if (!targetV) {
+            toast('Nesne Envanterde Yok', 'Önce bu view içeren veritabanını tarayın. AI ekranına farklı bir nesne taşınmadı.', 'warning');
+            return;
+          }
+          state.selectedViewName = b.dataset.a;
+          state.selectedCanonicalId = targetV.canonicalId || targetV.name;
         }
         gotoPage('refactor');
       };
@@ -3075,7 +3144,7 @@
     });
 
     // 7. Appearance Controls (Theme, Density, Font Scale, Grid, Animations)
-    const savedTheme = localStorage.getItem('sql-studio-theme') || localStorage.getItem('sql_studio_theme') || 'dark';
+    const savedTheme = localStorage.getItem('sql-studio-theme') || localStorage.getItem('sql_studio_theme') || 'light';
     const savedDensity = localStorage.getItem('sql_studio_density') || 'comfortable';
     const savedFontScale = localStorage.getItem('sql_studio_font_scale') || 'default';
     const savedEditorFont = localStorage.getItem('sql_studio_editor_font') || '14';
@@ -3215,11 +3284,17 @@
       effectiveTheme = isSystemDark ? 'dark' : 'light';
     }
 
+    document.documentElement.dataset.theme = effectiveTheme;
+    document.documentElement.style.colorScheme = effectiveTheme === 'light' ? 'light' : 'dark';
     document.body.classList.remove('theme-light', 'theme-midnight');
     if (effectiveTheme === 'light') {
       document.body.classList.add('theme-light');
     } else if (effectiveTheme === 'midnight') {
       document.body.classList.add('theme-midnight');
+    }
+
+    if (window.monaco?.editor) {
+      window.monaco.editor.setTheme(effectiveTheme === 'light' ? 'vs' : 'vs-dark');
     }
 
     // Update Quick Toggle Button Icon & Tooltip
@@ -3236,6 +3311,7 @@
 
     try {
       localStorage.setItem('sql-studio-theme', theme);
+      localStorage.setItem('sql_studio_theme', theme);
     } catch (_) {}
   }
 
@@ -3753,9 +3829,15 @@
     const codeElem = $('#refactorSourceCode');
     const lineElem = $('#refactorLineCount');
     if (codeElem) {
+      const actions = ['runRefactor', 'btnAnalyzeQuery', 'btnDeepAnalyzeQuery'].map(id => $('#' + id)).filter(Boolean);
+      actions.forEach(button => { button.disabled = true; });
       codeElem.textContent = `-- View SQL tanımı getiriliyor (${currentName})...`;
       try {
         const sql = await getViewDefinition(currentCanonical);
+        actions.forEach(button => {
+          button.disabled = !sql;
+          if (!sql) button.title = 'Gerçek SQL tanımı için veritabanına bağlanıp envanteri tarayın.';
+        });
         codeElem.textContent = sql || '-- SQL tanımı bulunamadı.';
         const lineCount = (sql || '').split('\n').length;
         if (lineElem) lineElem.textContent = `${lineCount} satır`;
@@ -3869,8 +3951,8 @@
               <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;background:rgba(255,255,255,0.04);border-bottom:1px solid var(--line);font-size:11.5px">
                 <span style="font-family:var(--font-mono,monospace);font-weight:600;color:var(--text-muted)">${escapeHtml(codeLang.toUpperCase() || 'SQL')}</span>
                 <div style="display:flex;gap:6px">
-                  <button type="button" class="button ghost mini" style="padding:2px 8px;font-size:11px" onclick="navigator.clipboard.writeText(document.getElementById('${codeId}').innerText);toast('Kopyalandı','SQL panoya kopyalandı.','success')">📋 Kodu Kopyala</button>
-                  <button type="button" class="button primary mini" style="padding:2px 8px;font-size:11px" onclick="const t=document.getElementById('${codeId}').innerText;if(document.getElementById('candidateSqlText')){document.getElementById('candidateSqlText').value=t;}if(document.getElementById('candidateSqlTextSplit')){document.getElementById('candidateSqlTextSplit').value=t;}switchCandidateTab('sql');toast('Aktarıldı','Aday Refaktör SQL editörüne aktarıldı.','success')">⚡ Aday Refaktöre Aktar</button>
+                  <button type="button" class="button ghost mini" style="padding:2px 8px;font-size:11px" data-copy-code="${codeId}">📋 Kodu Kopyala</button>
+                  <button type="button" class="button primary mini" style="padding:2px 8px;font-size:11px" data-candidate-code="${codeId}">⚡ Aday Refaktöre Aktar</button>
                 </div>
               </div>
               <pre id="${codeId}" style="margin:0;padding:12px 14px;overflow-x:auto;font-family:var(--font-mono,monospace);font-size:12.5px;line-height:1.55;color:#e2e8f0;background:transparent"><code>${escapeHtml(fullCode)}</code></pre>
@@ -4749,12 +4831,7 @@ LEFT JOIN BaseSummary AS b
       toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" veya "Derinlemesine Analiz" ile bir sorgu üretin.', 'warning');
       return;
     }
-    const wbInput = $('#wbSqlInput');
-    if (wbInput) {
-      wbInput.value = candSql;
-      wbInput.dispatchEvent(new Event('input'));
-    }
-    gotoPage('workbench');
+    openWorkbenchSql(candSql, selectedDatabase(), 'Refaktör adayı');
     toast('SQL Workbench', 'Aday SQL sorgusu Workbench editörüne yüklendi.', 'success');
   }
 
@@ -4778,6 +4855,8 @@ LEFT JOIN BaseSummary AS b
     const valTitle = $('#valPipelineTitle');
     if (valOrig) valOrig.value = origSql;
     if (valCand) valCand.value = candSql;
+    state.validationDatabase = selectedDatabase();
+    invalidateValidation();
     if (valTitle) valTitle.textContent = state.selectedViewName || 'Doğrulama İncelemesi';
     gotoPage('validation');
     toast('Validation Lab', `${state.selectedViewName || 'Seçili view'} için orijinal ve aday sorgular Doğrulama Laboratuvarına aktarıldı.`, 'success');
@@ -5545,6 +5624,29 @@ LEFT JOIN BaseSummary AS b
     const btnRunBoth = $('#btnValRunBoth');
     const btnValidate = $('#validateButton');
     const ackCheck = $('#validationAck');
+    let validationRevision = 0;
+    invalidateValidation = () => {
+      validationRevision++;
+      setValVerdict('DOĞRULANMADI');
+      for (const step of ['schema', 'rowCount', 'setMatch', 'multiplicity']) {
+        const row = $('#valStep-' + step);
+        if (row) row.className = 'validation-step';
+        const status = $('#valStepStatus-' + step);
+        if (status) { status.textContent = 'BEKLİYOR'; status.style.color = ''; }
+        const desc = $('#valStepDesc-' + step);
+        if (desc) desc.textContent = 'Güncel SQL ve veritabanı için kontrol bekleniyor.';
+      }
+      for (const id of ['valSummarySchema', 'valSummaryRowCount', 'valSummarySetMatch', 'valSummaryMultiplicity']) {
+        if ($('#' + id)) { $('#' + id).textContent = 'Bekliyor'; $('#' + id).style.color = ''; }
+      }
+      $$('#page-validation .benchmark-compare strong, #page-validation .benchmark-compare b').forEach(el => { el.textContent = '—'; });
+    };
+    origInput?.addEventListener('input', invalidateValidation);
+    candInput?.addEventListener('input', invalidateValidation);
+    $('#validationDatabaseSelect')?.addEventListener('change', e => {
+      state.validationDatabase = e.target.value;
+      invalidateValidation();
+    });
 
     // Resizable Split-View (Horizontal Split with Mouse Drag)
     const splitWrap = $('#valSplitWrap');
@@ -5587,7 +5689,7 @@ LEFT JOIN BaseSummary AS b
     $('#btnValClear')?.addEventListener('click', () => {
       if (origInput) origInput.value = '';
       if (candInput) candInput.value = '';
-      setValVerdict('DOĞRULANMADI');
+      invalidateValidation();
       toast('Temizlendi', 'Orijinal ve aday sorgu alanları temizlendi.');
     });
 
@@ -5607,17 +5709,13 @@ LEFT JOIN BaseSummary AS b
 
     $('#btnValSendOrigToWb')?.addEventListener('click', () => {
       if (origInput?.value) {
-        const wbInput = $('#wbSqlInput');
-        if (wbInput) wbInput.value = origInput.value;
-        gotoPage('workbench');
+        openWorkbenchSql(origInput.value, state.validationDatabase || selectedDatabase(), 'Orijinal SQL');
       }
     });
 
     $('#btnValSendCandToWb')?.addEventListener('click', () => {
       if (candInput?.value) {
-        const wbInput = $('#wbSqlInput');
-        if (wbInput) wbInput.value = candInput.value;
-        gotoPage('workbench');
+        openWorkbenchSql(candInput.value, state.validationDatabase || selectedDatabase(), 'Aday SQL');
       }
     });
 
@@ -5643,7 +5741,7 @@ SELECT
 FROM dbo.STOK_HAREKETLERI WITH (NOLOCK)
 WHERE sth_tarih >= '2026-01-01';`;
       }
-      setValVerdict('DOĞRULANMADI');
+      invalidateValidation();
       toast('Örnek Yüklendi', 'Orijinal ve aday sorgu şablonları yüklendi.');
     });
 
@@ -5656,24 +5754,31 @@ WHERE sth_tarih >= '2026-01-01';`;
         return;
       }
 
+      if (!state.connected || !ackCheck?.checked) {
+        invalidateValidation();
+        toast('Ölçüm Yapılmadı', !state.connected ? 'SQL Server bağlantısı kurun. Demo modunda performans ölçülmez.' : 'İki sorgunun seçili veritabanında çalıştırılacağını onaylayın.', 'warning');
+        return;
+      }
+      const runRevision = validationRevision;
       btnRunBoth.disabled = true;
       btnRunBoth.textContent = 'Karşılaştırılıyor...';
 
       try {
-        if (state.isLive) {
+        if (state.connected) {
           const [resO, resC] = await Promise.all([
             fetch('/api/workbench/run', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sql: oSql, timeoutMs: 30000 })
+              body: JSON.stringify({ sql: oSql, database: $('#validationDatabaseSelect')?.value || selectedDatabase(), timeoutMs: 30000 })
             }).then(r => r.json()),
             fetch('/api/workbench/run', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ sql: cSql, timeoutMs: 30000 })
+              body: JSON.stringify({ sql: cSql, database: $('#validationDatabaseSelect')?.value || selectedDatabase(), timeoutMs: 30000 })
             }).then(r => r.json())
           ]);
 
+          if (runRevision !== validationRevision) return;
           if (!resO.ok) throw new Error(`Orijinal sorgu: ${resO.error}`);
           if (!resC.ok) throw new Error(`Aday sorgu: ${resC.error}`);
 
@@ -5702,7 +5807,7 @@ WHERE sth_tarih >= '2026-01-01';`;
         toast('Karşılaştırma Hatası', err.message, 'error');
       } finally {
         btnRunBoth.disabled = false;
-        btnRunBoth.textContent = '▶ Doğrula';
+        btnRunBoth.textContent = '▶ Performansı Ölç';
       }
     });
 
@@ -5719,6 +5824,13 @@ WHERE sth_tarih >= '2026-01-01';`;
         return;
       }
 
+      if (!state.connected) {
+        invalidateValidation();
+        toast('Doğrulama Yapılmadı', 'Demo modunda semantik kanıt üretilemez. SQL Server bağlantısı kurun.', 'warning');
+        return;
+      }
+      if (!ackCheck?.checked) return;
+      const runRevision = validationRevision;
       btnValidate.disabled = true;
       btnValidate.textContent = '✦ Doğrulanıyor...';
       const statusPill = $('#valPipelineStatus');
@@ -5728,15 +5840,16 @@ WHERE sth_tarih >= '2026-01-01';`;
       }
 
       try {
-        if (state.isLive) {
+        if (state.connected) {
           const res = await fetch('/api/validation/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ originalSql: oSql, candidateSql: cSql, sampleLimit: 1000 })
+            body: JSON.stringify({ originalSql: oSql, candidateSql: cSql, database: $('#validationDatabaseSelect')?.value || selectedDatabase(), sampleLimit: 1000 })
           });
           const json = await res.json();
           if (!res.ok || !json.ok) throw new Error(json.error || 'Validation başarısız.');
 
+          if (runRevision !== validationRevision) return;
           renderValSteps(json.steps);
           setValVerdict(json.verdict || 'INCONCLUSIVE');
         } else {
@@ -5754,10 +5867,10 @@ WHERE sth_tarih >= '2026-01-01';`;
         toast('Doğrulama Tamamlandı', 'Tüm semantik denetim adımları tamamlandı.', 'success');
       } catch (err) {
         toast('Doğrulama Hatası', err.message, 'error');
-        setValVerdict('FAIL');
+        if (runRevision === validationRevision) setValVerdict('ERROR');
       } finally {
-        btnValidate.disabled = false;
-        btnValidate.textContent = '✦ Validation Lab Doğrulamasını Başlat';
+        btnValidate.disabled = !ackCheck?.checked;
+        btnValidate.textContent = '✦ Semantik Karşılaştırmayı Başlat';
       }
     });
 
@@ -5835,6 +5948,11 @@ WHERE sth_tarih >= '2026-01-01';`;
         color = 'var(--cyan, #0284c7)';
         pillClass = 'status-pill status-info';
         sumClass = 'info-text';
+      } else if (verdict === 'ERROR') {
+        label = 'DOĞRULAMA TAMAMLANAMADI';
+        sub = 'Bağlantı veya sorgu hatası nedeniyle sonuç üretilemedi. SQL eşitliği hakkında karar verilmedi.';
+        color = 'var(--red)';
+        pillClass = 'status-pill status-danger';
       } else if (verdict === 'DOĞRULANMADI') {
         label = 'DOĞRULANMADI';
         sub = 'Doğrulama adımları bekleniyor';
@@ -5874,55 +5992,19 @@ WHERE sth_tarih >= '2026-01-01';`;
   // --- 14. AI WORKBENCH & INDEX INTEGRATION (Phase 2E) ---
   // ============================================================
   function initAiWorkbenchIntegration() {
-    // Candidate panel -> Open in Workbench
-    $('#btnOpenCandidateInWorkbench')?.addEventListener('click', () => {
-      const sql = $('#candidateSqlText')?.value || '';
-      if (sql) {
-        const wbInput = $('#wbSqlInput');
-        if (wbInput) {
-          wbInput.value = sql;
-          const count = sql.split('\n').length;
-          let lineStr = '';
-          for (let i = 1; i <= Math.max(1, count); i++) lineStr += i + '\n';
-          if ($('#wbLineNumbers')) $('#wbLineNumbers').textContent = lineStr.trimEnd();
-        }
-        gotoPage('workbench');
-        toast('Workbench Hazır', 'AI refactor adayı editöre aktarıldı.');
+    // Shared tab/model transfer, without duplicate click handlers.
+    $('#btnOpenSqlInWorkbench')?.addEventListener('click', async () => {
+      const sql = await getViewDefinition(state.selectedCanonicalId || state.selectedViewName);
+      if (!sql.trim()) {
+        toast('SQL Tanımı Alınamadı', 'Önce bağlantı kurup view tanımını yükleyin.', 'warning');
+        return;
       }
-    });
-
-    // View Detail SQL tab -> Open in Workbench
-    $('#btnOpenSqlInWorkbench')?.addEventListener('click', () => {
-      const sql = $('#sqlCode')?.textContent || '';
-      if (sql) {
-        const wbInput = $('#wbSqlInput');
-        if (wbInput) {
-          wbInput.value = sql;
-          const count = sql.split('\n').length;
-          let lineStr = '';
-          for (let i = 1; i <= Math.max(1, count); i++) lineStr += i + '\n';
-          if ($('#wbLineNumbers')) $('#wbLineNumbers').textContent = lineStr.trimEnd();
-        }
-        gotoPage('workbench');
-        toast('Workbench Hazır', 'View tanımı editöre aktarıldı.');
-      }
-    });
-
-    // Candidate panel -> Send to Validation Lab
-    $$('[data-detail-tab-jump="validation"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const origSql = $('#refactorSourceCode')?.textContent || $('#sqlCode')?.textContent || '';
-        const candSql = $('#candidateSqlText')?.value || '';
-        if ($('#valOrigSql') && origSql) $('#valOrigSql').value = origSql;
-        if ($('#valCandSql') && candSql) $('#valCandSql').value = candSql;
-        gotoPage('validation');
-        toast('Validation Lab', 'Sorgular karşılaştırma ekranına aktarıldı.');
-      });
+      openWorkbenchSql(sql, selectedDatabase(), state.selectedViewName);
     });
 
     // Index Tab Refresh button
     $('#btnRefreshIndexes')?.addEventListener('click', async () => {
-      const viewName = state.selectedViewName;
+      const viewName = state.selectedCanonicalId || state.selectedViewName;
       const body = $('#detailIndexTableBody');
       if (!body) return;
 
@@ -5930,6 +6012,7 @@ WHERE sth_tarih >= '2026-01-01';`;
       try {
         const res = await fetch(`/api/views/${encodeURIComponent(viewName)}/indexes`);
         const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || 'İndeksler alınamadı.');
         const idxs = json.indexes || [];
         if (idxs.length === 0) {
           body.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:16px;color:var(--text-muted)">Bu view için tanımlı base tablo indeksi bulunamadı.</td></tr>';
@@ -6260,6 +6343,15 @@ WHERE sth_tarih >= '2026-01-01';`;
         });
       } catch (_) {}
     }
+
+    openWorkbenchSql = (sql, database = selectedDatabase(), title = 'Aktarılan SQL') => {
+      if (!sql?.trim()) {
+        toast('SQL Bulunamadı', 'Aktarılacak SQL metni bulunmuyor.', 'warning');
+        return;
+      }
+      gotoPage('workbench');
+      createNewTab(title, sql, database);
+    };
 
     function createNewTab(title, initialSql = null, database = null) {
       const tabNumber = workbenchState.tabs.length + 1;
@@ -6989,6 +7081,7 @@ ORDER BY IslemAdedi DESC;`;
         $('#wsInputObject').value = targetObj;
         $('#wsInputOrigSql').value = sql;
         modal.classList.remove('hidden');
+        $('#wsInputTitle').focus();
       }
     });
 
@@ -8322,6 +8415,7 @@ ORDER BY IslemAdedi DESC;`;
     try {
       // 1. Requests
       const reqRes = await fetch('/api/activity/requests');
+      if (!reqRes.ok) throw new Error((await reqRes.json()).error || "Aktivite verisi alınamadı.");
       if (reqRes.ok) {
         const reqJson = await reqRes.json();
         if (reqJson.permissionMissing) {
@@ -8334,6 +8428,7 @@ ORDER BY IslemAdedi DESC;`;
 
       // 2. Blocking
       const blockRes = await fetch('/api/activity/blocking');
+      if (!blockRes.ok) throw new Error((await blockRes.json()).error || "Aktivite verisi alınamadı.");
       if (blockRes.ok) {
         const blockJson = await blockRes.json();
         renderActivityBlocking(blockJson);
@@ -8341,6 +8436,7 @@ ORDER BY IslemAdedi DESC;`;
 
       // 3. Waits
       const waitsRes = await fetch('/api/activity/waits');
+      if (!waitsRes.ok) throw new Error((await waitsRes.json()).error || "Aktivite verisi alınamadı.");
       if (waitsRes.ok) {
         const waitsJson = await waitsRes.json();
         renderActivityWaits(waitsJson);
@@ -8350,7 +8446,8 @@ ORDER BY IslemAdedi DESC;`;
       if (isManual) toast('Canlı Aktivite', 'Veriler başarıyla yenilendi.', 'success');
     } catch (err) {
       if (badge) badge.textContent = `Hata: ${formatTime()}`;
-      console.warn('[ActivityMonitor] Veri alınamadı:', err.message);
+      showActivityPermissionWarning({ error: err.message });
+      if (isManual) toast('Aktivite Alınamadı', err.message, 'error');
     } finally {
       activityRefreshInFlight = false;
     }
@@ -8567,24 +8664,24 @@ ORDER BY IslemAdedi DESC;`;
   }
 
   async function loadIndexesData(isManual = false) {
+    const button = $('#btnRefreshIndexesPage');
+    if (button?.disabled) return;
+    if (button) button.disabled = true;
     try {
-      // 1. Missing Indexes
-      const idxRes = await fetch('/api/index-advisor');
-      if (idxRes.ok) {
-        const idxJson = await idxRes.json();
-        renderMissingIndexes(idxJson.recommendations || []);
-      }
-
-      // 2. Statistics Health
-      const statsRes = await fetch('/api/statistics-health');
-      if (statsRes.ok) {
-        const statsJson = await statsRes.json();
-        renderStatsHealth(statsJson.statistics || []);
-      }
-
+      const [indexes, statistics] = await Promise.all([apiJson('/api/index-advisor'), apiJson('/api/statistics-health')]);
+      renderMissingIndexes(indexes.recommendations || []);
+      renderStatsHealth(statistics.statistics || []);
       if (isManual) toast('İndeks & İstatistik', 'Veriler başarıyla güncellendi.', 'success');
     } catch (err) {
-      console.warn('[IndexAdvisor] Veri alınamadı:', err.message);
+      const message = window.StudioUiStates.renderErrorState({ title: 'Veriler alınamadı', message: err.message, settingsActionId: 'indexesConnectionRetry' });
+      for (const id of ['missingIndexesContainer']) {
+        if ($('#' + id)) $('#' + id).innerHTML = message;
+      }
+      if ($('#statsHealthTbody')) $('#statsHealthTbody').innerHTML = '<tr><td colspan="8">' + escapeHtml(err.message) + '</td></tr>';
+      $('#indexesConnectionRetry')?.addEventListener('click', openModal);
+      if (isManual) toast('Güncelleme Başarısız', err.message, 'error');
+    } finally {
+      if (button) button.disabled = false;
     }
   }
 
@@ -8638,7 +8735,7 @@ ORDER BY IslemAdedi DESC;`;
               </div>
             </div>
             <div>
-              <button class="button ghost small" onclick="navigator.clipboard.writeText(document.getElementById('${codeBlockId}').innerText);toast('Kopyalandı','CREATE INDEX betiği panoya kopyalandı.','success')">📋 Betiği Kopyala</button>
+              <button class="button ghost small" data-copy-code="${codeBlockId}">📋 Betiği Kopyala</button>
             </div>
           </div>
 
@@ -8708,7 +8805,7 @@ ORDER BY IslemAdedi DESC;`;
           <td>${statusBadge}</td>
           <td>
             <span id="${scriptId}" style="display:none">${escapeHtml(st.updateScript)}</span>
-            <button class="button ghost mini" style="padding:2px 8px; font-size:11px" onclick="navigator.clipboard.writeText(document.getElementById('${scriptId}').innerText);toast('Kopyalandı','UPDATE STATISTICS betiği kopyalandı.','success')">📋 UPDATE</button>
+            <button class="button ghost mini" style="padding:2px 8px; font-size:11px" data-copy-code="${scriptId}">📋 UPDATE</button>
           </td>
         </tr>
       `;
@@ -9284,33 +9381,42 @@ ORDER BY IslemAdedi DESC;`;
     $('#btnWsRefresh')?.addEventListener('click', () => loadWorkspacesList());
 
     $('#btnWsCreateNew')?.addEventListener('click', async () => {
-      const title = prompt('Yeni Refactor Çalışması Başlığı:', `${state.selectedViewName || 'Yeni View'} İyileştirme`);
-      if (!title) return;
+      const view = state.data.views.find(v => v.canonicalId === state.selectedCanonicalId);
+      $('#wsInputTitle').value = (view?.name || 'Yeni sorgu') + ' İyileştirme';
+      $('#wsInputDb').value = selectedDatabase();
+      $('#wsInputObject').value = view ? (view.schema || 'dbo') + '.' + view.name : 'YeniSorgu';
+      $('#wsInputOrigSql').value = await getViewDefinition(view?.canonicalId || view?.name);
+      $('#newWorkspaceModal').classList.remove('hidden');
+      $('#wsInputTitle').focus();
+    });
+    const closeWorkspaceForm = () => $('#newWorkspaceModal').classList.add('hidden');
+    $('#closeNewWorkspaceModal')?.addEventListener('click', closeWorkspaceForm);
+    $('#cancelNewWorkspaceModal')?.addEventListener('click', closeWorkspaceForm);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeWorkspaceForm(); });
+    $('#newWorkspaceForm')?.addEventListener('submit', async e => {
+      e.preventDefault();
+      const button = $('#submitNewWorkspace');
+      if (button.disabled) return;
+      button.disabled = true;
       try {
-        const res = await fetch('/api/workspaces', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+        const database = $('#wsInputDb').value.trim();
+        const objectParts = $('#wsInputObject').value.trim().replace(/[\[\]]/g, '').split('.');
+        const objectName = objectParts.pop();
+        const schema = objectParts.pop() || 'dbo';
+        const json = await apiJson('/api/workspaces', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            title,
-            target: {
-              database: state.activeDatabase || state.primaryDatabase,
-              schema: 'dbo',
-              objectName: state.selectedViewName || 'NewView',
-              objectType: 'VIEW',
-              canonicalId: `[${state.activeDatabase || state.primaryDatabase}].[dbo].[${state.selectedViewName || 'NewView'}]`
-            },
-            originalSql: state.currentViewSql || '-- SQL'
+            title: $('#wsInputTitle').value.trim(),
+            target: { database, schema, objectName, objectType: 'VIEW', canonicalId: database + '.' + schema + '.' + objectName },
+            originalSql: $('#wsInputOrigSql').value
           })
         });
-        const json = await res.json();
-        if (json.ok && json.data) {
-          toast('Başarılı', 'Çalışma oluşturuldu.', 'success');
-          loadWorkspacesList();
-          openWorkspaceDetail(json.data.id);
-        }
-      } catch (err) {
-        toast('Hata', err.message, 'danger');
-      }
+        closeWorkspaceForm();
+        await loadWorkspacesList();
+        openWorkspaceDetail(json.data.id);
+        toast('Çalışma Oluşturuldu', 'SQL taslağı yerel çalışma alanına kaydedildi.', 'success');
+      } catch (error) { toast('Çalışma Oluşturulamadı', error.message, 'error'); }
+      finally { button.disabled = false; }
     });
 
     $$('#wsStatusFilterSegmented button').forEach(b => {
@@ -9833,7 +9939,7 @@ ORDER BY IslemAdedi DESC;`;
         const activePage = $('.page.active');
         if (activePage && activePage.id === 'page-workbench') {
           e.preventDefault();
-          $('#btnWbRunQuery')?.click();
+          $('#btnWbRun')?.click();
         }
       }
     });
@@ -9845,6 +9951,10 @@ ORDER BY IslemAdedi DESC;`;
     if (!modal) return;
 
     let currentStep = 1;
+    let connectionTested = false;
+    for (const id of ['wizardHost', 'wizardPort', 'wizardUser', 'wizardPassword']) {
+      $('#' + id)?.addEventListener('input', () => { connectionTested = false; });
+    }
     const totalSteps = 5;
 
     function showStep(step) {
@@ -9884,6 +9994,13 @@ ORDER BY IslemAdedi DESC;`;
     });
 
     $('#btnWizardNext')?.addEventListener('click', async () => {
+      if (currentStep === 1 && !$('#wizardUser')?.value.trim()) {
+        toast('Kullanıcı Adı Gerekli', 'Bağlantı için SQL kullanıcı adını girin.', 'warning');
+        $('#wizardUser')?.focus(); return;
+      }
+      if (currentStep === 2 && !connectionTested) {
+        toast('Bağlantıyı Test Edin', 'İlerlemeden önce başarılı bir sunucu bağlantı testi gerekir.', 'warning'); return;
+      }
       if (currentStep < totalSteps) {
         showStep(currentStep + 1);
       } else {
@@ -9898,43 +10015,31 @@ ORDER BY IslemAdedi DESC;`;
         const aiProvider = $('#wizardAiProvider')?.value;
         const aiKey = $('#wizardAiKey')?.value?.trim();
 
-        closeWizard();
-
-        // Connect if credentials entered
-        if (user && password) {
-          try {
-            await fetch('/api/connection/connect', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ server: host, port, user, password, database, remember: true })
-            });
-          } catch (_) {}
+        const nextButton = $('#btnWizardNext');
+        if (!connectionTested || !$('#wizardDatabaseSelect')?.value) {
+          toast('Kurulum Eksik', 'Bağlantıyı test edip erişilebilir bir veritabanı seçin.', 'warning'); return;
         }
-
-        // Save AI if entered
-        if (aiProvider && aiProvider !== 'none' && aiKey) {
-          try {
-            await fetch('/api/settings/config', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ai: {
-                  provider: aiProvider,
-                  apiKey: aiKey
-                }
-              })
+        nextButton.disabled = true;
+        try {
+          await apiJson('/api/connection/set-scope', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ primaryDatabase: database, selectedDatabases: [database] })
+          });
+          if (aiProvider && aiProvider !== 'none' && aiKey) {
+            await apiJson('/api/settings/config', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ai: { provider: aiProvider, apiKey: aiKey } })
             });
-          } catch (_) {}
-        }
-
-        // Apply prefix
-        if (prefix) {
+          }
           state.activePrefix = prefix;
           if ($('#settingViewPrefix')) $('#settingViewPrefix').value = prefix;
-        }
-
-        toast('Kurulum Tamamlandı', 'SQL Server taranıyor...', 'success');
-        triggerScan();
+          await syncEnvironmentAndConnection();
+          updateConnectionStatusUI();
+          if (!state.connected) throw new Error('Bağlantı doğrulanamadı. Kurulum tamamlanmadı.');
+          closeWizard();
+          await triggerScan();
+        } catch (error) { toast('Kurulum Tamamlanamadı', error.message, 'error'); }
+        finally { nextButton.disabled = false; }
       }
     });
 
@@ -9956,13 +10061,14 @@ ORDER BY IslemAdedi DESC;`;
       const password = $('#wizardPassword')?.value;
 
       try {
-        const res = await fetch('/api/connection/test', {
+        const res = await fetch('/api/connection/test-server', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ server: host, port, user, password })
         });
         const json = await res.json();
-        if (json.ok) {
+        connectionTested = Boolean(res.ok && json.ok);
+        if (connectionTested) {
           if (resultBox) {
             resultBox.innerHTML = `
               <div style="color:var(--green);font-weight:600;font-size:13px;margin-bottom:4px">✓ Bağlantı Başarılı!</div>
@@ -9972,7 +10078,7 @@ ORDER BY IslemAdedi DESC;`;
           if (json.databases && json.databases.length > 0) {
             const select = $('#wizardDatabaseSelect');
             if (select) {
-              select.innerHTML = json.databases.map(d => `<option value="${d}">${d}</option>`).join('');
+              select.innerHTML = json.databases.filter(d => d.is_accessible !== false && d.is_accessible !== 0).map(d => `<option value="${escapeHtml(d.name)}">${escapeHtml(d.name)}</option>`).join('');
             }
           }
         } else {
@@ -9984,6 +10090,7 @@ ORDER BY IslemAdedi DESC;`;
           }
         }
       } catch (err) {
+        connectionTested = false;
         if (resultBox) {
           resultBox.innerHTML = `
             <div style="color:var(--danger);font-weight:600;font-size:13px;margin-bottom:4px">✕ Bağlantı Hatası</div>
@@ -10025,9 +10132,8 @@ ORDER BY IslemAdedi DESC;`;
     initWorkspaces();
     initNavGroups();
     initKeyboardShortcutsModal();
-    initOnboardingWizard();
-
     await syncEnvironmentAndConnection();
+    initOnboardingWizard();
 
     updateConnectionStatusUI();
     renderOverview();

@@ -3,9 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="color-scheme" content="dark" />
+  <meta name="color-scheme" content="light dark" />
   <title>SQL Server Refactoring & Performance Studio</title>
+  <script src="/assets/js/theme.js"></script>
   <link rel="stylesheet" href="/assets/css/app.css" />
+  <link rel="stylesheet" href="/assets/css/premium-light.css" />
 </head>
 <body>
   <div class="noise"></div>
@@ -98,6 +100,7 @@
 
     <main class="main">
       <header class="topbar">
+        <button class="icon-button mobile-nav-toggle" id="mobileNavToggle" aria-label="Ana menüyü aç" aria-controls="appSidebar" aria-expanded="false">☰</button>
         <div class="topbar-left-wrap">
           <nav class="studio-breadcrumbs hidden" id="topbarBreadcrumbs" aria-label="Sayfa içi hiyerarşi">
             <span class="crumb-item" data-goto="overview">Genel Bakış</span>
@@ -130,7 +133,7 @@
             <h2 id="heroHeadline"><span id="heroViewCount">600</span> view içinden <em>gerçek darboğazı</em> bul.</h2>
             <p>Statik SQL analizi, dependency graph, Query Store ve plan regresyonlarını tek ekranda birleştir. AI sadece aday üretir; değişiklik validation geçmeden hiçbir şey deploy edilmez.</p>
             <div class="hero-actions">
-              <button class="button primary large" data-goto="views">Kritik View'ları İncele <span>→</span></button>
+              <button class="button primary large" data-goto="views" data-risk-filter="critical">Kritik View'ları İncele <span>→</span></button>
               <button class="button ghost large" data-goto="graph">Haritayı Aç</button>
             </div>
           </div>
@@ -1188,12 +1191,17 @@
             </div>
             <div class="val-quick-actions">
               <button class="button ghost small" id="btnValLoadSample" title="Örnek SQL'leri Yükle">✦ Örnek Yükle</button>
-              <button class="button primary small" id="btnValRunBoth" title="Her İki Sorguyu Doğrula">▶ Doğrula</button>
+              <button class="button primary small" id="btnValRunBoth" title="İki sorguyu çalıştırıp kaynak tüketimini karşılaştırır; semantik eşitliği doğrulamaz">▶ Performansı Ölç</button>
               <button class="button ghost small" id="btnValClear" title="Editörleri Temizle">Temizle</button>
             </div>
           </div>
         </div>
 
+        <div class="validation-context">
+          <label for="validationDatabaseSelect">Hedef veritabanı</label>
+          <select id="validationDatabaseSelect" class="select-styled" aria-label="Doğrulama veritabanı"></select>
+          <span>SQL veya veritabanı değiştiğinde önceki doğrulama geçersiz olur.</span>
+        </div>
         <!-- Resizable Split-View Container -->
         <div class="val-split-wrap" id="valSplitWrap">
           <div class="val-editor-pane" id="valOrigPane">
@@ -1275,8 +1283,8 @@
               </div>
             </div>
             <div class="validation-actions">
-              <label class="ack"><input type="checkbox" id="validationAck" checked> Üretim ortamında kontrollü test çalıştırma riskini anladım</label>
-              <button class="button primary" id="validateButton">✦ Validation Lab Doğrulamasını Başlat</button>
+              <label class="ack"><input type="checkbox" id="validationAck"> İki sorgunun seçili veritabanında kontrollü olarak çalıştırılacağını anladım</label>
+              <button class="button primary" id="validateButton" disabled>✦ Semantik Karşılaştırmayı Başlat</button>
             </div>
           </section>
 
@@ -1838,7 +1846,8 @@ ORDER BY IslemAdedi DESC;"></textarea>
               <div class="setting-card">
                 <div><strong>Tema (Color Theme)</strong><p>Arayüz renk paleti</p></div>
                 <select id="settingTheme" class="setting-input select-styled">
-                  <option value="dark" selected>Dark (Standart)</option>
+                  <option value="light" selected>Premium Light (Varsayılan)</option>
+                  <option value="dark">Koyu</option>
                   <option value="midnight">Midnight (OLED Deep Black)</option>
                   <option value="system">Sistem Teması</option>
                 </select>
@@ -2572,6 +2581,16 @@ ORDER BY IslemAdedi DESC;"></textarea>
   </div>
 
   <div class="toast-wrap" id="toastWrap"></div>
+  <div class="modal-backdrop hidden" id="newWorkspaceModal" role="dialog" aria-modal="true" aria-labelledby="newWorkspaceHeading">
+    <form class="modal workspace-create-modal" id="newWorkspaceForm">
+      <div class="panel-header"><div><span class="panel-kicker">REFAKTÖR ÇALIŞMASI</span><h2 id="newWorkspaceHeading">Yeni çalışma oluştur</h2></div><button type="button" class="icon-button" id="closeNewWorkspaceModal" aria-label="Pencereyi kapat">×</button></div>
+      <p>SQL metnini ve hedef veritabanını bir çalışmada saklayın. Bu işlem SQL çalıştırmaz.</p>
+      <label for="wsInputTitle">Çalışma adı</label><input class="setting-input" id="wsInputTitle" required maxlength="200" />
+      <div class="workspace-form-grid"><div><label for="wsInputDb">Veritabanı</label><input class="setting-input" id="wsInputDb" required /></div><div><label for="wsInputObject">Nesne / sorgu adı</label><input class="setting-input" id="wsInputObject" required /></div></div>
+      <label for="wsInputOrigSql">Başlangıç SQL'i</label><textarea class="code-editor" id="wsInputOrigSql" required spellcheck="false"></textarea>
+      <div class="modal-actions"><button type="button" class="button ghost" id="cancelNewWorkspaceModal">Vazgeç</button><button type="submit" class="button primary" id="submitNewWorkspace">Çalışmayı Oluştur</button></div>
+    </form>
+  </div>
   <script src="/assets/js/uiText.js"></script>
   <script src="/assets/js/mock-data.js"></script>
   <script src="/assets/js/modules/planComparison.js"></script>

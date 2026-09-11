@@ -94,7 +94,7 @@ const inMemoryConfig = {
     historyWindow: '24h'
   },
   appearance: {
-    theme: 'dark',
+    theme: 'light',
     density: 'comfortable',
     fontScale: 'default',
     editorFontSize: 14,
