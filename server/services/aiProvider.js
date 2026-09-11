@@ -280,9 +280,117 @@ async function proposeRefactor(params = {}) {
   };
 }
 
+function buildAnalyzePrompt(payload) {
+  return `You are a principal Microsoft SQL Server performance architect and query tuning specialist.\n\n` +
+    `YOUR MISSION:\n` +
+    `Analyze the provided SQL Server view query and context. Provide an in-depth, rigorous, and completely honest diagnostic analysis in TURKISH (Türkçe).\n\n` +
+    `CRITICAL INSTRUCTIONS:\n` +
+    `1. Language MUST be 100% TURKISH (Türkçe).\n` +
+    `2. Structure your response in clear, highly readable markdown with bullet points and bold highlights.\n` +
+    `3. Address the following key areas clearly with dedicated headers:\n` +
+    `   ### 🚨 Neden Yavaş Çalışıyor? (Temel Performans Darboğazları)\n` +
+    `   - Point out RBAR (Row-By-Agonizing-Row) patterns, user-defined scalar functions (dbo.fn_*), implicit data type conversions, correlated subqueries, or cartesian join hazards.\n` +
+    `   ### 🔄 Mükerrer Tablo Taramaları & Mantıksal Okuma (I/O) Baskısı\n` +
+    `   - Identify repeated table scans (e.g. accessing large tables multiple times across joins/subqueries), CTE inlining behavior, and lack of set-based aggregation.\n` +
+    `   ### 📉 İndeksleme & SARGability Sorunları\n` +
+    `   - Mention non-SARGable WHERE/JOIN predicates (functions on columns, calculations) that prevent index seeks and force table/clustered index scans.\n` +
+    `   ### 💡 Somut İyileştirme ve Refaktör Stratejisi\n` +
+    `   - Explain bullet by bullet what architectural changes would yield 70%+ I/O and CPU savings.\n\n` +
+    `TARGET VIEW CONTEXT:\n` +
+    JSON.stringify(payload, null, 2);
+}
+
+async function analyzeQuery(params = {}) {
+  const {
+    viewName,
+    sql,
+    problems = [],
+    baseTables = [],
+    options = {},
+    apiKey,
+    baseUrl,
+    model,
+    temperature,
+    maxTokens
+  } = params;
+
+  const key = apiKey || settings.getApiKey();
+  if (!key) throw new Error('AI API anahtarı eksik. Lütfen Ayarlar sekmesinden API anahtarınızı girin ve kaydedin.');
+  if (!global.fetch) throw new Error('Node.js 20+ fetch API gereklidir.');
+
+  const conf = settings.getConfig().ai;
+  const activeBaseUrl = baseUrl || conf.baseUrl || 'https://api.deepseek.com';
+  const url = normalizeChatUrl(activeBaseUrl);
+  let activeModel = (model || conf.model || 'deepseek-flash').trim();
+  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
+    activeModel = 'deepseek-flash';
+  }
+  const activeTemp = temperature ?? conf.temperature ?? 0.2;
+  const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
+
+  const contextPack = {
+    targetView: viewName,
+    originalSql: sql,
+    problems,
+    baseTables,
+    options
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model: activeModel,
+      temperature: activeTemp,
+      max_tokens: activeTokens,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a principal Microsoft SQL Server query performance engineer and database architect. ' +
+            'Provide a rigorous, actionable diagnostic analysis in TURKISH (Türkçe) explaining why the given SQL Server query suffers from performance degradation and logical I/O pressure.'
+        },
+        {
+          role: 'user',
+          content: buildAnalyzePrompt(contextPack)
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '');
+    throw new Error(parseApiError(response, errorBody, key));
+  }
+
+  const resJson = await response.json();
+  const choice = resJson.choices?.[0];
+  const content = (choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '').trim();
+
+  if (!content) {
+    throw new Error('AI sağlayıcıdan analiz yanıtı alınamadı.');
+  }
+
+  return {
+    ok: true,
+    data: {
+      viewName,
+      analysis: content,
+      model: resJson.model || activeModel
+    },
+    analysis: content,
+    model: resJson.model || activeModel
+  };
+}
+
 module.exports = {
   buildRefactorPrompt,
+  buildAnalyzePrompt,
   proposeRefactor,
+  analyzeQuery,
   generateCandidate: proposeRefactor,
   testConnection
 };

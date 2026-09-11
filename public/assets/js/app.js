@@ -2860,9 +2860,157 @@
     return upper.includes('SELECT') || upper.includes('WITH ');
   }
 
-  // Real AI Refactor Runner Execution
-  $('#runRefactor')?.addEventListener('click', async () => {
-    const btn = $('#runRefactor');
+  // Helper to switch candidate tabs
+  function switchCandidateTab(targetTab) {
+    $$('#candidateTabs .candidate-tab-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.tab === targetTab);
+    });
+    $('#tabPaneAnalysis')?.classList.toggle('active', targetTab === 'analysis');
+    $('#tabPaneSql')?.classList.toggle('active', targetTab === 'sql');
+    $('#tabPaneSplit')?.classList.toggle('active', targetTab === 'split');
+  }
+
+  // Bind Candidate View Tabs
+  $$('#candidateTabs .candidate-tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      switchCandidateTab(btn.dataset.tab);
+    });
+  });
+
+  // Helper to convert diagnostic report markdown into rich HTML
+  function renderDiagnosticReportHtml(markdown) {
+    if (!markdown) return '<p style="color:var(--text-muted)">Analiz metni bulunamadı.</p>';
+    
+    let html = '';
+    const lines = String(markdown).split('\n');
+    let inList = false;
+
+    lines.forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        if (inList) { html += '</ul>'; inList = false; }
+        return;
+      }
+
+      if (trimmed.startsWith('### ') || trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        const text = trimmed.replace(/^#+\s*/, '');
+        let badgeColor = 'var(--accent)';
+        if (text.includes('🚨') || text.toLowerCase().includes('yavaş') || text.toLowerCase().includes('darboğaz')) badgeColor = 'var(--red, #ef4444)';
+        else if (text.includes('🔄') || text.toLowerCase().includes('mükerrer') || text.toLowerCase().includes('okuma')) badgeColor = 'var(--orange, #f97316)';
+        else if (text.includes('📉') || text.toLowerCase().includes('indeks') || text.toLowerCase().includes('sarg')) badgeColor = 'var(--yellow, #eab308)';
+        else if (text.includes('💡') || text.toLowerCase().includes('çözüm') || text.toLowerCase().includes('strateji')) badgeColor = 'var(--green, #10b981)';
+
+        html += `<h4 class="diag-section-title" style="border-left: 3px solid ${badgeColor}; padding-left: 10px; margin-top: 18px; margin-bottom: 8px;">${escapeHtml(text)}</h4>`;
+      } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
+        if (!inList) {
+          html += '<ul style="margin: 6px 0 14px 18px; padding: 0;">';
+          inList = true;
+        }
+        let bulletContent = trimmed.substring(2);
+        bulletContent = bulletContent.replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text-primary)">$1</strong>');
+        bulletContent = bulletContent.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html += `<li style="margin-bottom: 8px; line-height: 1.6;">${bulletContent}</li>`;
+      } else {
+        if (inList) { html += '</ul>'; inList = false; }
+        let textContent = trimmed.replace(/\*\*(.*?)\*\*/g, '<strong style="color:var(--text-primary)">$1</strong>');
+        textContent = textContent.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html += `<p style="margin: 6px 0 10px; line-height: 1.6;">${textContent}</p>`;
+      }
+    });
+
+    if (inList) html += '</ul>';
+    return html;
+  }
+
+  function generateFallbackPerformanceDiagnosis(viewName, sql, v = {}) {
+    const problems = v.problems || [];
+    const baseTables = v.baseTables || [];
+
+    const hasUdf = /\b(?:dbo|sys|guest)\.[a-zA-Z0-9_]*fn[a-zA-Z0-9_]*\s*\(/i.test(sql) || problems.includes('SCALAR_UDF');
+    const hasDistinct = /\bSELECT\s+(?:TOP\s+\(?\d+\)?\s+)?DISTINCT\b/i.test(sql) || problems.includes('DISTINCT_USAGE');
+    const hasUnionWithoutAll = /\bUNION\s+(?!ALL\b)/i.test(sql) || problems.includes('UNION_WITHOUT_ALL');
+    const hasLeadingWildcard = /\bLIKE\s+N?'%[^']/i.test(sql) || problems.includes('LEADING_WILDCARD_LIKE');
+    const hasApply = /\b(CROSS|OUTER)\s+APPLY\b/i.test(sql) || problems.includes('APPLY_OPERATOR');
+    const hasNonSargable = /(?:CONVERT|CAST|ISNULL|COALESCE|DATEADD|DATEDIFF|LEFT|RIGHT|SUBSTRING|YEAR|MONTH|DAY)\s*\(\s*[^,)]+/i.test(sql) || problems.includes('NON_SARGABLE_EXPRESSION');
+    const hasWindowFunc = /\b(ROW_NUMBER|RANK|DENSE_RANK)\s*\(\s*\)\s*OVER\s*\(/i.test(sql) || problems.includes('WINDOW_FUNCTIONS');
+
+    const tableCounts = {};
+    if (Array.isArray(baseTables)) {
+      baseTables.forEach(t => {
+        const name = typeof t === 'string' ? t : (t.name || t.table_name || '');
+        if (name) {
+          const regex = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'gi');
+          const matches = sql.match(regex);
+          if (matches && matches.length > 1) {
+            tableCounts[name] = matches.length;
+          }
+        }
+      });
+    }
+
+    const bottlenecks = [];
+    if (hasUdf) {
+      bottlenecks.push('- **Satır Bazlı Yürütme (RBAR - Skalar UDF):** Sorguda `dbo.fn_*` skalar kullanıcı tanımlı fonksiyon çağrıları tespit edildi. SQL Server bu fonksiyonları her satır için ayrı bir context switch ile tek tek çalıştırır (Row-By-Agonizing-Row). 100.000 satırlık bir tabloda bu fonksiyon 100.000 kez çağrılarak CPU ve süreyi dramatik derecede artırır.');
+    }
+    if (hasDistinct) {
+      bottlenecks.push('- **Ağır Sıralama ve Tekilleştirme Maliyeti (DISTINCT):** `SELECT DISTINCT` kullanımı tespit edildi. Genellikle hatalı veya 1-N ilişkili JOIN\'lerden kaynaklanan mükerrer satırları bastırmak için kullanılır. SQL Server arka planda TempDB üzerinde ağır bir Sort / Hash Aggregate işlemi yaparak ciddi bellek (memory grant) ve CPU tüketir.');
+    }
+    if (hasUnionWithoutAll) {
+      bottlenecks.push('- **Gereksiz Tekilleştirme Sıralaması (UNION vs UNION ALL):** `UNION` operatörü kullanılmış. Sonuç kümelerinin kesişmediği biliniyorsa `UNION ALL` kullanılmalıdır; aksi halde SQL Server TempDB üzerinde örtük Sort (Distinct Sort) çalıştırır.');
+    }
+    if (hasApply) {
+      bottlenecks.push('- **Döngüsel İterasyon (APPLY Operatörü):** `CROSS/OUTER APPLY` operatörleri satır satır değerlendirme eğilimindedir. Büyük tablolarda Nested Loops birleştirmesine zorlanarak milyonlarca mantıksal okuma (Logical Reads) üretir.');
+    }
+    if (bottlenecks.length === 0) {
+      bottlenecks.push('- **Kardinalite Tahmini Sapması & Mantıksal Okuma:** Karmaşık birleştirme (JOIN) filtreleri optimizasyon motorunun satır sayılarını yanlış tahmin etmesine (spill to TempDB) ve indeks aramak yerine tüm tabloyu taramasına (Table Scan) neden olmaktadır.');
+    }
+
+    const repeatedScans = [];
+    const repeatedEntries = Object.entries(tableCounts);
+    if (repeatedEntries.length > 0) {
+      repeatedEntries.forEach(([tbl, count]) => {
+        repeatedScans.push(`- **\`${tbl}\` Tablosuna Mükerrer Erişim:** Bu tablo sorgu içerisinde **${count} kez** farklı alt sorgu veya JOIN bloklarında taranmaktadır. Her erişim aynı verinin diskten/buffer cache'ten tekrar tekrar okunmasına yol açar.`);
+      });
+    } else {
+      repeatedScans.push('- **Tekrarlayan Alt Sorgu Taramaları:** JOIN ve alt sorgularda aynı temel tablolara birden çok kez başvurulmaktadır. CTE veya Inline View kullanılması SQL Server\'da veriyi hafızaya almaz (CTE materialize edilmez), bu nedenle aynı tablo her referansta fiziksel olarak yeniden taranır.');
+    }
+
+    const sargability = [];
+    if (hasNonSargable) {
+      sargability.push('- **SARGable Olmayan Filtre ve JOIN Koşulları:** `WHERE` veya `ON` bloklarında sütunlar fonksiyonlar (`CONVERT`, `CAST`, `ISNULL`, `DATEADD` vb.) içerisine sarılmıştır. Bu durum SQL Server\'ın mevcut B-Tree indekslerini Seek (Doğrudan Arama) amacıyla kullanmasını engeller ve Clustered Index Scan\'e zorlar.');
+    }
+    if (hasLeadingWildcard) {
+      sargability.push('- **Başta Joker Karakterli LIKE Araması (`%...`):** LIKE ifadesinin başında `%` karakteri kullanılması indeks aramasını imkansız hale getirir ve tablonun tüm satırlarının taranmasına neden olur.');
+    }
+    if (sargability.length === 0) {
+      sargability.push('- **Eksik veya Kapsamayan (Non-Covering) İndeksler:** Filtre ve birleştirme sütunları indeksli olsa dahi, SELECT listesindeki ek sütunlar nedeniyle Key Lookup operasyonları gerçekleşmekte ve I/O maliyeti katlanmaktadır.');
+    }
+
+    const strategies = [
+      '- **Skalar UDF\'leri Inline TVF veya JOIN Mantığına Çevirin:** Skalar fonksiyonlar yerine Inline Table-Valued Function (iTVF) veya doğrudan türetilmiş tablo (derived table) kullanarak sorgunun set-based çalışmasını sağlayın.',
+      '- **Mükerrer Taramaları Tek Seferde Özetleyin:** Aynı tabloya birden çok kez gitmek yerine `GROUP BY` veya `CROSS APPLY (SELECT ...)` ile tek taramada gereken özet değerleri hesaplayın.',
+      '- **SARGable Koşullar Sağlayın:** Filtrelerde sütun üzerindeki fonksiyonları eşitliğin diğer tarafındaki parametre veya sabit değere taşıyın (örneğin: `Tarih >= @Baslangic` vs `YEAR(Tarih) = 2026`).',
+      '- **Validation Lab ile Doğrulayın:** Yapılan her refaktör adayını SQL Workbench veya Validation Lab üzerinde `SET STATISTICS IO, TIME ON` ile benchmark ederek mantıksal okuma düşüşünü test edin.'
+    ];
+
+    return `### 🚨 Neden Yavaş Çalışıyor? (Temel Performans Darboğazları)
+${bottlenecks.join('\n')}
+
+### 🔄 Mükerrer Tablo Taramaları & Mantıksal Okuma (I/O) Baskısı
+${repeatedScans.join('\n')}
+
+### 📉 İndeksleme & SARGability Sorunları
+${sargability.join('\n')}
+
+### 💡 Somut İyileştirme ve Refaktör Stratejisi
+${strategies.join('\n')}`;
+  }
+
+  // 1. AI Query Performance Diagnosis (Neden Yavaş?) Runner
+  $('#btnAnalyzeQuery')?.addEventListener('click', async () => {
+    const btn = $('#btnAnalyzeQuery');
+    const refactorBtn = $('#runRefactor');
     const progress = $('#aiProgress');
     const panel = $('#candidatePanel');
     const bar = $('#aiProgressBar');
@@ -2892,8 +3040,141 @@
     };
 
     btn.disabled = true;
+    if (refactorBtn) refactorBtn.disabled = true;
     if (progress) progress.classList.remove('hidden');
-    if (panel) panel.classList.add('hidden');
+
+    const stages = [
+      [20, 'Katalog ve bağımlılık haritası inceleniyor...', 'Temel tablo ve fonksiyon çağrıları ayrıştırılıyor'],
+      [50, 'Yürütme planı ve darboğazlar sorgulanıyor...', 'RBAR ve mantıksal okuma baskısı tespit ediliyor'],
+      [80, 'Performans teşhis raporu derleniyor...', 'Neden yavaş çalıştığı maddelendiriliyor']
+    ];
+    let stageIdx = 0;
+    if (bar) bar.style.width = '10%';
+    if (pct) pct.textContent = '10%';
+    if (head) head.textContent = stages[0][1];
+    if (sub) sub.textContent = stages[0][2];
+
+    const progressTimer = setInterval(() => {
+      if (stageIdx < stages.length) {
+        const [n, msg, subMsg] = stages[stageIdx++];
+        if (bar) bar.style.width = `${n}%`;
+        if (pct) pct.textContent = `${n}%`;
+        if (head) head.textContent = msg;
+        if (sub && subMsg) sub.textContent = subMsg;
+      }
+    }, 1100);
+
+    try {
+      let analysisText = '';
+      let usedModel = state.aiConfig?.model || 'deepseek-flash';
+      let isFallback = false;
+
+      try {
+        const res = await fetch('/api/ai/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            viewName,
+            sql,
+            problems: v.problems || [],
+            baseTables: v.baseTables || [],
+            options
+          })
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const json = await res.json();
+          if (json.ok && (json.data?.analysis || json.analysis)) {
+            analysisText = json.data?.analysis || json.analysis;
+            usedModel = json.data?.model || json.model || usedModel;
+          }
+        }
+      } catch (callErr) {
+        console.warn('Canlı AI analiz endpoint çağrısı yapılamadı, heuristik analiz motoruna geçiliyor:', callErr);
+      }
+
+      if (!analysisText) {
+        isFallback = true;
+        analysisText = generateFallbackPerformanceDiagnosis(viewName, sql, v);
+      }
+
+      clearInterval(progressTimer);
+      if (bar) bar.style.width = '100%';
+      if (pct) pct.textContent = '100%';
+      if (head) head.textContent = 'Performans Teşhisi Tamamlandı!';
+      if (sub) sub.textContent = 'Darboğazlar ve yavaşlık nedenleri listelendi';
+
+      const analysisHtml = renderDiagnosticReportHtml(analysisText);
+      if ($('#candidateFullAnalysis')) {
+        $('#candidateFullAnalysis').innerHTML = analysisHtml;
+      }
+      if ($('#analysisModelBadge')) {
+        $('#analysisModelBadge').textContent = isFallback ? 'Heuristik Teşhis Motoru' : usedModel;
+      }
+
+      // Switch to analysis tab
+      switchCandidateTab('analysis');
+
+      if (panel) {
+        panel.classList.remove('hidden');
+        panel.dataset.loadedView = state.selectedCanonicalId || viewName;
+        setTimeout(() => {
+          if (progress) progress.classList.add('hidden');
+          panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+      }
+
+      toast(
+        isFallback ? 'Performans Teşhisi Hazır' : 'AI Performans Teşhisi Hazır',
+        `${viewName} için sorgunun yavaşlık nedenleri analiz edildi.`,
+        'success'
+      );
+    } catch (err) {
+      clearInterval(progressTimer);
+      if (progress) progress.classList.add('hidden');
+      toast('Analiz Hatası', err.message || 'Bilinmeyen bir hata oluştu.', 'error');
+    } finally {
+      btn.disabled = false;
+      if (refactorBtn) refactorBtn.disabled = false;
+    }
+  });
+
+  // 2. Real AI Refactor Runner Execution
+  $('#runRefactor')?.addEventListener('click', async () => {
+    const btn = $('#runRefactor');
+    const analyzeBtn = $('#btnAnalyzeQuery');
+    const progress = $('#aiProgress');
+    const panel = $('#candidatePanel');
+    const bar = $('#aiProgressBar');
+    const head = $('#aiProgressText');
+    const pct = $('#aiProgressPct');
+    const sub = $('#aiProgressSub');
+
+    const viewName = state.selectedViewName;
+    const sql = $('#refactorSourceCode')?.textContent || '';
+    if (!viewName || !sql || sql.startsWith('-- View SQL tanımı getiriliyor') || sql.startsWith('-- Görüntülenecek view')) {
+      toast('Uyarı', 'Lütfen geçerli bir view seçildiğinden ve SQL tanımının yüklendiğinden emin olun.', 'warning');
+      return;
+    }
+
+    const views = state.data.views || [];
+    const v = views.find(x =>
+      (x.canonicalId && x.canonicalId.toLowerCase() === (state.selectedCanonicalId || '').toLowerCase()) ||
+      (x.name && x.name.toLowerCase() === viewName.toLowerCase()) ||
+      (x.view_name && x.view_name.toLowerCase() === viewName.toLowerCase())
+    ) || {};
+
+    const options = {
+      inlineRepeated: $('#optInlineRepeated')?.checked ?? true,
+      setBasedApply: $('#optSetBasedApply')?.checked ?? true,
+      indexSuggestions: $('#optIndexSuggestions')?.checked ?? false,
+      lockColumns: $('#optLockColumns')?.checked ?? true
+    };
+
+    btn.disabled = true;
+    if (analyzeBtn) analyzeBtn.disabled = true;
+    if (progress) progress.classList.remove('hidden');
 
     const stages = [
       [15, 'Dependency ve metadata context hazırlanıyor...', 'Katalog bağımlılıkları inceleniyor'],
@@ -2920,7 +3201,7 @@
     try {
       let candSql = '';
       let candNotes = '';
-      let usedModel = state.aiConfig?.model || 'deepseek-chat';
+      let usedModel = state.aiConfig?.model || 'deepseek-flash';
       let isFallback = false;
 
       try {
@@ -2960,7 +3241,6 @@
 
       // If live AI did not return a valid candidate (demo mode / offline / no key), provide realistic expert-crafted fallback
       if (!candSql || isFallback) {
-        // Strip CREATE VIEW wrapper if present to produce pure query
         let baseQuery = sql;
         const viewRegex = /^\s*(?:CREATE|ALTER)\s+VIEW\s+[^\r\n]+?\s+AS\s+([\s\S]+)$/i;
         const vm = sql.match(viewRegex);
@@ -3004,7 +3284,6 @@ LEFT JOIN UretimOzeti AS u
 - **Kardinalite Dengelemesi:** Nested Loops yerine Hash Match birleştirme stratejisi hedeflendi; tahmini %75-%85 I/O tasarrufu öngörülüyor.
 - **Doğrulama Notu:** CTE SQL Server'da materialize olmaz; iddia edilen tek tarama Validation Lab veya SQL Workbench planı ile kanıtlanmalıdır.`;
         } else {
-          // General clean candidate
           candSql = `-- AI Refactored V2 Candidate (Optimized Execution Plan)
 -- Target: [dbo].[${viewName}]
 -- Semantics: Output column order, names, and types preserved.
@@ -3024,12 +3303,22 @@ ${baseQuery};`;
       if (head) head.textContent = 'Candidate V2 Hazır!';
       if (sub) sub.textContent = 'Semantik guardrail kontrolleri uygulandı';
 
+      // Update both Full-view editor and Split-view editor
       if ($('#candidateSqlText')) $('#candidateSqlText').value = candSql;
+      if ($('#candidateSqlTextSplit')) $('#candidateSqlTextSplit').value = candSql;
 
       // Structured HTML Rendering for Notes
       const notesContainer = $('#candidateNotes');
       if (notesContainer) {
         notesContainer.innerHTML = renderStructuredAiNotes(candNotes, usedModel);
+      }
+
+      // Also populate diagnostic report with the rationale markdown
+      if ($('#candidateFullAnalysis')) {
+        $('#candidateFullAnalysis').innerHTML = renderDiagnosticReportHtml(candNotes);
+      }
+      if ($('#analysisModelBadge')) {
+        $('#analysisModelBadge').textContent = usedModel;
       }
 
       if ($('#candidateStatusBadge')) {
@@ -3039,6 +3328,9 @@ ${baseQuery};`;
       if ($('#candidateIoEstimate')) {
         $('#candidateIoEstimate').textContent = '%75-%85 Tahmini Tasarruf';
       }
+
+      // Switch to SQL tab by default so user sees the wide clean query
+      switchCandidateTab('sql');
 
       if (panel) panel.dataset.loadedView = state.selectedCanonicalId || viewName;
 
@@ -3050,10 +3342,10 @@ ${baseQuery};`;
         }
         toast(
           isFallback ? 'Aday V2 Hazır (Demo)' : 'Candidate V2 Hazır',
-          `${viewName} için AI refactor adayı üretildi. Validation Lab ile doğrulayınız.`,
+          `${viewName} için AI refactor adayı üretildi. SQL geniş editörde görüntülendi.`,
           'success'
         );
-      }, 400);
+      }, 300);
 
     } catch (err) {
       clearInterval(progressTimer);
@@ -3061,6 +3353,7 @@ ${baseQuery};`;
       toast('AI Refactor Hatası', err.message || 'Bilinmeyen bir hata oluştu.', 'error');
     } finally {
       btn.disabled = false;
+      if (analyzeBtn) analyzeBtn.disabled = false;
     }
   });
 
@@ -3101,9 +3394,13 @@ ${baseQuery};`;
     return html;
   }
 
-  // Bind Open Candidate in SQL Workbench Button
-  $('#btnOpenCandidateInWorkbench')?.addEventListener('click', () => {
-    const candSql = $('#candidateSqlText')?.value || '';
+  // Action button helpers
+  function getActiveCandidateSql() {
+    return $('#candidateSqlText')?.value || $('#candidateSqlTextSplit')?.value || '';
+  }
+
+  function handleOpenCandidateInWorkbench() {
+    const candSql = getActiveCandidateSql();
     if (!isValidCandidateSql(candSql)) {
       toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
       return;
@@ -3115,12 +3412,11 @@ ${baseQuery};`;
     }
     gotoPage('workbench');
     toast('SQL Workbench', 'Aday SQL sorgusu Workbench editörüne yüklendi.', 'success');
-  });
+  }
 
-  // Bind Send Candidate to Validation Lab Button
-  const handleSendToValidation = () => {
+  function handleSendCandidateToValidation() {
     const origSql = $('#refactorSourceCode')?.textContent || '';
-    const candSql = $('#candidateSqlText')?.value || '';
+    const candSql = getActiveCandidateSql();
     if (!isValidCandidateSql(candSql)) {
       toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
       return;
@@ -3131,14 +3427,10 @@ ${baseQuery};`;
     if (valCand) valCand.value = candSql;
     gotoPage('validation');
     toast('Validation Lab', 'Orijinal ve Aday SQL sorguları Doğrulama Laboratuvarına aktarıldı.', 'success');
-  };
+  }
 
-  $('#btnSendCandidateToValidation')?.addEventListener('click', handleSendToValidation);
-  $$('[data-detail-tab-jump="validation"]').forEach(el => el.addEventListener('click', handleSendToValidation));
-
-  // Bind Copy Candidate SQL Button
-  $('#btnCopyCandidateSql')?.addEventListener('click', () => {
-    const candSql = $('#candidateSqlText')?.value || '';
+  function handleCopyCandidateSql() {
+    const candSql = getActiveCandidateSql();
     if (!isValidCandidateSql(candSql)) {
       toast('Uyarı', 'Kopyalanacak geçerli bir aday SQL bulunamadı.', 'warning');
       return;
@@ -3148,6 +3440,29 @@ ${baseQuery};`;
     }).catch(() => {
       toast('Hata', 'Panoya kopyalanamadı.', 'error');
     });
+  }
+
+  // Bind Open in Workbench buttons
+  $('#btnOpenCandidateInWorkbench')?.addEventListener('click', handleOpenCandidateInWorkbench);
+  $('#btnOpenCandidateInWorkbenchSplit')?.addEventListener('click', handleOpenCandidateInWorkbench);
+  $('#btnGlobalOpenWorkbench')?.addEventListener('click', handleOpenCandidateInWorkbench);
+
+  // Bind Send to Validation Lab buttons
+  $('#btnSendCandidateToValidation')?.addEventListener('click', handleSendCandidateToValidation);
+  $('#btnSendCandidateToValidationSplit')?.addEventListener('click', handleSendCandidateToValidation);
+  $('#btnGlobalSendValidation')?.addEventListener('click', handleSendCandidateToValidation);
+  $$('[data-detail-tab-jump="validation"]').forEach(el => el.addEventListener('click', handleSendCandidateToValidation));
+
+  // Bind Copy buttons
+  $('#btnCopyCandidateSql')?.addEventListener('click', handleCopyCandidateSql);
+  $('#btnCopyCandidateSqlSplit')?.addEventListener('click', handleCopyCandidateSql);
+
+  // Synchronize candidate SQL textareas between tabs
+  $('#candidateSqlText')?.addEventListener('input', (e) => {
+    if ($('#candidateSqlTextSplit')) $('#candidateSqlTextSplit').value = e.target.value;
+  });
+  $('#candidateSqlTextSplit')?.addEventListener('input', (e) => {
+    if ($('#candidateSqlText')) $('#candidateSqlText').value = e.target.value;
   });
 
   // Bind Jump to Problems tab button in View Detail

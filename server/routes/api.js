@@ -185,6 +185,20 @@ router.post('/ai/refactor', async (req, res) => {
   }
 });
 
+// 10-alt. AI Query Performance Diagnosis
+router.post('/ai/analyze', async (req, res) => {
+  try {
+    const { viewName, sql, problems = [], baseTables = [], options = {} } = req.body;
+    if (!viewName || !sql) {
+      return res.status(400).json({ ok: false, error: 'viewName ve sql alanları zorunludur.' });
+    }
+    const result = await ai.analyzeQuery({ viewName, sql, problems, baseTables, options });
+    res.json(result);
+  } catch (error) {
+    handleSafeError(res, error, 'Sorgu analizi yapılamadı.');
+  }
+});
+
 // 10b. AI Connection Test
 router.post('/ai/test', async (req, res) => {
   try {
