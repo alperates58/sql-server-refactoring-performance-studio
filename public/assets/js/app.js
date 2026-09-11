@@ -381,7 +381,6 @@
     }
 
     // Pressure List Top 5
-    const pressures = state.data.pressures || [];
     const pressureList = $('#pressureList');
     if (pressureList) {
       pressureList.innerHTML = pressures.slice(0, 5).map(p => `
