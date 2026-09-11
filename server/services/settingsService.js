@@ -12,6 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
+const pkg = require('../../package.json');
 
 const RUNTIME_DIR = path.join(__dirname, '..', '..', 'runtime');
 const SETTINGS_FILE = path.join(RUNTIME_DIR, 'settings.local.json');
@@ -99,6 +100,13 @@ const inMemoryConfig = {
     editorFontSize: 14,
     graphGrid: 'on',
     animations: 'on'
+  },
+  workbench: {
+    maxRows: 10000,
+    historyRetention: 10000,
+    editorFontSize: 14,
+    minimap: true,
+    wordWrap: 'off'
   }
 };
 
@@ -116,6 +124,7 @@ function loadPersistedConfig() {
     if (parsed.scoring) inMemoryConfig.scoring = { ...inMemoryConfig.scoring, ...parsed.scoring };
     if (parsed.runtime) inMemoryConfig.runtime = { ...inMemoryConfig.runtime, ...parsed.runtime };
     if (parsed.appearance) inMemoryConfig.appearance = { ...inMemoryConfig.appearance, ...parsed.appearance };
+    if (parsed.workbench) inMemoryConfig.workbench = { ...inMemoryConfig.workbench, ...parsed.workbench };
 
     if (parsed.ai) {
       if (parsed.ai.provider) inMemoryConfig.ai.provider = parsed.ai.provider;
@@ -165,6 +174,7 @@ function savePersistedConfig() {
       scoring: inMemoryConfig.scoring,
       runtime: inMemoryConfig.runtime,
       appearance: inMemoryConfig.appearance,
+      workbench: inMemoryConfig.workbench,
       ai: {
         provider: inMemoryConfig.ai.provider,
         baseUrl: inMemoryConfig.ai.baseUrl,
@@ -209,6 +219,7 @@ function getConfig() {
     },
     runtime: { ...inMemoryConfig.runtime },
     appearance: { ...inMemoryConfig.appearance },
+    workbench: { ...inMemoryConfig.workbench },
     savedDbConnection: savedDbConnection ? {
       server: savedDbConnection.server,
       port: savedDbConnection.port,
@@ -262,6 +273,25 @@ function updateConfig(updates = {}) {
       ...updates.appearance
     };
   }
+  if (updates.workbench) {
+    const wb = { ...updates.workbench };
+    if (wb.maxRows !== undefined) {
+      const mr = Number(wb.maxRows);
+      wb.maxRows = Math.max(100, Math.min(50000, Number.isNaN(mr) ? 10000 : mr));
+    }
+    if (wb.historyRetention !== undefined) {
+      const hr = Number(wb.historyRetention);
+      wb.historyRetention = Math.max(1000, Math.min(50000, Number.isNaN(hr) ? 10000 : hr));
+    }
+    if (wb.editorFontSize !== undefined) {
+      const fs = Number(wb.editorFontSize);
+      wb.editorFontSize = Math.max(11, Math.min(24, Number.isNaN(fs) ? 14 : fs));
+    }
+    inMemoryConfig.workbench = {
+      ...inMemoryConfig.workbench,
+      ...wb
+    };
+  }
 
   savePersistedConfig();
   return getConfig();
@@ -308,6 +338,99 @@ function resetScoringDefaults() {
   return inMemoryConfig.scoring;
 }
 
+function exportDiagnostics(extraInfo = {}) {
+  const cfg = getConfig();
+  const safeDb = cfg.savedDbConnection ? {
+    server: cfg.savedDbConnection.server,
+    port: cfg.savedDbConnection.port,
+    user: cfg.savedDbConnection.user,
+    encrypt: cfg.savedDbConnection.encrypt,
+    trustServerCertificate: cfg.savedDbConnection.trustServerCertificate,
+    primaryDatabase: cfg.savedDbConnection.primaryDatabase,
+    selectedDatabases: cfg.savedDbConnection.selectedDatabases
+  } : null;
+
+  return {
+    studioVersion: pkg.version,
+    exportTimestamp: new Date().toISOString(),
+    exportedAt: new Date().toISOString(),
+    app: {
+      name: 'SQL Server Refactoring & Performance Studio',
+      version: pkg.version,
+      mode: 'READ ONLY (ZERO MUTATION)'
+    },
+    system: {
+      nodeVersion: process.version,
+      platform: process.platform,
+      arch: process.arch,
+      uptimeSeconds: Math.round(process.uptime()),
+      memory: {
+        heapUsedMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+        heapTotalMb: Math.round(process.memoryUsage().heapTotal / 1024 / 1024)
+      }
+    },
+    settingsSummary: {
+      ai: {
+        provider: cfg.ai.provider,
+        baseUrl: cfg.ai.baseUrl,
+        model: cfg.ai.model,
+        temperature: cfg.ai.temperature,
+        maxTokens: cfg.ai.maxTokens,
+        hasApiKey: cfg.ai.hasApiKey
+      },
+      database: safeDb || {}
+    },
+    database: safeDb,
+    scoring: cfg.scoring,
+    ai: {
+      provider: cfg.ai.provider,
+      baseUrl: cfg.ai.baseUrl,
+      model: cfg.ai.model,
+      temperature: cfg.ai.temperature,
+      maxTokens: cfg.ai.maxTokens,
+      hasApiKey: cfg.ai.hasApiKey
+    },
+    workbench: cfg.workbench || { maxRows: 10000, historyRetention: 10000 },
+    appearance: cfg.appearance,
+    ...extraInfo
+  };
+}
+
+function saveWorkbenchConfig(updates = {}) {
+  if (!inMemoryConfig.workbench) {
+    inMemoryConfig.workbench = {
+      maxRows: 10000,
+      historyRetention: 10000,
+      editorFontSize: 14,
+      minimap: true,
+      wordWrap: 'off'
+    };
+  }
+  if (updates.maxRows !== undefined) {
+    const r = Number(updates.maxRows);
+    inMemoryConfig.workbench.maxRows = Math.max(100, Math.min(50000, Number.isFinite(r) ? r : 10000));
+  }
+  if (updates.historyRetention !== undefined) {
+    const h = Number(updates.historyRetention);
+    inMemoryConfig.workbench.historyRetention = Math.max(1000, Math.min(50000, Number.isFinite(h) ? h : 10000));
+  }
+  if (updates.minimap !== undefined) {
+    inMemoryConfig.workbench.minimap = Boolean(updates.minimap);
+  }
+  if (updates.wordWrap !== undefined) {
+    const valid = ['on', 'off', 'wordWrapColumn', 'bounded'];
+    inMemoryConfig.workbench.wordWrap = valid.includes(updates.wordWrap) ? updates.wordWrap : 'off';
+  }
+  if (updates.editorFontSize !== undefined) {
+    const f = Number(updates.editorFontSize);
+    if (Number.isFinite(f) && f >= 10 && f <= 32) {
+      inMemoryConfig.workbench.editorFontSize = f;
+    }
+  }
+  savePersistedConfig();
+  return getConfig();
+}
+
 module.exports = {
   getConfig,
   updateConfig,
@@ -315,5 +438,7 @@ module.exports = {
   getSavedDbConnection,
   saveDbConnection,
   clearDbConnection,
-  resetScoringDefaults
+  resetScoringDefaults,
+  exportDiagnostics,
+  saveWorkbenchConfig
 };

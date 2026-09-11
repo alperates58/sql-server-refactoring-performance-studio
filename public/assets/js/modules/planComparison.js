@@ -103,7 +103,7 @@
     } else if (afterSeeks < beforeSeeks) {
       changes.push({
         code: 'INDEX_SEEK_REDUCED',
-        significance: 'NEGATIVE',
+        significance: 'REVIEW',
         title: 'İndeks Seek Azaldı',
         detail: `Önceki plandaki Index Seek operatörü kaldırıldı veya taramaya dönüştü.`
       });
@@ -113,7 +113,7 @@
     if (afterLookups > beforeLookups) {
       changes.push({
         code: 'KEY_LOOKUP_ADDED',
-        significance: 'NEGATIVE',
+        significance: 'REVIEW',
         title: 'Key/RID Lookup Operatörü Eklendi',
         detail: `Yeni planda ${afterLookups - beforeLookups} adet Key Lookup tespit edildi. Eksik covering index nedeniyle her satır için ek I/O maliyeti oluşacaktır.`
       });
@@ -161,8 +161,9 @@
     }
 
     // TempDB Spills
-    const beforeHasSpill = beforeWarns.some(w => w.code === 'SPILL_TEMPDB');
-    const afterHasSpill = afterWarns.some(w => w.code === 'SPILL_TEMPDB');
+    const isSpill = w => w.code === 'SPILL_TEMPDB' || w.kind === 'SPILL_TEMPDB' || (w.message && /tempdb.*spill/i.test(w.message));
+    const beforeHasSpill = beforeWarns.some(isSpill);
+    const afterHasSpill = afterWarns.some(isSpill);
     if (beforeHasSpill && !afterHasSpill) {
       changes.push({
         code: 'TEMPDB_SPILL_REMOVED',
@@ -180,8 +181,9 @@
     }
 
     // Implicit Conversions
-    const beforeHasConv = beforeWarns.some(w => w.code === 'IMPLICIT_CONVERSION');
-    const afterHasConv = afterWarns.some(w => w.code === 'IMPLICIT_CONVERSION');
+    const isConv = w => w.code === 'IMPLICIT_CONVERSION' || w.kind === 'IMPLICIT_CONVERSION' || (w.message && /implicit.*conver/i.test(w.message));
+    const beforeHasConv = beforeWarns.some(isConv);
+    const afterHasConv = afterWarns.some(isConv);
     if (beforeHasConv && !afterHasConv) {
       changes.push({
         code: 'IMPLICIT_CONVERSION_REMOVED',
@@ -220,6 +222,8 @@
     }
 
     return {
+      beforeCost,
+      afterCost,
       before: {
         estimatedCost: beforeCost,
         operatorCount: beforeOpCount,

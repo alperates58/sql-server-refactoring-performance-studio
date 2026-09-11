@@ -21,7 +21,13 @@ class QueryHistoryService {
   }
 
   getHistory(options = {}) {
-    return this.storage.listQueryHistory(options);
+    const res = this.storage.listQueryHistory(options);
+    const items = res?.items ? [...res.items] : [];
+    items.total = res?.total !== undefined ? res.total : items.length;
+    items.limit = res?.limit;
+    items.offset = res?.offset;
+    items.items = items;
+    return items;
   }
 
   getHistoryById(id) {
@@ -38,8 +44,9 @@ class QueryHistoryService {
 
   enforceRetention(maxEntries = 10000) {
     if (this.storage && typeof this.storage.enforceHistoryRetention === 'function') {
-      return this.storage.enforceHistoryRetention(maxEntries);
+      return this.storage.enforceHistoryRetention(maxEntries) || 0;
     }
+    return 0;
   }
 
   getHistoryStats() {

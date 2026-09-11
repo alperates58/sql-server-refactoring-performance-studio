@@ -25,7 +25,17 @@ const SCHEMA_VERSION = 2;
 
 function hasSensitiveKeywords(sql) {
   if (!sql || typeof sql !== 'string') return false;
-  return /(?:password\s*=|pwd\s*=|bearer\s+[a-zA-Z0-9_\-\.]|api[_-]?key\s*=|secret\s*=)/i.test(sql);
+  return /(?:password\s*=|pwd\s*=|bearer\s+[a-zA-Z0-9_\-\.]|api[_-]?key\s*=|secret\s*=|symmetric\s+key|master\s+key|access_token|alter\s+login)/i.test(sql);
+}
+
+function redactSensitiveSql(sql) {
+  if (!sql || typeof sql !== 'string') return '';
+  return sql.replace(/(password\s*=\s*)(?:'[^']*'|"[^"]*"|\S+)/gi, "$1'***REDACTED***'")
+            .replace(/(pwd\s*=\s*)(?:'[^']*'|"[^"]*"|\S+)/gi, "$1'***REDACTED***'")
+            .replace(/((?:'pwd'|"pwd"|'password'|"password")\s*,\s*)(?:'[^']*'|"[^"]*"|\S+)/gi, "$1'***REDACTED***'")
+            .replace(/(bearer\s+)[a-zA-Z0-9_\-\.]+/gi, '$1***REDACTED***')
+            .replace(/(api[_-]?key\s*=\s*)(?:'[^']*'|"[^"]*"|\S+)/gi, "$1'***REDACTED***'")
+            .replace(/(secret\s*=\s*)(?:'[^']*'|"[^"]*"|\S+)/gi, "$1'***REDACTED***'");
 }
 
 class WorkspaceStorage {
@@ -249,6 +259,7 @@ class WorkspaceStorage {
         sql TEXT NOT NULL,
         database_name TEXT,
         cursor_pos_json TEXT,
+        is_dirty INTEGER DEFAULT 0,
         updated_at TEXT NOT NULL
       );
 
@@ -259,6 +270,7 @@ class WorkspaceStorage {
     try { this.sqliteDb.exec('ALTER TABLE query_history ADD COLUMN max_duration_ms REAL DEFAULT 0;'); } catch (_) {}
     try { this.sqliteDb.exec('ALTER TABLE query_history ADD COLUMN avg_duration_ms REAL DEFAULT 0;'); } catch (_) {}
     try { this.sqliteDb.exec('ALTER TABLE query_history ADD COLUMN has_sensitive_keywords INTEGER DEFAULT 0;'); } catch (_) {}
+    try { this.sqliteDb.exec('ALTER TABLE workbench_sessions ADD COLUMN is_dirty INTEGER DEFAULT 0;'); } catch (_) {}
 
     const mig2 = this.sqliteDb.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(2);
     if (!mig2) {
@@ -1135,7 +1147,7 @@ class WorkspaceStorage {
     const id = entry.id || `qh_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
     const doc = {
       id,
-      sql: rawSql,
+      sql: hasSensitive ? redactSensitiveSql(rawSql) : rawSql,
       sql_hash: sqlHash,
       database_name: dbName,
       executed_at: entry.executedAt || entry.executed_at || now,
@@ -1178,29 +1190,35 @@ class WorkspaceStorage {
   }
 
   enforceHistoryRetention(maxEntries = 10000) {
-    if (!this.isAvailable) return;
+    if (!this.isAvailable) return 0;
     const limit = Math.max(10, parseInt(maxEntries, 10) || 10000);
 
     try {
       if (this.backendType === 'SQLITE') {
-        this.sqliteDb.prepare(`
+        const info = this.sqliteDb.prepare(`
           DELETE FROM query_history
           WHERE id NOT IN (
             SELECT id FROM query_history ORDER BY executed_at DESC LIMIT ?
           )
         `).run(limit);
+        return info?.changes || 0;
       } else {
         const list = Object.values(this.jsonData.queryHistory || {});
         if (list.length > limit) {
           list.sort((a, b) => new Date(b.executed_at) - new Date(a.executed_at));
+          const removed = list.length - limit;
           const kept = list.slice(0, limit);
           const newObj = {};
           kept.forEach(k => { newObj[k.id] = k; });
           this.jsonData.queryHistory = newObj;
           this.saveJsonFile();
+          return removed;
         }
+        return 0;
       }
-    } catch (_) {}
+    } catch (_) {
+      return 0;
+    }
   }
 
   getQueryHistoryById(id) {
@@ -1292,14 +1310,16 @@ class WorkspaceStorage {
     if (!this.isAvailable) throw new Error(`Workspace storage unavailable: ${this.storageError}`);
 
     if (this.backendType === 'SQLITE') {
-      this.sqliteDb.prepare('DELETE FROM query_history WHERE id = ?').run(id);
+      const res = this.sqliteDb.prepare('DELETE FROM query_history WHERE id = ?').run(id);
+      return res.changes > 0;
     } else {
-      if (this.jsonData.queryHistory) {
+      if (this.jsonData.queryHistory && this.jsonData.queryHistory[id]) {
         delete this.jsonData.queryHistory[id];
         this.saveJsonFile();
+        return true;
       }
+      return false;
     }
-    return true;
   }
 
   clearQueryHistory() {
@@ -1315,24 +1335,47 @@ class WorkspaceStorage {
   }
 
   mapQueryHistoryRow(r) {
+    const hasSensitive = r.has_sensitive_keywords !== undefined
+      ? (r.has_sensitive_keywords ? 1 : 0)
+      : (r.hasSensitiveKeywords ? 1 : 0);
+    const minDur = Number(r.min_duration_ms || r.duration_ms || r.minDurationMs || 0);
+    const maxDur = Number(r.max_duration_ms || r.duration_ms || r.maxDurationMs || 0);
+    const avgDur = Number(r.avg_duration_ms || r.duration_ms || r.avgDurationMs || 0);
+    const execCount = Number(r.execution_count || r.executionCount || 1);
+    const dur = Number(r.duration_ms || r.durationMs || 0);
+
     return {
       id: r.id,
       sql: r.sql,
-      sqlHash: r.sql_hash,
-      database: r.database_name,
-      executedAt: r.executed_at,
-      durationMs: Number(r.duration_ms || 0),
-      minDurationMs: Number(r.min_duration_ms || r.duration_ms || 0),
-      maxDurationMs: Number(r.max_duration_ms || r.duration_ms || 0),
-      avgDurationMs: Number(r.avg_duration_ms || r.duration_ms || 0),
-      cpuMs: Number(r.cpu_ms || 0),
-      logicalReads: Number(r.logical_reads || 0),
+      sqlHash: r.sql_hash || r.sqlHash,
+      sql_hash: r.sql_hash || r.sqlHash,
+      database: r.database_name || r.database,
+      database_name: r.database_name || r.database,
+      executedAt: r.executed_at || r.executedAt,
+      executed_at: r.executed_at || r.executedAt,
+      durationMs: dur,
+      duration_ms: dur,
+      minDurationMs: minDur,
+      min_duration_ms: minDur,
+      maxDurationMs: maxDur,
+      max_duration_ms: maxDur,
+      avgDurationMs: avgDur,
+      avg_duration_ms: avgDur,
+      cpuMs: Number(r.cpu_ms || r.cpuMs || 0),
+      cpu_ms: Number(r.cpu_ms || r.cpuMs || 0),
+      logicalReads: Number(r.logical_reads || r.logicalReads || 0),
+      logical_reads: Number(r.logical_reads || r.logicalReads || 0),
       rowCount: Number(r.row_count || 0),
+      row_count: Number(r.row_count || 0),
       success: Boolean(r.success),
       errorCode: r.error_code || null,
+      error_code: r.error_code || null,
       errorMessage: r.error_message || null,
-      executionCount: Number(r.execution_count || 1),
-      hasSensitiveKeywords: Boolean(r.has_sensitive_keywords)
+      error_message: r.error_message || null,
+      executionCount: execCount,
+      execution_count: execCount,
+      hasSensitiveKeywords: Boolean(hasSensitive),
+      has_sensitive_keywords: hasSensitive
     };
   }
 
@@ -1363,8 +1406,8 @@ class WorkspaceStorage {
       try {
         this.sqliteDb.prepare('DELETE FROM workbench_sessions').run();
         const insertStmt = this.sqliteDb.prepare(`
-          INSERT INTO workbench_sessions (id, tab_order, title, sql, database_name, cursor_pos_json, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO workbench_sessions (id, tab_order, title, sql, database_name, cursor_pos_json, is_dirty, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         tabs.forEach((tab, index) => {
@@ -1374,7 +1417,8 @@ class WorkspaceStorage {
           const sql = tab.sql || '';
           const dbName = tab.database || tab.database_name || null;
           const cursorPos = JSON.stringify(tab.cursorPos || tab.cursor_pos || { line: 1, ch: 1 });
-          insertStmt.run(tabId, tabOrder, title, sql, dbName, cursorPos, now);
+          const isDirty = tab.isRunning ? 0 : ((tab.isDirty || tab.is_dirty) ? 1 : 0);
+          insertStmt.run(tabId, tabOrder, title, sql, dbName, cursorPos, isDirty, now);
         });
 
         this.sqliteDb.exec('COMMIT;');
@@ -1386,6 +1430,7 @@ class WorkspaceStorage {
       this.jsonData.workbenchSessions = {};
       tabs.forEach((tab, index) => {
         const tabId = tab.id || `tab_${Date.now()}_${index}`;
+        const isDirty = tab.isRunning ? false : Boolean(tab.isDirty || tab.is_dirty);
         this.jsonData.workbenchSessions[tabId] = {
           id: tabId,
           tab_order: index,
@@ -1393,13 +1438,15 @@ class WorkspaceStorage {
           sql: tab.sql || '',
           database_name: tab.database || tab.database_name || null,
           cursor_pos_json: JSON.stringify(tab.cursorPos || tab.cursor_pos || { line: 1, ch: 1 }),
+          is_dirty: isDirty ? 1 : 0,
+          isDirty,
           updated_at: now
         };
       });
       this.saveJsonFile();
     }
 
-    return this.getWorkbenchSessions();
+    return true;
   }
 
   clearWorkbenchSessions() {
@@ -1424,7 +1471,7 @@ class WorkspaceStorage {
       cursorPos: safeJsonParse(r.cursor_pos_json, { line: 1, ch: 1 }),
       updatedAt: r.updated_at,
       isRunning: false,
-      isDirty: false
+      isDirty: Boolean(r.is_dirty || r.isDirty)
     };
   }
 
@@ -1471,5 +1518,7 @@ const defaultStorage = new WorkspaceStorage();
 module.exports = {
   WorkspaceStorage,
   defaultStorage,
-  SCHEMA_VERSION
+  SCHEMA_VERSION,
+  redactSensitiveSql,
+  hasSensitiveKeywords
 };

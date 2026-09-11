@@ -167,13 +167,22 @@ const OPERATOR_CATEGORIES = {
   ]
 };
 
-function getOperatorCategory(physicalOp) {
-  const op = String(physicalOp || '').trim();
+function getOperatorCategory(physicalOp, logicalOp) {
+  const p = String(physicalOp || '').trim();
+  const l = String(logicalOp || '').trim();
+  if (/aggregate/i.test(l)) return 'AGGREGATE';
+  if (/join/i.test(l)) return 'JOIN';
   for (const [category, ops] of Object.entries(OPERATOR_CATEGORIES)) {
-    if (ops.some(x => x.toLowerCase() === op.toLowerCase())) {
+    if (ops.some(x => x.toLowerCase() === p.toLowerCase())) {
       return category;
     }
   }
+  if (/aggregate/i.test(p)) return 'AGGREGATE';
+  if (/join/i.test(p)) return 'JOIN';
+  if (/sort/i.test(p)) return 'SORT';
+  if (/spool/i.test(p)) return 'SPOOL';
+  if (/parallel/i.test(p) || /stream/i.test(p)) return 'PARALLELISM';
+  if (/scan|seek|lookup/i.test(p)) return 'ACCESS';
   return 'OTHER';
 }
 
@@ -209,28 +218,53 @@ function findDirectChildRelOps(node) {
 // Main ShowPlanXML Decomposition Parser
 // ----------------------------------------------------
 function parseShowPlanXML(xmlString) {
-  if (!xmlString || typeof xmlString !== 'string') {
-    return {
-      error: 'Execution plan verisi boş veya geçersiz.',
-      rawXml: ''
-    };
+  const emptyResult = (errText, raw) => ({
+    statementText: '',
+    statementType: '',
+    queryHash: '',
+    totalSubTreeCost: 0,
+    totalEstRows: 0,
+    optimizationLevel: 'FULL',
+    degreeOfParallelism: 1,
+    isActual: false,
+    operatorCount: 0,
+    scans: 0,
+    seeks: 0,
+    lookups: 0,
+    spools: 0,
+    sorts: 0,
+    rootOperator: null,
+    tree: null,
+    topOperators: [],
+    operators: [],
+    warnings: [],
+    missingIndexes: [],
+    cardinalityMismatches: [],
+    memoryGrant: null,
+    planMetadata: {
+      totalSubTreeCost: 0,
+      totalEstRows: 0,
+      optimizationLevel: 'FULL',
+      degreeOfParallelism: 1,
+      isActual: false
+    },
+    error: errText || null,
+    rawXml: raw || ''
+  });
+
+  if (!xmlString || typeof xmlString !== 'string' || !xmlString.trim()) {
+    return emptyResult('Execution plan verisi boş veya geçersiz.', xmlString);
   }
 
   let dom = null;
   try {
     dom = parseXmlToDom(xmlString);
   } catch (err) {
-    return {
-      error: `Execution plan ayrıştırılamadı: ${err.message}`,
-      rawXml: xmlString
-    };
+    return emptyResult(`Execution plan ayrıştırılamadı: ${err.message}`, xmlString);
   }
 
   if (!dom) {
-    return {
-      error: 'Execution plan ayrıştırılamadı (Geçersiz XML şeması).',
-      rawXml: xmlString
-    };
+    return emptyResult('Execution plan ayrıştırılamadı (Geçersiz XML şeması).', xmlString);
   }
 
   // 1. Extract Statement Attributes & Statement Node
@@ -238,7 +272,9 @@ function parseShowPlanXML(xmlString) {
   const stmt = stmtNodes[0] || dom;
 
   const statementText = stmt.attrs?.StatementText || '';
-  const totalSubTreeCost = parseFloat(stmt.attrs?.StatementSubTreeCost || '1.0');
+  const statementType = stmt.attrs?.StatementType || '';
+  const queryHash = stmt.attrs?.QueryHash || '';
+  const totalSubTreeCost = parseFloat(stmt.attrs?.StatementSubTreeCost || '0');
   const totalEstRows = parseFloat(stmt.attrs?.StatementEstRows || '0');
   const optimizationLevel = stmt.attrs?.StatementOptmLevel || stmt.attrs?.OptimizationLevel || 'FULL';
 
@@ -258,7 +294,7 @@ function parseShowPlanXML(xmlString) {
     const serialRequiredKb = m.SerialRequiredMemory ? parseInt(m.SerialRequiredMemory, 10) : null;
     const serialDesiredKb = m.SerialDesiredMemory ? parseInt(m.SerialDesiredMemory, 10) : null;
 
-    const isExcessive = grantedKb && maxUsedKb !== null && grantedKb > 50000 && maxUsedKb < (grantedKb * 0.2);
+    const isExcessive = Boolean(grantedKb && maxUsedKb !== null && grantedKb >= 10240 && maxUsedKb < (grantedKb * 0.25));
 
     memoryGrant = {
       grantedMemoryKb: grantedKb,
@@ -281,9 +317,16 @@ function parseShowPlanXML(xmlString) {
     if (miNodes.length === 0) continue;
 
     const mi = miNodes[0];
-    const dbName = (mi.attrs?.Database || '').replace(/[\[\]]/g, '');
-    const schema = (mi.attrs?.Schema || 'dbo').replace(/[\[\]]/g, '');
-    const table = (mi.attrs?.Table || '').replace(/[\[\]]/g, '');
+    const rawDb = mi.attrs?.Database || '';
+    const rawSchema = mi.attrs?.Schema || '[dbo]';
+    const rawTable = mi.attrs?.Table || '';
+
+    const cleanDb = rawDb.replace(/[\[\]]/g, '');
+    const cleanSchema = rawSchema.replace(/[\[\]]/g, '');
+    const cleanTable = rawTable.replace(/[\[\]]/g, '');
+
+    const schemaWithBrackets = `[${cleanSchema}]`;
+    const tableWithBrackets = `[${cleanTable}]`;
 
     const eqCols = [];
     const ineqCols = [];
@@ -294,38 +337,55 @@ function parseShowPlanXML(xmlString) {
       const usage = (cg.attrs?.Usage || '').toUpperCase();
       const cols = findDescendants(cg, n => n.tag === 'Column');
       for (const col of cols) {
-        const cName = (col.attrs?.Name || '').replace(/[\[\]]/g, '');
-        if (!cName) continue;
-        if (usage === 'EQUALITY') eqCols.push(cName);
-        else if (usage === 'INEQUALITY') ineqCols.push(cName);
-        else if (usage === 'INCLUDE') incCols.push(cName);
+        const rawName = col.attrs?.Name || '';
+        if (!rawName) continue;
+        const cleanName = rawName.replace(/[\[\]]/g, '');
+        const bracketedName = `[${cleanName}]`;
+        if (usage === 'EQUALITY') eqCols.push(bracketedName);
+        else if (usage === 'INEQUALITY') ineqCols.push(bracketedName);
+        else if (usage === 'INCLUDE') incCols.push(bracketedName);
       }
     }
 
     const keyCols = [...eqCols, ...ineqCols];
     if (keyCols.length === 0 && incCols.length === 0) continue;
 
-    const indexName = `IX_${table}_${keyCols.slice(0, 2).join('_') || 'Opt'}`;
-    const keyColsSql = keyCols.map(c => `[${c}]`).join(', ');
-    const incColsSql = incCols.length > 0 ? ` INCLUDE (${incCols.map(c => `[${c}]`).join(', ')})` : '';
-    const indexDdl = `CREATE NONCLUSTERED INDEX [${indexName}] ON [${schema}].[${table}] (${keyColsSql})${incColsSql};`;
+    const indexName = `IX_${cleanTable}_Missing`;
+    const keyColsSql = keyCols.join(', ');
+    const incColsSql = incCols.length > 0 ? ` INCLUDE (${incCols.join(', ')})` : '';
+    const ddl = `CREATE NONCLUSTERED INDEX [${indexName}] ON ${schemaWithBrackets}.${tableWithBrackets} (${keyColsSql})${incColsSql};`;
 
     missingIndexes.push({
-      impact: Math.round(impact),
-      database: dbName,
-      schema,
-      table: `${schema}.${table}`,
-      tableName: table,
+      impact,
+      database: cleanDb,
+      schema: schemaWithBrackets,
+      table: tableWithBrackets,
+      tableName: cleanTable,
       equalityColumns: eqCols,
       inequalityColumns: ineqCols,
+      includedColumns: incCols,
       includeColumns: incCols,
-      indexDdl,
+      ddl,
+      indexDdl: ddl,
+      requiresManualReview: true,
       note: 'Öneri: Bu indeks otomatik oluşturulmaz; duplicate indeks denetimi yapıldıktan sonra test edilmelidir.'
     });
   }
 
   // 5. Global Warnings Extraction
   const warnings = [];
+  if (memoryGrant && memoryGrant.isExcessive) {
+    warnings.push({
+      kind: 'EXCESSIVE_MEMORY_GRANT',
+      code: 'EXCESSIVE_MEMORY_GRANT',
+      severity: 'HIGH',
+      operatorNodeId: null,
+      title: 'Aşırı Bellek Tahsisi (Memory Grant Warning)',
+      explanation: 'Sorgu için çok büyük bellek ayrıldı ancak büyük kısmı kullanılmadı.',
+      evidence: `Granted: ${memoryGrant.grantedMemoryKb} KB, MaxUsed: ${memoryGrant.maxUsedMemoryKb} KB`
+    });
+  }
+
   const globalWarnNodes = findDescendants(dom, n => n.tag === 'Warnings');
 
   for (const wNode of globalWarnNodes) {
@@ -333,6 +393,7 @@ function parseShowPlanXML(xmlString) {
 
     if (wNode.attrs?.NoJoinPredicate === 'true' || wNode.attrs?.NoJoinPredicate === '1') {
       warnings.push({
+        kind: 'NO_JOIN_PREDICATE',
         code: 'NO_JOIN_PREDICATE',
         severity: 'CRITICAL',
         operatorNodeId: null,
@@ -345,6 +406,7 @@ function parseShowPlanXML(xmlString) {
     const spills = findDescendants(wNode, n => n.tag === 'SpillToTempDb' || n.tag === 'SortSpillDetails' || n.tag === 'HashSpillDetails');
     if (spills.length > 0 || text.includes('SpillToTempDb')) {
       warnings.push({
+        kind: 'SPILL_TEMPDB',
         code: 'SPILL_TEMPDB',
         severity: 'CRITICAL',
         operatorNodeId: null,
@@ -357,6 +419,7 @@ function parseShowPlanXML(xmlString) {
     const implicitConvs = findDescendants(wNode, n => n.tag === 'PlanAffectingConvert');
     if (implicitConvs.length > 0 || text.includes('PlanAffectingConvert')) {
       warnings.push({
+        kind: 'IMPLICIT_CONVERSION',
         code: 'IMPLICIT_CONVERSION',
         severity: 'HIGH',
         operatorNodeId: null,
@@ -369,6 +432,7 @@ function parseShowPlanXML(xmlString) {
     const missingStats = findDescendants(wNode, n => n.tag === 'ColumnsWithNoStatistics' || n.tag === 'MissingStatistics');
     if (missingStats.length > 0 || text.includes('ColumnsWithNoStatistics')) {
       warnings.push({
+        kind: 'MISSING_STATISTICS',
         code: 'MISSING_STATISTICS',
         severity: 'HIGH',
         operatorNodeId: null,
@@ -379,8 +443,9 @@ function parseShowPlanXML(xmlString) {
     }
 
     const memWarns = findDescendants(wNode, n => n.tag === 'MemoryGrantWarning');
-    if (memWarns.length > 0 || text.includes('MemoryGrantWarning')) {
+    if ((memWarns.length > 0 || text.includes('MemoryGrantWarning')) && !warnings.some(w => w.kind === 'EXCESSIVE_MEMORY_GRANT')) {
       warnings.push({
+        kind: 'EXCESSIVE_MEMORY_GRANT',
         code: 'EXCESSIVE_MEMORY_GRANT',
         severity: 'HIGH',
         operatorNodeId: null,
@@ -465,17 +530,17 @@ function parseShowPlanXML(xmlString) {
       ? Math.min(100, Math.round((estimatedCost / totalSubTreeCost) * 100))
       : 0;
 
-    const category = getOperatorCategory(physicalOp);
+    const category = getOperatorCategory(physicalOp, logicalOp);
 
     // Operator-specific Warnings
     const opWarnings = [];
     const opWarnNodes = findDescendants(relOpDomNode, n => n.tag === 'Warnings');
     for (const ow of opWarnNodes) {
       if (ow.attrs?.NoJoinPredicate === 'true') {
-        opWarnings.push({ code: 'NO_JOIN_PREDICATE', title: 'Join Koşulu Eksik', severity: 'CRITICAL' });
+        opWarnings.push({ code: 'NO_JOIN_PREDICATE', kind: 'NO_JOIN_PREDICATE', title: 'Join Koşulu Eksik', severity: 'CRITICAL' });
       }
       if (JSON.stringify(ow).includes('SpillToTempDb')) {
-        opWarnings.push({ code: 'SPILL_TEMPDB', title: "TempDB'ye Taşma", severity: 'CRITICAL' });
+        opWarnings.push({ code: 'SPILL_TEMPDB', kind: 'SPILL_TEMPDB', title: "TempDB'ye Taşma", severity: 'CRITICAL' });
       }
     }
 
@@ -491,11 +556,11 @@ function parseShowPlanXML(xmlString) {
       cardinalityRatio = parseFloat(ratio.toFixed(2));
 
       if (ratio >= 100) {
-        cardinalitySeverity = 'CRITICAL';
-      } else if (ratio >= 10) {
         cardinalitySeverity = 'HIGH';
+      } else if (ratio >= 10) {
+        cardinalitySeverity = 'MEDIUM';
       } else if (ratio >= 3) {
-        cardinalitySeverity = 'WARNING';
+        cardinalitySeverity = 'LOW';
       } else {
         cardinalitySeverity = 'NORMAL';
       }
@@ -581,6 +646,8 @@ function parseShowPlanXML(xmlString) {
 
   return {
     statementText,
+    statementType,
+    queryHash,
     totalSubTreeCost,
     totalEstRows,
     optimizationLevel,

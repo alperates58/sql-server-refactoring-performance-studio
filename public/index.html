@@ -10,34 +10,82 @@
 <body>
   <div class="noise"></div>
   <div class="app-shell">
-    <aside class="sidebar">
+    <aside class="sidebar" id="appSidebar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
-        <div>
-          <strong>SQL Studio</strong>
-          <small>Refactoring & Performance</small>
+        <div class="brand-left">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div class="brand-text">
+            <strong>SQL Studio</strong>
+            <small>Refactoring & Performance <span class="version-tag">v0.8.0-beta</span></small>
+          </div>
         </div>
+        <button class="sidebar-toggle-btn" id="sidebarCollapseToggle" title="Menüyü Daralt / Genişlet" aria-label="Menüyü Daralt">«</button>
       </div>
 
-      <nav class="nav" aria-label="Ana navigasyon">
-        <button class="nav-item active" data-page="overview"><span class="nav-icon">◫</span><span>Genel Bakış</span></button>
-        <button class="nav-item" data-page="views"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge" id="sidebarViewCount">600</span></button>
-        <button class="nav-item" data-page="graph"><span class="nav-icon">⌁</span><span>Bağımlılık Haritası</span></button>
-        <button class="nav-item" data-page="runtime"><span class="nav-icon">∿</span><span>Çalışma Zamanı ve Regresyon</span><span class="status-dot danger"></span></button>
-        <button class="nav-item" data-page="refactor"><span class="nav-icon">✦</span><span>AI Refaktör</span></button>
-        <button class="nav-item" data-page="workspaces"><span class="nav-icon">📁</span><span>Çalışmalar</span><span class="nav-badge" id="sidebarWorkspaceCount" style="display:none">0</span></button>
-        <button class="nav-item" data-page="validation"><span class="nav-icon">✓</span><span>Doğrulama Laboratuvarı</span></button>
-        <button class="nav-item" data-page="workbench"><span class="nav-icon">⚡</span><span>SQL Çalışma Alanı</span></button>
+      <nav class="sidebar-groups" id="sidebarGroups" aria-label="Ana navigasyon">
+        <!-- GROUP: GENEL -->
+        <div class="nav-group open" data-group="genel">
+          <button class="nav-group-header" type="button">
+            <span class="nav-group-title">GENEL</span>
+            <span class="nav-group-arrow">▾</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item active" data-page="overview" title="Genel Bakış"><span class="nav-icon">◫</span><span>Genel Bakış</span></button>
+          </div>
+        </div>
+
+        <!-- GROUP: ANALİZ -->
+        <div class="nav-group open" data-group="analiz">
+          <button class="nav-group-header" type="button">
+            <span class="nav-group-title">ANALİZ</span>
+            <span class="nav-group-arrow">▾</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-page="views" title="View Envanteri"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge" id="sidebarViewCount">600</span></button>
+            <button class="nav-item" data-page="graph" title="Bağımlılık Haritası"><span class="nav-icon">⌁</span><span>Bağımlılık Haritası</span></button>
+            <button class="nav-item" data-page="runtime" title="Regresyon & Çalışma Zamanı"><span class="nav-icon">∿</span><span>Regresyon & Süre</span><span class="status-dot danger"></span></button>
+            <button class="nav-item" data-page="tables" title="Tablo Baskısı"><span class="nav-icon">▦</span><span>Tablo Baskısı</span></button>
+            <button class="nav-item" data-page="duplicates" title="Mükerrer Mantık"><span class="nav-icon">≋</span><span>Mükerrer Mantık</span></button>
+          </div>
+        </div>
+
+        <!-- GROUP: OPTİMİZASYON -->
+        <div class="nav-group open" data-group="optimizasyon">
+          <button class="nav-group-header" type="button">
+            <span class="nav-group-title">OPTİMİZASYON</span>
+            <span class="nav-group-arrow">▾</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-page="refactor" title="AI Refaktör"><span class="nav-icon">✦</span><span>AI Refaktör</span></button>
+            <button class="nav-item" data-page="validation" title="Doğrulama Laboratuvarı"><span class="nav-icon">✓</span><span>Doğrulama Lab</span></button>
+            <button class="nav-item" data-page="workspaces" title="Çalışma Alanları"><span class="nav-icon">📁</span><span>Çalışma Alanları</span><span class="nav-badge" id="sidebarWorkspaceCount" style="display:none">0</span></button>
+          </div>
+        </div>
+
+        <!-- GROUP: SQL ARAÇLARI -->
+        <div class="nav-group open" data-group="araclar">
+          <button class="nav-group-header" type="button">
+            <span class="nav-group-title">SQL ARAÇLARI</span>
+            <span class="nav-group-arrow">▾</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-page="workbench" title="SQL Workbench"><span class="nav-icon">⚡</span><span>SQL Workbench</span></button>
+            <button class="nav-item" data-page="indexes" title="İndeks & İstatistik"><span class="nav-icon">⚲</span><span>İndeks & İstatistik</span></button>
+            <button class="nav-item" data-page="activity" title="Canlı Aktivite & Kilit"><span class="nav-icon">⏱</span><span>Canlı Aktivite & Kilit</span></button>
+          </div>
+        </div>
+
+        <!-- GROUP: SİSTEM -->
+        <div class="nav-group open" data-group="sistem">
+          <button class="nav-group-header" type="button">
+            <span class="nav-group-title">SİSTEM</span>
+            <span class="nav-group-arrow">▾</span>
+          </button>
+          <div class="nav-group-items">
+            <button class="nav-item" data-page="settings" title="Ayarlar & Tanılama"><span class="nav-icon">⚙</span><span>Ayarlar & Tanılama</span></button>
+          </div>
+        </div>
       </nav>
-
-      <div class="sidebar-section">
-        <span class="section-label">ARAÇLAR</span>
-        <button class="nav-item" data-page="activity"><span class="nav-icon">⏱</span><span>Canlı Aktivite & Kilit</span></button>
-        <button class="nav-item" data-page="indexes"><span class="nav-icon">⚲</span><span>İndeks & İstatistik</span></button>
-        <button class="nav-item" data-page="tables"><span class="nav-icon">▦</span><span>Tablo Baskısı</span></button>
-        <button class="nav-item" data-page="duplicates"><span class="nav-icon">≋</span><span>Mükerrer Mantık</span></button>
-        <button class="nav-item" data-page="settings"><span class="nav-icon">⚙</span><span>Ayarlar</span></button>
-      </div>
 
       <div class="sidebar-footer">
         <div class="connection-mini">
@@ -50,11 +98,24 @@
 
     <main class="main">
       <header class="topbar">
-        <div>
-          <div class="eyebrow" id="pageEyebrow">SQL SAĞLIK KONTROL MERKEZİ</div>
-          <h1 id="pageTitle">Genel Bakış</h1>
+        <div class="topbar-left-wrap">
+          <nav class="studio-breadcrumbs hidden" id="topbarBreadcrumbs" aria-label="Sayfa içi hiyerarşi">
+            <span class="crumb-item" data-goto="overview">Genel Bakış</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-item active" id="breadcrumbActiveTitle">Detay</span>
+          </nav>
+          <div>
+            <div class="eyebrow" id="pageEyebrow">SQL SAĞLIK KONTROL MERKEZİ</div>
+            <div class="topbar-title-row">
+              <h1 id="pageTitle">Genel Bakış</h1>
+              <span class="status-pill status-ready" id="globalConnectionBadge">○ DEMO MODU</span>
+              <span class="status-pill status-readonly" id="globalReadOnlyBadge" title="Studio canlı SQL Server üzerinde veri veya şema değiştiren komutları çalıştırmaz. Deployment script üretimi yalnızca betik oluşturur, veritabanına doğrudan uygulamaz.">🛡️ READ ONLY</span>
+            </div>
+            <p class="page-subtitle" id="pageSubtitle">SQL Server view envanteri, bağımlılık haritası ve regresyon analizleri.</p>
+          </div>
         </div>
         <div class="topbar-actions">
+          <button class="icon-button" id="btnKeyboardShortcuts" title="Klavye Kısayolları (F1 / ?)" style="font-size:14px;margin-right:2px">⌨</button>
           <button class="icon-button" id="themeQuickToggle" title="Temayı Değiştir (Açık / Koyu)" style="font-size:15px;margin-right:4px">☀</button>
           <div class="scan-meta"><span id="scanMetaLabel">Son tarama</span><strong id="scanMetaTime">Demo</strong><small id="scanMetaAgo">Canlı veri için tara</small></div>
           <button class="button ghost" id="scanButton"><span>↻</span> Yeniden Tara</button>
@@ -1566,8 +1627,10 @@ ORDER BY IslemAdedi DESC;"></textarea>
             <button data-settings-tab="ai">AI Sağlayıcı</button>
             <button data-settings-tab="scoring">Risk Puanlama</button>
             <button data-settings-tab="runtime">Çalışma Zamanı Kanıtı</button>
+            <button data-settings-tab="workbench">SQL Workbench</button>
             <button data-settings-tab="safety">Güvenlik ve Yetkiler</button>
-            <button data-settings-tab="appearance">Görünüm</button>
+            <button data-settings-tab="appearance">Görünüm & Yoğunluk</button>
+            <button data-settings-tab="diagnostics">Tanılama & Bilgi</button>
           </section>
 
           <section class="settings-content-wrap">
@@ -1824,6 +1887,118 @@ ORDER BY IslemAdedi DESC;"></textarea>
                   <option value="on" selected>Açık (Standart)</option>
                   <option value="reduced">Azaltılmış (Reduced Motion)</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Panel: SQL Workbench Settings (Sprint 8) -->
+            <div class="settings-panel" id="settings-panel-workbench">
+              <span class="panel-kicker">SQL WORKBENCH YAPILANDIRMASI</span>
+              <h2>Sorgu Editörü & Sonuç Sınırları</h2>
+              <p class="settings-lead">SQL Workbench bellek tüketimi, satır limitleri ve geçmiş saklama ayarları.</p>
+
+              <div class="setting-card">
+                <div><strong>Maksimum Sonuç Satırı (Max Rows)</strong><p>Tek sorguda grid üzerinde gösterilecek maksimum satır (100 - 50.000)</p></div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="number" id="settingWbMaxRows" class="setting-input" value="10000" min="100" max="50000" style="width:120px" />
+                  <span class="unit-text" style="font-size:12px;color:var(--text-muted)">satır</span>
+                </div>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Sorgu Geçmişi Saklama Sınırı (Retention)</strong><p>Hafızada ve veritabanında tutulacak maksimum geçmiş sorgu sayısı (1.000 - 50.000)</p></div>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <input type="number" id="settingWbHistoryRetention" class="setting-input" value="10000" min="1000" max="50000" style="width:120px" />
+                  <span class="unit-text" style="font-size:12px;color:var(--text-muted)">kayıt</span>
+                </div>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Minimap (Kod Haritası)</strong><p>Monaco SQL editöründe sağ kod önizleme haritası</p></div>
+                <select id="settingWbMinimap" class="setting-input select-styled">
+                  <option value="true" selected>Açık</option>
+                  <option value="false">Kapalı</option>
+                </select>
+              </div>
+
+              <div class="setting-card">
+                <div><strong>Sözcük Kaydırma (Word Wrap)</strong><p>Uzun satırların pencere genişliğine göre alt satıra kaydırılması</p></div>
+                <select id="settingWbWordWrap" class="setting-input select-styled">
+                  <option value="off" selected>Kapalı (Yatay Kaydırma)</option>
+                  <option value="on">Açık</option>
+                </select>
+              </div>
+
+              <div style="margin-top:16px;display:flex;justify-content:flex-end">
+                <button class="button primary" id="btnSaveWorkbenchSettings">Workbench Ayarlarını Kaydet</button>
+              </div>
+            </div>
+
+            <!-- Panel: Diagnostics & About (Sprint 8) -->
+            <div class="settings-panel" id="settings-panel-diagnostics">
+              <span class="panel-kicker">SİSTEM DURUMU & DESTEK</span>
+              <h2>Tanılama, Yetenekler & Hakkında</h2>
+              <p class="settings-lead">SQL Server erişim yetkileri, motor durumu ve destek için tanılama raporu.</p>
+
+              <div class="diagnostic-table-wrap" style="margin-bottom:20px;border:1px solid var(--border);border-radius:var(--radius-md);overflow:hidden">
+                <table class="studio-table" style="width:100%;font-size:13px;border-collapse:collapse">
+                  <thead>
+                    <tr style="background:var(--surface-sunken)">
+                      <th style="text-align:left;padding:10px 14px">Bileşen / Yetenek</th>
+                      <th style="text-align:left;padding:10px 14px">Durum</th>
+                      <th style="text-align:left;padding:10px 14px">Açıklama</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>Query Store</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-pass" id="diagQsStatus">● Tespit Ediliyor</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Plan geçmişi ve çalışma zamanı regresyon analizleri</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>Plan Cache</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-pass" id="diagPlanCacheStatus">● Aktif</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Derlenmiş XML yürütme planları ve operatör maliyetleri</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>VIEW SERVER STATE</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-pass" id="diagViewServerStatus">● Aktif</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Canlı kilitlenme (blocking), bekleme olayları (waits) ve DMV erişimi</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>Monaco Editor</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-pass" id="diagMonacoStatus">● Yerel (%100 Çevrimdışı)</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Çevrimdışı T-SQL kod editörü ve IntelliSense</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>Çalışma Alanı Depolama</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-pass">● SQLite (workspaces.db)</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Kalıcı refaktör oturumları ve Schema V2 sorgu geçmişi</td>
+                    </tr>
+                    <tr style="border-top:1px solid var(--border)">
+                      <td style="padding:10px 14px"><strong>AI Sağlayıcı</strong></td>
+                      <td style="padding:10px 14px"><span class="studio-badge badge-status-warning" id="diagAiStatus">○ Kontrol Ediliyor</span></td>
+                      <td style="padding:10px 14px;color:var(--text-muted)">Şema farkındalıklı sorgu optimizasyon asistanı</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="setting-card">
+                <div>
+                  <strong>Tanılama Raporunu Dışa Aktar (Support Diagnostics)</strong>
+                  <p>Hata tespiti ve teknik destek için sistem, yetenek ve anonimleştirilmiş ayar dökümünü JSON olarak indirir (şifreler veya API anahtarları asla dahil edilmez).</p>
+                </div>
+                <button class="button primary" id="btnExportDiagnostics">📥 Tanılama İndir (.json)</button>
+              </div>
+
+              <div class="system-about-card" style="margin-top:20px;padding:16px;background:var(--surface-sunken);border:1px solid var(--border);border-radius:var(--radius-md)">
+                <h4 style="margin:0 0 8px;font-size:14px">SQL Server Refactoring & Performance Studio</h4>
+                <div style="font-size:12px;color:var(--text-muted);display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px">
+                  <div>Sürüm: <strong style="color:var(--text)">v0.8.0-beta</strong></div>
+                  <div>Geliştirme Kanalı: <strong style="color:var(--purple)">BETA</strong></div>
+                  <div>Güvenlik Politikası: <strong style="color:var(--green)">100% Read-Only Safety</strong></div>
+                  <div>Veri Değişikliği (Mutation): <strong style="color:var(--green)">YASAKLANDI (ZERO MUTATION)</strong></div>
+                </div>
               </div>
             </div>
           </section>
@@ -2236,6 +2411,166 @@ ORDER BY IslemAdedi DESC;"></textarea>
     </div>
   </div>
 
+  <!-- MODAL: FIRST-RUN ONBOARDING WIZARD (Sprint 8) -->
+  <div class="modal-backdrop hidden" id="onboardingWizardModal">
+    <div class="modal" style="width:580px;max-width:95vw">
+      <button class="modal-close" id="closeOnboardingWizard">×</button>
+      <div class="modal-brand">
+        <div class="brand-mark"><span></span><span></span><span></span></div>
+        <div>
+          <span class="panel-kicker">İLK KURULUM SİHİRBAZI</span>
+          <h2>SQL Studio'ya Hoş Geldiniz</h2>
+        </div>
+      </div>
+
+      <div class="wizard-steps-indicator" style="display:flex;justify-content:space-between;margin:16px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+        <div class="wizard-step-bullet active" data-step="1"><strong>1</strong> Bağlantı</div>
+        <div class="wizard-step-bullet" data-step="2"><strong>2</strong> Test</div>
+        <div class="wizard-step-bullet" data-step="3"><strong>3</strong> Veritabanı</div>
+        <div class="wizard-step-bullet" data-step="4"><strong>4</strong> AI (Opsiyonel)</div>
+        <div class="wizard-step-bullet" data-step="5"><strong>5</strong> Tarama</div>
+      </div>
+
+      <!-- Step 1: Connection -->
+      <div class="wizard-step-content" id="wizardStep1">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">SQL Server örneğinize bağlanın. SQL Studio salt-okunur (read-only) güvenlik politikasıyla çalışır.</p>
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 100px;gap:12px;margin-bottom:12px">
+          <div>
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">Sunucu Adresi (Host / IP)</label>
+            <input type="text" id="wizardHost" class="setting-input" value="127.0.0.1" style="width:100%" />
+          </div>
+          <div>
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">Port</label>
+            <input type="number" id="wizardPort" class="setting-input" value="1433" style="width:100%" />
+          </div>
+        </div>
+        <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+          <div>
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">Kullanıcı Adı</label>
+            <input type="text" id="wizardUser" class="setting-input" placeholder="sa veya planlama" style="width:100%" />
+          </div>
+          <div>
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">Parola</label>
+            <input type="password" id="wizardPassword" class="setting-input" placeholder="••••••••" style="width:100%" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 2: Test -->
+      <div class="wizard-step-content hidden" id="wizardStep2">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Sunucu erişilebilirliği ve yetkiler doğrulanıyor.</p>
+        <div id="wizardTestStatusBox" style="padding:16px;border-radius:var(--radius-md);background:var(--surface-sunken);border:1px solid var(--border);text-align:center;min-height:90px;display:flex;flex-direction:column;justify-content:center;align-items:center">
+          <button class="button primary" id="btnWizardTestConnection">🔌 Bağlantıyı Test Et</button>
+          <div id="wizardTestResult" class="hidden" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <!-- Step 3: Database Selection -->
+      <div class="wizard-step-content hidden" id="wizardStep3">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Analiz edilecek birincil SQL veritabanını seçin.</p>
+        <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">Birincil Veritabanı</label>
+        <select id="wizardDatabaseSelect" class="setting-input select-styled" style="width:100%;margin-bottom:12px">
+          <option value="">Seçiniz...</option>
+        </select>
+        <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">View Öneki (Filtre)</label>
+        <input type="text" id="wizardPrefix" class="setting-input" value="AA_" style="width:100%" />
+      </div>
+
+      <!-- Step 4: AI Provider -->
+      <div class="wizard-step-content hidden" id="wizardStep4">
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px">Sorgu optimizasyonu için yapay zeka modelini bağlayabilirsiniz (Opsiyoneldir, daha sonra ayarlanabilir).</p>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div>
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">AI Sağlayıcı</label>
+            <select id="wizardAiProvider" class="setting-input select-styled" style="width:100%">
+              <option value="deepseek" selected>DeepSeek (Önerilen)</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+              <option value="none">AI Olmadan Devam Et (Atla)</option>
+            </select>
+          </div>
+          <div id="wizardAiKeyRow">
+            <label class="form-label" style="display:block;font-size:12px;margin-bottom:4px;color:var(--text-secondary)">API Anahtarı</label>
+            <input type="password" id="wizardAiKey" class="setting-input" placeholder="sk-..." style="width:100%" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Step 5: Start Scan -->
+      <div class="wizard-step-content hidden" id="wizardStep5">
+        <div style="text-align:center;padding:16px 0">
+          <div style="font-size:36px;margin-bottom:8px">🚀</div>
+          <h3 style="margin:0 0 6px">İlk Taramayı Başlatmaya Hazırsınız</h3>
+          <p style="font-size:13px;color:var(--text-muted);max-width:440px;margin:0 auto 16px">
+            Seçili veritabanı üzerindeki tüm view tanımları, bağımlılıklar ve Query Store metrikleri salt-okunur olarak okunacaktır.
+          </p>
+        </div>
+      </div>
+
+      <div class="modal-actions wide" style="display:flex;justify-content:space-between;margin-top:20px;padding-top:14px;border-top:1px solid var(--border)">
+        <button type="button" class="button ghost" id="btnWizardPrev" style="visibility:hidden">← Geri</button>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="button ghost" id="btnWizardSkip">Daha Sonra Kur</button>
+          <button type="button" class="button primary" id="btnWizardNext">İleri →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: KEYBOARD SHORTCUTS HELP (Sprint 8) -->
+  <div class="modal-backdrop hidden" id="keyboardShortcutsModal">
+    <div class="modal" style="width:520px;max-width:95vw">
+      <button class="modal-close" id="closeKeyboardShortcutsModal">×</button>
+      <div class="modal-brand">
+        <div>
+          <span class="panel-kicker">STUDIO KISAYOLLARI</span>
+          <h2>Klavye Kısayol Rehberi</h2>
+        </div>
+      </div>
+      <div style="margin:16px 0 20px;max-height:360px;overflow-y:auto">
+        <table class="studio-table" style="width:100%;font-size:13px">
+          <thead>
+            <tr>
+              <th style="text-align:left">İşlem</th>
+              <th style="text-align:right">Kısayol</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Sorguyu Çalıştır</td><td style="text-align:right"><kbd>F5</kbd> veya <kbd>Ctrl</kbd>+<kbd>Enter</kbd></td></tr>
+            <tr><td>Yeni SQL Sekmesi Aç</td><td style="text-align:right"><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>N</kbd></td></tr>
+            <tr><td>T-SQL Kodunu Biçimlendir</td><td style="text-align:right"><kbd>Shift</kbd>+<kbd>Alt</kbd>+<kbd>F</kbd></td></tr>
+            <tr><td>Sorguyu Kaydet (Favori)</td><td style="text-align:right"><kbd>Ctrl</kbd>+<kbd>S</kbd></td></tr>
+            <tr><td>IntelliSense Tamamlama</td><td style="text-align:right"><kbd>Ctrl</kbd>+<kbd>Space</kbd></td></tr>
+            <tr><td>Aktif Sorguyu Durdur / İptal</td><td style="text-align:right"><kbd>Esc</kbd> (veya Durdur)</td></tr>
+            <tr><td>Menüyü Daralt / Genişlet</td><td style="text-align:right"><kbd>Ctrl</kbd>+<kbd>B</kbd></td></tr>
+            <tr><td>Temayı Değiştir (Açık / Koyu)</td><td style="text-align:right"><kbd>F2</kbd></td></tr>
+            <tr><td>Kısayol Rehberini Aç</td><td style="text-align:right"><kbd>?</kbd> veya <kbd>F1</kbd></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-actions" style="display:flex;justify-content:flex-end">
+        <button type="button" class="button primary" id="btnCloseShortcutsModal">Tamam</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: SCAN PROGRESS (Sprint 8.1 - Honest Indeterminate Progress) -->
+  <div class="modal-backdrop hidden" id="scanProgressModal">
+    <div class="modal" style="width:480px;max-width:95vw;text-align:center;position:relative">
+      <button class="modal-close" id="closeScanProgressModal" title="Kapat (Tarama arka planda devam eder)">×</button>
+      <div class="studio-loading-spinner" style="margin:8px auto 16px;width:36px;height:36px"></div>
+      <h3 id="scanProgressTitle" style="margin:0 0 6px">SQL Server Taranıyor...</h3>
+      <p id="scanProgressStage" style="font-size:13px;color:var(--text-muted);margin:0 0 16px">Veritabanı metadata kataloğu, bağımlılıklar ve Query Store taranıyor...</p>
+      <div class="scan-progress-track">
+        <div class="scan-progress-indeterminate-bar"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">
+        <small style="color:var(--text-muted);font-size:11px">Salt-Okunur İşlem · Şema ve veri mutate edilmez</small>
+        <button type="button" class="button ghost small" id="btnDismissScanModal" style="font-size:11px;padding:4px 10px">Arka Planda Devam Et</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-wrap" id="toastWrap"></div>
   <script src="/assets/js/uiText.js"></script>
   <script src="/assets/js/mock-data.js"></script>
@@ -2243,6 +2578,8 @@ ORDER BY IslemAdedi DESC;"></textarea>
   <script src="/assets/js/modules/benchmarkComparison.js"></script>
   <script src="/assets/js/modules/refactorDecision.js"></script>
   <script src="/assets/js/modules/virtualGrid.js"></script>
+  <script src="/assets/js/modules/formatters.js"></script>
+  <script src="/assets/js/modules/uiStates.js"></script>
   <script src="/assets/js/intellisense.js"></script>
   <!-- Local Offline Monaco AMD Loader (Sprint 7.1) -->
   <script src="/vendor/monaco/vs/loader.js" onerror="console.info('[Monaco] Local loader not found, using textarea fallback')"></script>

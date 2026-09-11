@@ -4,8 +4,10 @@
  * Inspired by Linear, DataGrip, and Modern Observability Tooling
  */
 
-:root {
+:root,
+[data-theme="dark"] {
   /* Surface & Background Colors */
+  --bg-canvas: #090a0f;
   --bg: #090a0f;
   --bg2: #0d0f16;
   --surface: #11141d;
@@ -80,7 +82,9 @@ body.theme-midnight {
 }
 
 /* Light Theme (Linear / GitHub / DataGrip Light Developer Aesthetic) */
-body.theme-light {
+body.theme-light,
+[data-theme="light"] {
+  --bg-canvas: #f5f7fb;
   --bg: #f5f7fb;
   --bg2: #ebf0f7;
   --surface: #ffffff;
@@ -6280,5 +6284,507 @@ body.theme-light .wb-context-menu {
   margin: 4px 0;
 }
 
+/* ========================================================
+   SPRINT 8 — PRODUCT UX POLISH & RELEASE READINESS STYLES
+   ======================================================== */
 
+/* 1. Sidebar Brand & Toggle */
+.brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
 
+.brand-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.version-tag {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(124, 92, 255, 0.2);
+  color: #a78bfa;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.sidebar-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+/* 2. Collapsible Sidebar Groups */
+.sidebar-groups {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  user-select: none;
+}
+
+.nav-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.nav-group-arrow {
+  font-size: 11px;
+  color: var(--text-muted);
+  transition: transform 0.2s ease;
+}
+
+.nav-group:not(.open) .nav-group-arrow {
+  transform: rotate(-90deg);
+}
+
+.nav-group-items {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group:not(.open) .nav-group-items {
+  display: none;
+}
+
+/* Collapsed Sidebar Mode */
+.app-shell.sidebar-collapsed .sidebar {
+  width: 60px !important;
+  min-width: 60px !important;
+}
+
+.app-shell.sidebar-collapsed .brand-text,
+.app-shell.sidebar-collapsed .nav-group-title,
+.app-shell.sidebar-collapsed .nav-group-arrow,
+.app-shell.sidebar-collapsed .nav-item span:not(.nav-icon),
+.app-shell.sidebar-collapsed .nav-badge,
+.app-shell.sidebar-collapsed .sidebar-footer div:not(.connection-light) {
+  display: none !important;
+}
+
+.app-shell.sidebar-collapsed .nav-item {
+  justify-content: center;
+  padding: 10px 0;
+}
+
+.app-shell.sidebar-collapsed .sidebar-toggle-btn {
+  transform: rotate(180deg);
+}
+
+/* 3. Universal Topbar Breadcrumbs & Badges */
+.topbar-left-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.studio-breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.crumb-item {
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+
+.crumb-item:hover {
+  color: var(--accent);
+}
+
+.crumb-item.active {
+  color: var(--text-primary);
+  font-weight: 600;
+  cursor: default;
+}
+
+.crumb-sep {
+  color: var(--border-bright, #475569);
+  font-size: 11px;
+}
+
+.topbar-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.page-subtitle {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 3px 0 0;
+}
+
+.status-pill.status-readonly {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* 4. Density Modes (Comfortable vs Compact) */
+body.density-compact {
+  --table-row-height: 30px;
+  --card-padding: 10px;
+  --gap-sm: 6px;
+  --gap-md: 10px;
+}
+
+body.density-compact .metric-card {
+  padding: 10px 14px;
+}
+
+body.density-compact .panel {
+  padding: 12px 14px;
+}
+
+body.density-compact .studio-table th,
+body.density-compact .studio-table td,
+body.density-compact table th,
+body.density-compact table td {
+  padding: 6px 10px !important;
+}
+
+body.density-compact .setting-card {
+  padding: 10px 14px;
+}
+
+/* 5. Unified Studio Badges (Severity & Status) */
+.studio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.badge-severity-critical { background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+.badge-severity-high     { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.35); }
+.badge-severity-medium   { background: rgba(234, 179, 8, 0.15);  color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
+.badge-severity-low      { background: rgba(6, 182, 212, 0.15);  color: #22d3ee; border: 1px solid rgba(6, 182, 212, 0.35); }
+.badge-severity-info     { background: rgba(100, 116, 139, 0.15); color: #94a3b8; border: 1px solid rgba(100, 116, 139, 0.35); }
+
+.badge-status-pass       { background: rgba(34, 197, 94, 0.15);  color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.35); }
+.badge-status-warning    { background: rgba(234, 179, 8, 0.15);  color: #facc15; border: 1px solid rgba(234, 179, 8, 0.35); }
+.badge-status-fail       { background: rgba(239, 68, 68, 0.15);  color: #f87171; border: 1px solid rgba(239, 68, 68, 0.35); }
+.badge-status-inconclusive { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; border: 1px solid rgba(148, 163, 184, 0.35); }
+
+.badge-lifecycle-draft       { background: rgba(148, 163, 184, 0.12); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+.badge-lifecycle-analyzed    { background: rgba(56, 189, 248, 0.12); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+.badge-lifecycle-candidate   { background: rgba(168, 85, 247, 0.12); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+.badge-lifecycle-validated   { background: rgba(34, 197, 94, 0.12);  color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3); }
+.badge-lifecycle-benchmarked { background: rgba(245, 158, 11, 0.12); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+.badge-lifecycle-approved    { background: rgba(139, 92, 246, 0.2);  color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.4); }
+.badge-lifecycle-script      { background: rgba(16, 185, 129, 0.2);  color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+
+/* 6. Unified Empty, Loading & Error States */
+.studio-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  background: var(--surface-sunken);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  margin: 12px 0;
+}
+
+.studio-empty-state .empty-state-icon {
+  font-size: 38px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.studio-empty-state .empty-state-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--text-primary);
+}
+
+.studio-empty-state .empty-state-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 440px;
+  margin: 0 auto 16px;
+  line-height: 1.5;
+}
+
+.studio-loading-state {
+  text-align: center;
+  padding: 40px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.studio-loading-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(124, 92, 255, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: studioSpin 0.7s linear infinite;
+}
+
+@keyframes studioSpin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-state-text strong {
+  display: block;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.loading-state-text small {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.studio-skeleton-container {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.studio-skeleton-row {
+  display: flex;
+  gap: 10px;
+  height: 14px;
+}
+
+.studio-skeleton-bar {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: studioSkeletonShimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+body.theme-light .studio-skeleton-bar {
+  background: linear-gradient(90deg, rgba(0,0,0,0.04) 25%, rgba(0,0,0,0.08) 50%, rgba(0,0,0,0.04) 75%);
+  background-size: 200% 100%;
+}
+
+@keyframes studioSkeletonShimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.studio-error-state {
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  margin: 12px 0;
+}
+
+.error-state-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.error-state-icon {
+  color: #ef4444;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.error-state-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  color: #f87171;
+}
+
+.error-state-message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.error-technical-box {
+  margin-top: 10px;
+}
+
+.error-toggle-detail {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.error-toggle-detail:hover {
+  color: var(--accent);
+}
+
+.error-detail-content {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: #0f1218;
+  border-radius: 6px;
+  font-size: 11.5px;
+  overflow-x: auto;
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.error-state-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* 7. Wizard Step Indicator */
+.wizard-step-bullet {
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+
+.wizard-step-bullet strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--surface-hover);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.wizard-step-bullet.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.wizard-step-bullet.active strong {
+  background: var(--accent);
+  color: #fff;
+}
+
+.wizard-step-bullet.completed strong {
+  background: var(--green);
+  color: #fff;
+}
+
+/* 8. Keyboard Shortcut Modal Table */
+kbd {
+  display: inline-block;
+  padding: 2px 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-primary);
+  background-color: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,0.25);
+  font-family: inherit;
+}
+
+/* 9. Responsive Layout Fixes for Desktop (1366, 1440, 1920) */
+@media (max-width: 1366px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .panel.span-8,
+  .panel.span-4,
+  .panel.span-7 {
+    grid-column: span 12 !important;
+  }
+  .tp-inspector {
+    width: 320px !important;
+  }
+}
+
+/* 10. Honest Indeterminate Scan Progress (Sprint 8.1) */
+.scan-progress-track {
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  height: 6px;
+  overflow: hidden;
+  margin-bottom: 8px;
+  position: relative;
+  width: 100%;
+}
+
+.scan-progress-indeterminate-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -35%;
+  width: 35%;
+  background: var(--purple);
+  border-radius: var(--radius-pill);
+  animation: scanProgressPulse 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes scanProgressPulse {
+  0% { left: -35%; width: 25%; }
+  50% { left: 40%; width: 45%; }
+  100% { left: 100%; width: 25%; }
+}

@@ -25,6 +25,7 @@ const { defaultStorage } = require('../services/workspaceStorage');
 const { defaultQueryHistoryService } = require('../services/queryHistoryService');
 const sqlFormatter = require('../services/sqlFormatter');
 const sql = require('mssql');
+const pkg = require('../../package.json');
 
 const router = express.Router();
 
@@ -38,12 +39,19 @@ function handleSafeError(res, error, defaultMessage = 'Bir hata oluştu.') {
   });
 }
 
-// 1. Health check
+// 1. Health check & version (single source of truth: package.json)
 router.get('/health', (_req, res) => {
   res.json({
     ok: true,
     app: 'SQL Server Refactoring & Performance Studio',
-    version: '0.1.0-sprint6'
+    version: pkg.version
+  });
+});
+
+router.get('/version', (_req, res) => {
+  res.json({
+    ok: true,
+    version: pkg.version
   });
 });
 
@@ -428,8 +436,27 @@ router.post('/settings/config', (req, res) => {
 });
 
 router.post('/settings/reset-scoring', (_req, res) => {
-  const reset = settings.resetScoringWeights();
+  const reset = settings.resetScoringDefaults ? settings.resetScoringDefaults() : settings.getConfig().scoring;
   res.json({ ok: true, data: reset });
+});
+
+// Diagnostics & System Info Export (Sprint 8)
+router.get('/diagnostics/export', async (_req, res) => {
+  try {
+    const caps = await capabilities.detect().catch(() => null);
+    const monaco = resolveLocalMonacoPath();
+    const data = settings.exportDiagnostics({
+      capabilities: caps,
+      monaco: {
+        available: monaco.available,
+        source: monaco.source
+      },
+      storageEngine: 'sqlite'
+    });
+    res.json({ ok: true, data });
+  } catch (error) {
+    handleSafeError(res, error, 'Tanılama raporu üretilemedi.');
+  }
 });
 
 // ==========================================

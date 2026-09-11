@@ -106,3 +106,12 @@ Regex yalnız V1 heuristic olabilir. Final analiz için ScriptDom veya sağlam T
 10. Validation Lab.
 11. Export scripts.
 12. Optional controlled deployment only after explicit future decision.
+
+## 13. Release Invariants (v0.8.0-beta)
+
+- **Zero Database Mutation**: Stüdyo canlı veritabanı üzerinde şema ve veri mutasyonlarına kesinlikle izin vermez.
+- **Secret Hygiene**: SQL parolaları, connection string plaintext şifreleri ve AI API anahtarları asla tarayıcı depolamasına, export loglarına veya diagnostics JSON dökümüne yazılmaz.
+- **Information Architecture**: Sol menü hiyerarşik 5 ana grupta toplanır; hash-based routing (`#workbench`, `#views`, vb.) ile derin bağlantı desteklenir.
+- **Offline Capability**: Monaco editörü ve tüm web arayüz bileşenleri harici CDN bağımlılığı olmadan yerel çalışır.
+- **State Standardization**: Tüm ekranlarda ortak Empty/Loading/Error/Badge bileşenleri (`public/assets/js/modules/uiStates.js`) ve sayı/süre/bellek formatlayıcıları (`public/assets/js/modules/formatters.js`) kullanılır.
+

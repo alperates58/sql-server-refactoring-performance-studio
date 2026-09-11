@@ -1,6 +1,6 @@
 {
   "name": "sql-server-refactoring-performance-studio",
-  "version": "0.1.0",
+  "version": "0.8.0-beta",
   "private": true,
   "description": "SQL Server view dependency, runtime performance and AI-assisted refactoring studio.",
   "main": "server.js",

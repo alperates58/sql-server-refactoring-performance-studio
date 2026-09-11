@@ -346,6 +346,7 @@ function parsePredicates(sqlSection, clauseType = 'WHERE') {
     // Extract column references (e.g. t.col, [col], col)
     const colMatches = exprText.match(/(?:[a-zA-Z0-9_#\[\]]+\.)?[a-zA-Z0-9_#\[\]]+/g) || [];
     const columns = colMatches
+      .filter(c => !/^\d+(?:\.\d+)?$/.test(c))
       .filter(c => !/^(AND|OR|NOT|IN|EXISTS|BETWEEN|LIKE|NULL|IS|CASE|WHEN|THEN|ELSE|END|YEAR|MONTH|DAY|CONVERT|CAST|ISNULL|COALESCE|DATEADD|DATEDIFF|LEFT|RIGHT|SUBSTRING|UPPER|LOWER)$/i.test(c))
       .map(cleanIdentifier);
 
@@ -709,7 +710,7 @@ function parseTsql(sql = '') {
       const funcName = wMatch[1].toUpperCase();
       const overContent = wMatch[2].trim();
       
-      const partMatch = overContent.match(/PARTITION\s+BY\s+([^ORDER]+)/i);
+      const partMatch = overContent.match(/PARTITION\s+BY\s+([\s\S]*?)(?:\s+ORDER\s+BY|$)/i);
       const orderMatch = overContent.match(/ORDER\s+BY\s+([^)]+)/i);
 
       windowFunctions.push({
@@ -722,13 +723,21 @@ function parseTsql(sql = '') {
 
     // Subqueries
     const subqueries = [];
-    // Correlated / Scalar subquery patterns
-    const subqRegex = /\(\s*SELECT\b([\s\S]*?)\)/gi;
+    const selectSubqRegex = /\(\s*SELECT\b/gi;
     let sMatch;
-    while ((sMatch = subqRegex.exec(clean)) !== null) {
-      const subqBody = sMatch[1].trim();
-      const isExists = /EXISTS\s*\(\s*SELECT\b/i.test(clean.substring(Math.max(0, sMatch.index - 10), sMatch.index));
-      const isIn = /IN\s*\(\s*SELECT\b/i.test(clean.substring(Math.max(0, sMatch.index - 5), sMatch.index));
+    while ((sMatch = selectSubqRegex.exec(clean)) !== null) {
+      const openParenIdx = sMatch.index;
+      let depth = 1;
+      let idx = openParenIdx + 1;
+      while (idx < clean.length && depth > 0) {
+        if (clean[idx] === '(') depth++;
+        else if (clean[idx] === ')') depth--;
+        idx++;
+      }
+      const subqBody = clean.substring(openParenIdx + 1, idx - 1).trim();
+      const before = clean.substring(Math.max(0, openParenIdx - 25), openParenIdx).trim();
+      const isExists = /\bEXISTS\s*$/i.test(before);
+      const isIn = /\b(?:NOT\s+)?IN\s*$/i.test(before);
       
       // Check correlation: references outer table alias
       let isCorrelated = false;
@@ -744,6 +753,8 @@ function parseTsql(sql = '') {
         isCorrelated,
         sql: subqBody
       });
+
+      selectSubqRegex.lastIndex = idx;
     }
 
     return createCanonicalAst({

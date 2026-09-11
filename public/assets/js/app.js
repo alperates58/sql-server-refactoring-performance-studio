@@ -26,6 +26,25 @@
     workspaces: ['REFACTOR YAŞAM DÖNGÜSÜ & GEÇMİŞİ', 'Refactor Çalışmaları (Workspaces)']
   };
 
+  const pageSubtitles = {
+    overview: 'SQL Server view envanteri, bağımlılık haritası ve regresyon analizleri.',
+    views: 'Filtre önekine göre taranan SQL Server view listesi ve sağlık puanları.',
+    graph: 'İki yönlü bağımlılık grafiği, döngüsel bağımlılıklar ve etki alanı analizi.',
+    runtime: 'Query Store ve DMV kanıtlarıyla çalışma zamanı maliyeti ve regresyon tespiti.',
+    refactor: 'Yapay zeka destekli view refaktör önerileri, güvenli SQL adayları ve diff.',
+    validation: 'Semantik doğrulama, IO/süre benchmark karşılaştırması ve deployment scriptleri.',
+    workbench: 'Çok sekmeli profesyonel T-SQL editörü, execution plan ve sonuç ızgarası.',
+    tables: 'View ağaçları altında en çok baskı gören temel tablolar ve erişim sıklıkları.',
+    duplicates: 'Farklı viewlar arasındaki mükerrer mantık ve fingerprint benzerlikleri.',
+    settings: 'Sistem parametreleri, AI sağlayıcı, puanlama ağırlıkları ve destek tanılaması.',
+    activity: 'Canlı SQL Server oturumları, kilitlenmeler, bekleme istatistikleri ve aktif sorgular.',
+    indexes: 'Eksik indeks tavsiyeleri, istatistik güncelliği ve parçalanma durumu.',
+    workspaces: 'Kalıcı refaktör oturumları, aşamalar, diff geçmişi ve SQLite kayıtları.'
+  };
+
+  let isNavigating = false;
+  let loadWorkspacesList = () => {};
+
   // Central Application State
   const state = {
     connected: false,
@@ -116,15 +135,112 @@
     }, 4200);
   }
 
+  function updateBreadcrumbs(name) {
+    const breadcrumbs = $('#topbarBreadcrumbs');
+    const titleEl = $('#breadcrumbActiveTitle');
+    if (!breadcrumbs || !titleEl) return;
+
+    if (name === 'overview') {
+      breadcrumbs.classList.add('hidden');
+    } else {
+      breadcrumbs.classList.remove('hidden');
+      const title = pageTitles[name]?.[1] || name;
+      titleEl.textContent = title;
+    }
+  }
+
+  function saveNavGroupState() {
+    const states = {};
+    $$('.nav-group').forEach(group => {
+      const groupKey = group.dataset.group;
+      if (groupKey) {
+        states[groupKey] = group.classList.contains('open');
+      }
+    });
+    try {
+      localStorage.setItem('sqlstudio_nav_groups', JSON.stringify(states));
+    } catch (_) {}
+  }
+
+  function initNavGroups() {
+    let savedState = {};
+    try {
+      savedState = JSON.parse(localStorage.getItem('sqlstudio_nav_groups') || '{}');
+    } catch (_) {}
+
+    $$('.nav-group').forEach(group => {
+      const groupKey = group.dataset.group;
+      if (groupKey && savedState[groupKey] !== undefined) {
+        group.classList.toggle('open', Boolean(savedState[groupKey]));
+      }
+
+      const header = group.querySelector('.nav-group-header');
+      if (header) {
+        header.addEventListener('click', (e) => {
+          e.preventDefault();
+          group.classList.toggle('open');
+          saveNavGroupState();
+        });
+      }
+    });
+
+    const collapseToggle = $('#sidebarCollapseToggle');
+    const shell = $('.app-shell');
+    const isCollapsed = localStorage.getItem('sqlstudio_sidebar_collapsed') === 'true';
+    if (isCollapsed && shell) {
+      shell.classList.add('sidebar-collapsed');
+      if (collapseToggle) {
+        const icon = collapseToggle.querySelector('.toggle-icon');
+        if (icon) icon.textContent = '▶';
+      }
+    }
+
+    collapseToggle?.addEventListener('click', () => {
+      if (!shell) return;
+      const willCollapse = !shell.classList.contains('sidebar-collapsed');
+      shell.classList.toggle('sidebar-collapsed', willCollapse);
+      localStorage.setItem('sqlstudio_sidebar_collapsed', String(willCollapse));
+      const icon = collapseToggle.querySelector('.toggle-icon');
+      if (icon) icon.textContent = willCollapse ? '▶' : '◀';
+    });
+  }
+
   function gotoPage(name) {
+    if (!name || !pageTitles[name]) name = 'overview';
+
+    // Hash deep linking
+    isNavigating = true;
+    if (window.location.hash !== `#${name}`) {
+      window.location.hash = `#${name}`;
+    }
+    isNavigating = false;
+
     $$('.page').forEach(p => p.classList.toggle('active', p.id === `page-${name}`));
     $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+
+    // Auto-expand parent nav-group if closed
+    const activeBtn = document.querySelector(`.nav-item[data-page="${name}"]`);
+    if (activeBtn) {
+      const parentGroup = activeBtn.closest('.nav-group');
+      if (parentGroup && !parentGroup.classList.contains('open')) {
+        parentGroup.classList.add('open');
+        saveNavGroupState();
+      }
+    }
+
     if (pageTitles[name]) {
       const eb = $('#pageEyebrow');
       const pt = $('#pageTitle');
       if (eb) eb.textContent = pageTitles[name][0];
       if (pt) pt.textContent = pageTitles[name][1];
     }
+    if (pageSubtitles[name]) {
+      const ps = $('#pageSubtitle');
+      if (ps) ps.textContent = pageSubtitles[name];
+    }
+
+    updateBreadcrumbs(name);
+
     const main = $('.main');
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
 
@@ -232,6 +348,31 @@
           permBox.textContent = perms.join(' · ');
         }
       }
+      // Topbar Global Connection Badge
+      const globalConn = $('#globalConnectionBadge');
+      if (globalConn) {
+        globalConn.textContent = `● CANLI (${dbLabel})`;
+        globalConn.style.color = 'var(--green)';
+        globalConn.style.borderColor = 'rgba(67,217,156,0.3)';
+        globalConn.style.background = 'rgba(67,217,156,0.08)';
+      }
+
+      // Diagnostics Table Updates
+      if ($('#diagQsStatus') && state.capabilities?.queryStore) {
+        const qs = state.capabilities.queryStore;
+        $('#diagQsStatus').textContent = qs.active ? `● Aktif (${qs.state})` : '○ Kapalı (Plan Cache DMV)';
+        $('#diagQsStatus').className = qs.active ? 'studio-badge badge-status-pass' : 'studio-badge badge-status-warning';
+      }
+      if ($('#diagViewServerStatus')) {
+        const hasVSS = state.capabilities?.permissions?.canViewServerState || state.capabilities?.permissions?.canViewDatabaseState;
+        $('#diagViewServerStatus').textContent = hasVSS ? '● Yetki Doğrulandı' : '○ Sınırlı';
+        $('#diagViewServerStatus').className = hasVSS ? 'studio-badge badge-status-pass' : 'studio-badge badge-status-warning';
+      }
+      if ($('#diagAiStatus')) {
+        const hasAi = Boolean(state.aiConfig?.hasApiKey);
+        $('#diagAiStatus').textContent = hasAi ? `● Yapılandırıldı (${state.aiConfig?.provider || 'AI'})` : '○ Anahtar Girilmedi';
+        $('#diagAiStatus').className = hasAi ? 'studio-badge badge-status-pass' : 'studio-badge badge-status-warning';
+      }
     } else {
       // Disconnected / Demo Mode
       if (light) {
@@ -256,6 +397,14 @@
       if (topbarScanLabel) topbarScanLabel.textContent = 'MOD';
       if (topbarScanTime) topbarScanTime.innerHTML = '<span style="color:var(--yellow);background:rgba(247,200,106,0.12);padding:2px 8px;border-radius:4px;border:1px solid rgba(247,200,106,0.3);font-size:11px;font-weight:600">DEMO MODU (Örnek Veri)</span>';
       if (topbarScanAgo) topbarScanAgo.textContent = 'Canlı Sunucuya Bağlanılmadı';
+
+      const globalConn = $('#globalConnectionBadge');
+      if (globalConn) {
+        globalConn.textContent = '○ DEMO MODU';
+        globalConn.style.color = 'var(--yellow)';
+        globalConn.style.borderColor = 'rgba(247,200,106,0.25)';
+        globalConn.style.background = 'rgba(247,200,106,0.06)';
+      }
     }
   }
 
@@ -570,6 +719,14 @@
       renderOverview();
     });
   });
+
+  const refreshFeedBtn = $('#refreshFeedBtn');
+  if (refreshFeedBtn) {
+    refreshFeedBtn.addEventListener('click', () => {
+      renderOverview();
+      toast('Yenilendi', 'Analiz akışı ve metrikler güncellendi.', 'info');
+    });
+  }
 
   // --- 3. View Inventory & Detail Pane ---
   function renderViewList(search = '') {
@@ -1268,6 +1425,14 @@
   const viewSearchInput = $('#viewSearch');
   if (viewSearchInput) {
     viewSearchInput.addEventListener('input', e => renderViewList(e.target.value));
+  }
+
+  const refreshInventoryBtn = $('#refreshInventoryBtn');
+  if (refreshInventoryBtn) {
+    refreshInventoryBtn.addEventListener('click', () => {
+      renderViewList($('#viewSearch')?.value || '');
+      toast('Yenilendi', 'View envanter listesi güncellendi.', 'info');
+    });
   }
 
   // Detail Tabs Switcher
@@ -2611,6 +2776,31 @@
     }
   }
 
+  const btnExportRegression = $('#btnExportRegression');
+  if (btnExportRegression) {
+    btnExportRegression.addEventListener('click', () => {
+      const regs = state.data.regressions || [];
+      if (regs.length === 0) {
+        toast('Bilgi', 'Dışa aktarılacak aktif regresyon kaydı bulunmuyor.', 'info');
+        return;
+      }
+      const blob = new Blob([JSON.stringify({
+        exportedAt: new Date().toISOString(),
+        database: state.connectionInfo?.database || 'DEMO',
+        totalRegressions: regs.length,
+        regressions: regs
+      }, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.download = `sql-studio-regressions-${timestamp}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast('Dışa Aktarıldı', `${regs.length} adet regresyon kaydı JSON olarak indirildi.`, 'success');
+    });
+  }
+
   // ============================================================
   // --- 8. SETTINGS SCREEN (Phase 2A Full Interactive System) ---
   // ============================================================
@@ -2669,6 +2859,12 @@
             if (cfg.scoring.depthWeight !== undefined && $('#weightDepth')) $('#weightDepth').value = cfg.scoring.depthWeight;
             if (cfg.scoring.sargableWeight !== undefined && $('#weightSargable')) $('#weightSargable').value = cfg.scoring.sargableWeight;
             if (cfg.scoring.blastWeight !== undefined && $('#weightBlast')) $('#weightBlast').value = cfg.scoring.blastWeight;
+          }
+          if (cfg.workbench) {
+            if (cfg.workbench.maxRows && $('#settingWbMaxRows')) $('#settingWbMaxRows').value = cfg.workbench.maxRows;
+            if (cfg.workbench.historyRetention && $('#settingWbHistoryRetention')) $('#settingWbHistoryRetention').value = cfg.workbench.historyRetention;
+            if (cfg.workbench.minimap !== undefined && $('#settingWbMinimap')) $('#settingWbMinimap').value = String(cfg.workbench.minimap);
+            if (cfg.workbench.wordWrap && $('#settingWbWordWrap')) $('#settingWbWordWrap').value = cfg.workbench.wordWrap;
           }
         }
       } catch (err) {
@@ -2926,6 +3122,75 @@
       document.body.classList.toggle('animations-reduced', e.target.value === 'reduced');
       localStorage.setItem('sql_studio_anim', e.target.value);
     });
+
+    // 8. Workbench Settings Save Handler (Sprint 8)
+    $('#btnSaveWorkbenchSettings')?.addEventListener('click', async () => {
+      const btn = $('#btnSaveWorkbenchSettings');
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Kaydediliyor...';
+
+      const payload = {
+        workbench: {
+          maxRows: Number($('#settingWbMaxRows')?.value || 10000),
+          historyRetention: Number($('#settingWbHistoryRetention')?.value || 10000),
+          minimap: $('#settingWbMinimap')?.value === 'true',
+          wordWrap: $('#settingWbWordWrap')?.value || 'off'
+        }
+      };
+
+      try {
+        const res = await fetch('/api/settings/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || 'Ayarlar kaydedilemedi.');
+
+        if (window._monacoEditorInstance) {
+          window._monacoEditorInstance.updateOptions({
+            minimap: { enabled: payload.workbench.minimap },
+            wordWrap: payload.workbench.wordWrap
+          });
+        }
+        toast('Workbench Ayarları Kaydedildi', 'Sorgu editörü ve limit ayarları güncellendi.', 'success');
+      } catch (err) {
+        toast('Hata', err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
+
+    // 9. Diagnostics JSON Export Handler (Sprint 8)
+    $('#btnExportDiagnostics')?.addEventListener('click', async () => {
+      const btn = $('#btnExportDiagnostics');
+      const oldText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '📥 Hazırlanıyor...';
+
+      try {
+        const res = await fetch('/api/diagnostics/export');
+        const json = await res.json();
+        if (!res.ok || !json.ok) throw new Error(json.error || 'Tanılama raporu alınamadı.');
+
+        const blob = new Blob([JSON.stringify(json.data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        a.download = `sql-studio-diagnostics-${timestamp}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        toast('Tanılama İndirildi', 'Sistem tanılama raporu JSON olarak kaydedildi.', 'success');
+      } catch (err) {
+        toast('Hata', err.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = oldText;
+      }
+    });
   }
 
   function applyAppearanceSettings({ theme, density, fontScale, editorFontSize, grid, animations }) {
@@ -3003,17 +3268,41 @@
     if (scale === 'large') document.body.classList.add('font-scale-large');
   }
 
-  // --- 9. Scan Coordination ---
+  // --- 9. Scan Coordination (Sprint 8.1 Honest Indeterminate Progress & Guard) ---
+  let isScanInProgress = false;
+
+  $('#closeScanProgressModal')?.addEventListener('click', () => {
+    $('#scanProgressModal')?.classList.add('hidden');
+  });
+  $('#btnDismissScanModal')?.addEventListener('click', () => {
+    $('#scanProgressModal')?.classList.add('hidden');
+  });
+
   async function triggerScan() {
+    if (isScanInProgress) {
+      toast('Tarama Devam Ediyor', 'Halihazırda devam eden bir tarama bulunmaktadır.', 'warning');
+      return;
+    }
+    isScanInProgress = true;
+
     const btn = $('#scanButton');
-    const oldHtml = btn.innerHTML;
-    btn.disabled = true;
-    btn.innerHTML = '<span>↻</span> Taranıyor...';
+    const oldHtml = btn ? btn.innerHTML : '';
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span>↻</span> Taranıyor...';
+    }
+
+    const progressModal = $('#scanProgressModal');
+    const progressStage = $('#scanProgressStage');
+
+    if (progressModal) progressModal.classList.remove('hidden');
+    if (progressStage) progressStage.textContent = 'Veritabanı katalogları, bağımlılıklar ve Query Store okunuyor...';
 
     try {
       if (!state.connected) {
-        toast('Demo Taraması', 'Aktif SQL bağlantısı yok; mock veri seti yenilendi.', '');
-        await new Promise(r => setTimeout(r, 600));
+        if (progressStage) progressStage.textContent = 'Demo veri kümesi yenileniyor (Çevrimdışı Mod)...';
+        toast('Demo Taraması', 'Aktif SQL bağlantısı yok; örnek veri seti yüklendi.', 'info');
+        await new Promise(r => setTimeout(r, 400));
         state.isLive = false;
         state.lastScanTime = new Date();
         state.data.views = MOCK.views;
@@ -3021,6 +3310,8 @@
         state.data.duplicates = MOCK.duplicates;
         state.data.regressions = MOCK.regressions;
       } else {
+        if (progressStage) progressStage.textContent = 'SQL Server sys katalogları ve bağımlılık haritası taranıyor...';
+
         const res = await fetch('/api/scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -3050,8 +3341,12 @@
     } catch (err) {
       toast('Tarama Hatası', err.message, 'error');
     } finally {
-      btn.disabled = false;
-      btn.innerHTML = oldHtml;
+      isScanInProgress = false;
+      if (progressModal) progressModal.classList.add('hidden');
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
     }
   }
 
@@ -8064,18 +8359,8 @@ ORDER BY IslemAdedi DESC;`;
     }).join('');
   }
 
-  // --- Initial Boot ---
-  async function init() {
-    initSettings();
-    initWorkbench();
-    initValidationLab();
-    initRefactorCompareTab();
-    initAstTab();
-    initAiWorkbenchIntegration();
-    initCommandPalette();
-    initActivityMonitor();
-    initIndexAdvisor();
-
+  // --- Initial Boot & Environment Sync ---
+  async function syncEnvironmentAndConnection() {
     try {
       let res = await fetch('/api/connection');
       let conn = await res.json();
@@ -8128,11 +8413,12 @@ ORDER BY IslemAdedi DESC;`;
         state.activeDatabase = e.target.value;
       };
     }
+  }
 
-    // =========================================================================
-    // SPRINT 6: REFACTOR WORKSPACE & LIFECYCLE MANAGEMENT ENGINE
-    // =========================================================================
-
+  // =========================================================================
+  // SPRINT 6: REFACTOR WORKSPACE & LIFECYCLE MANAGEMENT ENGINE
+  // =========================================================================
+  function initWorkspaces() {
     let wsCurrentPage = 1;
     let wsPageSize = 15;
     let wsFilterStatus = 'ALL';
@@ -8143,7 +8429,7 @@ ORDER BY IslemAdedi DESC;`;
     let generatedDeploymentPkg = null;
 
     // --- Workspaces List Loader ---
-    async function loadWorkspacesList() {
+    loadWorkspacesList = async function() {
       const tbody = $('#wsTableTbody');
       if (tbody) {
         tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--text-muted)">Çalışmalar yükleniyor...</td></tr>';
@@ -8845,6 +9131,72 @@ ORDER BY IslemAdedi DESC;`;
       }
     });
 
+    // Workspace Drift and Cross-Nav Actions (Sprint 8.1)
+    let overrideDriftFlag = false;
+
+    $('#btnWsIgnoreDrift')?.addEventListener('click', () => {
+      overrideDriftFlag = true;
+      $('#wsDriftBanner')?.classList.add('hidden');
+      toast('Drift Göz Ardı Edildi', 'Dağıtım betiği üretimi için drift kontrolü manuel olarak aşıldı.', 'warning');
+    });
+
+    $('#btnWsCreateFromLiveDb')?.addEventListener('click', async () => {
+      if (!activeWorkspace?.target?.objectName) return;
+      const viewName = activeWorkspace.target.objectName;
+      try {
+        const res = await fetch(`/api/views/${encodeURIComponent(viewName)}/definition`);
+        const json = await res.json();
+        if (!json.ok || !json.sql) throw new Error(json.error || 'Canlı tanım alınamadı.');
+
+        const wsRes = await fetch('/api/workspaces', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: `${viewName} (Canlı Tanım Güncellemesi)`,
+            target: activeWorkspace.target,
+            originalSql: json.sql
+          })
+        });
+        const wsJson = await wsRes.json();
+        if (wsJson.ok && wsJson.data) {
+          toast('Yeni Çalışma Açıldı', 'Güncel canlı SQL tanımıyla yeni çalışma oluşturuldu.', 'success');
+          loadWorkspacesList();
+          openWorkspaceDetail(wsJson.data.id);
+        }
+      } catch (err) {
+        toast('Hata', err.message, 'danger');
+      }
+    });
+
+    $('#btnWsAddCandidate')?.addEventListener('click', () => {
+      if (!activeWorkspace) return;
+      const viewName = activeWorkspace.target?.objectName;
+      if (viewName) {
+        selectView(viewName);
+        gotoPage('refactor');
+        toast('AI Refaktör', `"${viewName}" için yeni aday versiyon üretebilirsiniz.`, 'info');
+      }
+    });
+
+    $('#btnWsCandOpenWb')?.addEventListener('click', () => {
+      if (!activeCandidate?.sql) return;
+      gotoPage('workbench');
+      const sqlInput = $('#wbSqlInput');
+      if (sqlInput) sqlInput.value = activeCandidate.sql;
+      if (window._monacoEditorInstance) {
+        window._monacoEditorInstance.setValue(activeCandidate.sql);
+      }
+      toast('Workbench\'e Aktarıldı', `Aday v${activeCandidate.versionNumber || 1} editöre yüklendi.`, 'success');
+    });
+
+    $('#btnWsCandSendVal')?.addEventListener('click', () => {
+      if (!activeCandidate?.sql) return;
+      gotoPage('validation');
+      if ($('#valCandidateSql')) $('#valCandidateSql').value = activeCandidate.sql;
+      if ($('#valOriginalSql') && activeWorkspace?.originalSql) $('#valOriginalSql').value = activeWorkspace.originalSql;
+      toast('Doğrulama Lab', `Aday v${activeCandidate.versionNumber || 1} laboratuvara aktarıldı.`, 'info');
+    });
+
     // Generate Safe Deployment Script
     $('#btnGenerateDeployScript')?.addEventListener('click', async () => {
       if (!activeWorkspace) return;
@@ -8853,7 +9205,8 @@ ORDER BY IslemAdedi DESC;`;
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            candidateId: activeCandidate?.id || activeWorkspace.selectedCandidateId
+            candidateId: activeCandidate?.id || activeWorkspace.selectedCandidateId,
+            overrideDrift: overrideDriftFlag
           })
         });
         const json = await res.json();
@@ -9061,6 +9414,264 @@ ORDER BY IslemAdedi DESC;`;
     }
 
     $('#checkFilterSavedFavoriteOnly')?.addEventListener('change', () => loadSavedQueriesList());
+  }
+
+  // --- 11. Global Keyboard Shortcuts (Sprint 8) ---
+  function initKeyboardShortcutsModal() {
+    const modal = $('#keyboardShortcutsModal');
+    const openBtn = $('#btnKeyboardShortcuts');
+    const closeBtn = $('#closeKeyboardShortcutsModal');
+    const confirmBtn = $('#btnCloseShortcutsModal');
+
+    function openModal() {
+      modal?.classList.remove('hidden');
+    }
+    function closeModal() {
+      modal?.classList.add('hidden');
+    }
+
+    openBtn?.addEventListener('click', openModal);
+    closeBtn?.addEventListener('click', closeModal);
+    confirmBtn?.addEventListener('click', closeModal);
+
+    window.addEventListener('keydown', (e) => {
+      const tag = document.activeElement?.tagName?.toLowerCase();
+      const isInput = tag === 'input' || tag === 'textarea' || tag === 'select' || document.activeElement?.closest('.monaco-editor');
+
+      // Esc closes all floating modals
+      if (e.key === 'Escape') {
+        closeModal();
+        $('#onboardingWizardModal')?.classList.add('hidden');
+        $('#saveQueryModal')?.classList.add('hidden');
+        $('#savedQueriesModal')?.classList.add('hidden');
+        $('#renameTabModal')?.classList.add('hidden');
+        return;
+      }
+
+      // Ctrl + B toggles sidebar
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        $('#sidebarCollapseToggle')?.click();
+        return;
+      }
+
+      // F2 toggles theme
+      if (e.key === 'F2') {
+        e.preventDefault();
+        $('#themeQuickToggle')?.click();
+        return;
+      }
+
+      // If typing in input, do not intercept
+      if (isInput) return;
+
+      // F1 or ? opens shortcuts reference
+      if (e.key === '?' || e.key === 'F1') {
+        e.preventDefault();
+        openModal();
+        return;
+      }
+
+      // F5 runs query if on workbench
+      if (e.key === 'F5') {
+        const activePage = $('.page.active');
+        if (activePage && activePage.id === 'page-workbench') {
+          e.preventDefault();
+          $('#btnWbRunQuery')?.click();
+        }
+      }
+    });
+  }
+
+  // --- 12. First-Run Onboarding Wizard (Sprint 8) ---
+  function initOnboardingWizard() {
+    const modal = $('#onboardingWizardModal');
+    if (!modal) return;
+
+    let currentStep = 1;
+    const totalSteps = 5;
+
+    function showStep(step) {
+      currentStep = Math.max(1, Math.min(totalSteps, step));
+      $$('.wizard-step-bullet').forEach(bullet => {
+        const s = Number(bullet.dataset.step);
+        bullet.classList.toggle('active', s === currentStep);
+      });
+
+      for (let i = 1; i <= totalSteps; i++) {
+        const stepEl = $(`#wizardStep${i}`);
+        if (stepEl) stepEl.classList.toggle('hidden', i !== currentStep);
+      }
+
+      const btnPrev = $('#btnWizardPrev');
+      const btnNext = $('#btnWizardNext');
+      if (btnPrev) {
+        btnPrev.style.visibility = currentStep > 1 ? 'visible' : 'hidden';
+      }
+      if (btnNext) {
+        btnNext.textContent = currentStep === totalSteps ? '🚀 Taramayı Başlat' : 'İleri →';
+      }
+    }
+
+    function closeWizard() {
+      modal.classList.add('hidden');
+      try {
+        localStorage.setItem('sqlstudio_onboarding_completed', 'true');
+      } catch (_) {}
+    }
+
+    $('#closeOnboardingWizard')?.addEventListener('click', closeWizard);
+    $('#btnWizardSkip')?.addEventListener('click', closeWizard);
+
+    $('#btnWizardPrev')?.addEventListener('click', () => {
+      showStep(currentStep - 1);
+    });
+
+    $('#btnWizardNext')?.addEventListener('click', async () => {
+      if (currentStep < totalSteps) {
+        showStep(currentStep + 1);
+      } else {
+        // Step 5 - Complete onboarding & launch scan
+        const host = $('#wizardHost')?.value?.trim() || '127.0.0.1';
+        const port = Number($('#wizardPort')?.value || 1433);
+        const user = $('#wizardUser')?.value?.trim();
+        const password = $('#wizardPassword')?.value;
+        const database = $('#wizardDatabaseSelect')?.value || state.primaryDatabase;
+        const prefix = $('#wizardPrefix')?.value?.trim() || 'AA_';
+
+        const aiProvider = $('#wizardAiProvider')?.value;
+        const aiKey = $('#wizardAiKey')?.value?.trim();
+
+        closeWizard();
+
+        // Connect if credentials entered
+        if (user && password) {
+          try {
+            await fetch('/api/connection/connect', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ server: host, port, user, password, database, remember: true })
+            });
+          } catch (_) {}
+        }
+
+        // Save AI if entered
+        if (aiProvider && aiProvider !== 'none' && aiKey) {
+          try {
+            await fetch('/api/settings/config', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ai: {
+                  provider: aiProvider,
+                  apiKey: aiKey
+                }
+              })
+            });
+          } catch (_) {}
+        }
+
+        // Apply prefix
+        if (prefix) {
+          state.activePrefix = prefix;
+          if ($('#settingViewPrefix')) $('#settingViewPrefix').value = prefix;
+        }
+
+        toast('Kurulum Tamamlandı', 'SQL Server taranıyor...', 'success');
+        triggerScan();
+      }
+    });
+
+    // Test Connection in Wizard Step 2
+    $('#btnWizardTestConnection')?.addEventListener('click', async () => {
+      const btn = $('#btnWizardTestConnection');
+      const resultBox = $('#wizardTestResult');
+      if (!btn) return;
+      btn.disabled = true;
+      btn.textContent = 'Bağlantı Test Ediliyor...';
+      if (resultBox) {
+        resultBox.classList.remove('hidden');
+        resultBox.innerHTML = '<span style="color:var(--text-muted);font-size:12px">Sunucuya bağlanılıyor...</span>';
+      }
+
+      const host = $('#wizardHost')?.value?.trim() || '127.0.0.1';
+      const port = Number($('#wizardPort')?.value || 1433);
+      const user = $('#wizardUser')?.value?.trim();
+      const password = $('#wizardPassword')?.value;
+
+      try {
+        const res = await fetch('/api/connection/test', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ server: host, port, user, password })
+        });
+        const json = await res.json();
+        if (json.ok) {
+          if (resultBox) {
+            resultBox.innerHTML = `
+              <div style="color:var(--green);font-weight:600;font-size:13px;margin-bottom:4px">✓ Bağlantı Başarılı!</div>
+              <small style="color:var(--text-muted);font-size:11.5px">${escapeHtml(json.message || 'Erişim ve izinler doğrulandı.')}</small>
+            `;
+          }
+          if (json.databases && json.databases.length > 0) {
+            const select = $('#wizardDatabaseSelect');
+            if (select) {
+              select.innerHTML = json.databases.map(d => `<option value="${d}">${d}</option>`).join('');
+            }
+          }
+        } else {
+          if (resultBox) {
+            resultBox.innerHTML = `
+              <div style="color:var(--danger);font-weight:600;font-size:13px;margin-bottom:4px">✕ Bağlantı Başarısız</div>
+              <small style="color:var(--danger);font-size:11.5px">${escapeHtml(json.error || 'Sunucuya erişilemedi.')}</small>
+            `;
+          }
+        }
+      } catch (err) {
+        if (resultBox) {
+          resultBox.innerHTML = `
+            <div style="color:var(--danger);font-weight:600;font-size:13px;margin-bottom:4px">✕ Bağlantı Hatası</div>
+            <small style="color:var(--danger);font-size:11.5px">${escapeHtml(err.message)}</small>
+          `;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔌 Bağlantıyı Test Et';
+      }
+    });
+
+    // AI Provider in wizard toggle key row
+    $('#wizardAiProvider')?.addEventListener('change', (e) => {
+      const row = $('#wizardAiKeyRow');
+      if (row) {
+        row.style.display = e.target.value === 'none' ? 'none' : 'block';
+      }
+    });
+
+    // Show if onboarding not completed and disconnected
+    const completed = localStorage.getItem('sqlstudio_onboarding_completed');
+    if (!completed && !state.connected) {
+      showStep(1);
+      modal.classList.remove('hidden');
+    }
+  }
+
+  async function init() {
+    initSettings();
+    initWorkbench();
+    initValidationLab();
+    initRefactorCompareTab();
+    initAstTab();
+    initAiWorkbenchIntegration();
+    initCommandPalette();
+    initActivityMonitor();
+    initIndexAdvisor();
+    initWorkspaces();
+    initNavGroups();
+    initKeyboardShortcutsModal();
+    initOnboardingWizard();
+
+    await syncEnvironmentAndConnection();
 
     updateConnectionStatusUI();
     renderOverview();
@@ -9069,6 +9680,18 @@ ORDER BY IslemAdedi DESC;`;
     renderTables();
     renderDuplicates();
     renderRuntime();
+
+    // Hash routing on load & history change
+    const initialPage = window.location.hash.replace('#', '') || 'overview';
+    gotoPage(pageTitles[initialPage] ? initialPage : 'overview');
+
+    window.addEventListener('hashchange', () => {
+      if (isNavigating) return;
+      const hash = window.location.hash.replace('#', '') || 'overview';
+      if (pageTitles[hash]) {
+        gotoPage(hash);
+      }
+    });
   }
 
   init();

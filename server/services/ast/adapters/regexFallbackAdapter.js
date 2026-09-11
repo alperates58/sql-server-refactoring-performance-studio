@@ -17,13 +17,48 @@ function parseWithRegexFallback(sql = '', originalError = null) {
   for (const m of fromMatches) {
     const rawObj = m[1].trim();
     if (!['SELECT', 'WHERE', 'ON', 'GROUP', 'ORDER'].includes(rawObj.toUpperCase())) {
+      const parts = rawObj.replace(/[\[\]]/g, '').split('.');
+      const objName = parts[parts.length - 1];
+      const schemaName = parts.length > 1 ? parts[parts.length - 2] : 'dbo';
+      const dbName = parts.length > 2 ? parts[0] : null;
       tables.push({
-        referenceType: rawObj.startsWith('#') ? 'TEMP_TABLE' : 'BASE_TABLE',
-        database: null,
-        schema: 'dbo',
-        object: rawObj.replace(/[\[\]]/g, ''),
-        alias: m[2] ? m[2].replace(/[\[\]]/g, '') : rawObj.replace(/[\[\]]/g, '')
+        referenceType: objName.startsWith('#') ? 'TEMP_TABLE' : 'BASE_TABLE',
+        database: dbName,
+        schema: schemaName,
+        object: objName,
+        alias: m[2] ? m[2].replace(/[\[\]]/g, '') : objName
       });
+    }
+  }
+
+  const predicates = [];
+  const whereMatch = clean.match(/\bWHERE\s+([\s\S]+?)(?:\b(?:GROUP\s+BY|ORDER\s+BY|HAVING|UNION)\b|$)/i);
+  if (whereMatch) {
+    const rawPred = whereMatch[1].trim();
+    predicates.push({
+      clause: 'WHERE',
+      expression: rawPred,
+      leftExpression: rawPred.split(/=|<|>|LIKE|IN/i)[0].trim(),
+      operator: '=',
+      rightExpression: '',
+      columns: [],
+      functions: []
+    });
+  }
+
+  const projections = [];
+  const selMatch = clean.match(/\bSELECT\s+([\s\S]+?)\s+\bFROM\b/i);
+  if (selMatch) {
+    const cols = selMatch[1].split(',');
+    for (const c of cols) {
+      const trimmed = c.trim();
+      if (trimmed) {
+        projections.push({
+          expression: trimmed,
+          alias: trimmed.split(/\s+AS\s+/i)[1] || trimmed,
+          isWildcard: trimmed === '*'
+        });
+      }
     }
   }
 
@@ -38,13 +73,15 @@ function parseWithRegexFallback(sql = '', originalError = null) {
     unions.push({ type: 'UNION', isDistinct: true });
   }
 
+  const status = tables.length > 0 || projections.length > 0 ? 'AST_PARTIAL' : 'AST_FAILED';
+
   return createCanonicalAst({
     analysisSource: 'REGEX_FALLBACK',
-    status: 'AST_FAILED',
+    status,
     tables,
     joins: [],
-    predicates: [],
-    projections: [],
+    predicates,
+    projections,
     ctes: [],
     subqueries: [],
     windowFunctions: [],

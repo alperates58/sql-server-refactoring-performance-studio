@@ -197,8 +197,8 @@ function analyzeSargability(ast, findings) {
  */
 function analyzeJoins(ast, findings) {
   for (const j of ast.joins || []) {
-    // Missing join predicate
-    if (j.hasNoPredicate) {
+    // Missing join predicate or Cartesian CROSS JOIN
+    if (j.hasNoPredicate || j.type === 'CROSS JOIN') {
       findings.push(createAstFinding({
         code: 'NO_JOIN_PREDICATE',
         title: 'ON Koşulu Olmayan JOIN (Kartezyen Çarpım Riski)',
@@ -216,7 +216,7 @@ function analyzeJoins(ast, findings) {
 
     // Function inside ON predicate
     if (j.onPredicate) {
-      const funcOnJoinMatch = j.onPredicate.match(/\b(ISNULL|COALESCE|CONVERT|CAST|TRIM|LTRIM|RTRIM|SUBSTRING|LEFT)\s*\(/i);
+      const funcOnJoinMatch = j.onPredicate.match(/\b(ISNULL|COALESCE|CONVERT|CAST|TRIM|LTRIM|RTRIM|SUBSTRING|LEFT|RIGHT|UPPER|LOWER)\s*\(/i);
       if (funcOnJoinMatch) {
         findings.push(createAstFinding({
           code: 'FUNCTION_ON_JOIN_COLUMN',

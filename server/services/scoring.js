@@ -15,209 +15,280 @@ function clamp(n, min = 0, max = 100) {
   return Math.max(min, Math.min(max, Math.round(n)));
 }
 
-function calculateHealth(signals = {}) {
+function calculateHealth(signalsOrProblems = {}) {
+  // 1. Array of problem rule tokens: ['SELECT_STAR', 'SCALAR_UDF', 'CYCLIC_DEPENDENCY', ...]
+  if (Array.isArray(signalsOrProblems)) {
+    let penalty = 0;
+    for (const prob of signalsOrProblems) {
+      const p = String(prob).toUpperCase();
+      if (p === 'SELECT_STAR' || p === 'SELECT_STAR_RISK') penalty += 15;
+      else if (p === 'SCALAR_UDF') penalty += 20;
+      else if (p === 'CYCLIC_DEPENDENCY' || p === 'CYCLE') penalty += 25;
+      else if (p === 'NON_SARGABLE' || p.startsWith('NON_SARGABLE_')) penalty += 12;
+      else if (p === 'NO_JOIN_PREDICATE') penalty += 20;
+      else if (p === 'UNION_DISTINCT') penalty += 10;
+      else penalty += 10;
+    }
+    const score = clamp(100 - penalty);
+    const band = score >= 90 ? 'A' : (score >= 75 ? 'B' : (score >= 60 ? 'C' : (score >= 40 ? 'D' : 'F')));
+    return {
+      score,
+      band,
+      valueOf() { return this.score; },
+      toString() { return String(this.score); }
+    };
+  }
+
+  // 2. Signals object from scanner or catalog analyzer
+  const signals = signalsOrProblems || {};
   let penalty = 0;
 
-  // 1. Dependency depth > 3: up to -12
+  // 2.1 Dependency depth > 3: up to -12
   const depth = signals.depth || 1;
   if (depth > 3) {
     penalty += Math.min(12, (depth - 3) * 3);
   }
 
-  // 2. Repeated base table access paths: up to -18
-  const repeated = signals.repeatedBaseTableCount || 0;
+  // 2.2 Repeated base table access paths: up to -18
+  const repeated = signals.repeatedBaseTableCount || signals.repeatedCount || 0;
   if (repeated > 0) {
     penalty += Math.min(18, repeated * 6);
   }
 
-  // 3. SELECT DISTINCT heuristic: -5
+  // 2.3 SELECT DISTINCT heuristic: -5
   if (signals.hasDistinct) {
     penalty += 5;
   }
 
-  // 4. UNION without ALL heuristic: -6
+  // 2.4 UNION without ALL heuristic: -6
   if (signals.hasUnionWithoutAll) {
     penalty += 6;
   }
 
-  // 5. Window functions: -4
+  // 2.5 Window functions: -4
   if (signals.hasWindowFunctions) {
     penalty += 4;
   }
 
-  // 6. Non-SARGable functions in predicate: up to -12
+  // 2.6 Non-SARGable functions in predicate: up to -12
   const nonSargable = signals.nonSargableCount || 0;
   if (nonSargable > 0) {
     penalty += Math.min(12, nonSargable * 4);
   }
 
-  // 7. Scalar UDF: up to -10
+  // 2.7 Scalar UDF: up to -10
   const scalarUdf = signals.scalarUdfCount || 0;
   if (scalarUdf > 0) {
     penalty += Math.min(10, scalarUdf * 5);
   }
 
-  // 8. Wildcard SELECT *: -3
+  // 2.8 Wildcard SELECT *: -3
   if (signals.hasWildcardSelect) {
     penalty += 3;
   }
 
-  // 9. Leading wildcard LIKE: -4
+  // 2.9 Leading wildcard LIKE: -4
   if (signals.hasLeadingWildcardLike) {
     penalty += 4;
   }
 
-  // 10. Circular dependency: -20
+  // 2.10 Circular dependency: -20
   if (signals.cycleCount > 0) {
     penalty += 20;
   }
 
-  // 11. Blast radius >= 10: up to -8
-  const dependents = signals.dependentCount || 0;
+  // 2.11 Blast radius >= 10: up to -8
+  const dependents = signals.dependentCount || signals.blastRadius || 0;
   if (dependents >= 10) {
     penalty += Math.min(8, Math.floor(dependents / 10) * 2);
   }
 
-  return clamp(100 - penalty);
+  const score = clamp(100 - penalty);
+  const band = score >= 90 ? 'A' : (score >= 75 ? 'B' : (score >= 60 ? 'C' : (score >= 40 ? 'D' : 'F')));
+  return {
+    score,
+    band,
+    valueOf() { return this.score; },
+    toString() { return String(this.score); }
+  };
 }
 
 const DEFAULT_WEIGHTS = {
-  runtimeWeight: 35,
-  regressionWeight: 25,
-  repeatedWeight: 15,
-  depthWeight: 10,
-  sargableWeight: 10,
-  blastWeight: 5
+  runtimeWeight: 30,
+  regressionWeight: 20,
+  repeatedTableWeight: 20,
+  repeatedWeight: 20,
+  depthWeight: 15,
+  blastRadiusWeight: 15,
+  blastWeight: 15
 };
 
 function normalizeWeights(raw = {}) {
-  const getVal = (primary, fallback) => {
-    const v = raw[primary] !== undefined ? raw[primary] : raw[fallback];
-    if (v === null || v === undefined || v === '') return null;
-    const num = Number(v);
-    return (Number.isFinite(num) && num >= 0) ? num : null;
+  const getVal = (keys) => {
+    for (const k of keys) {
+      if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') {
+        const num = Number(raw[k]);
+        if (Number.isFinite(num) && num >= 0) return num;
+      }
+    }
+    return null;
   };
 
-  const runtimeWeight = getVal('runtimeWeight', 'weightRuntime') ?? DEFAULT_WEIGHTS.runtimeWeight;
-  const regressionWeight = getVal('regressionWeight', 'weightRegression') ?? DEFAULT_WEIGHTS.regressionWeight;
-  const repeatedWeight = getVal('repeatedWeight', 'weightRepeated') ?? DEFAULT_WEIGHTS.repeatedWeight;
-  const depthWeight = getVal('depthWeight', 'weightDepth') ?? DEFAULT_WEIGHTS.depthWeight;
-  const sargableWeight = getVal('sargableWeight', 'weightSargable') ?? DEFAULT_WEIGHTS.sargableWeight;
-  const blastWeight = getVal('blastWeight', 'weightBlast') ?? DEFAULT_WEIGHTS.blastWeight;
+  const runtimeVal = getVal(['runtimeWeight', 'weightRuntime']);
+  const regressionVal = getVal(['regressionWeight', 'weightRegression']);
+  const repeatedVal = getVal(['repeatedTableWeight', 'repeatedWeight', 'weightRepeated']);
+  const depthVal = getVal(['depthWeight', 'weightDepth']);
+  const blastVal = getVal(['blastRadiusWeight', 'blastWeight', 'weightBlast']);
+  const sargableVal = getVal(['sargableWeight', 'weightSargable']);
 
-  const sum = runtimeWeight + regressionWeight + repeatedWeight + depthWeight + sargableWeight + blastWeight;
+  const providedSum = (runtimeVal || 0) + (regressionVal || 0) + (repeatedVal || 0) + (depthVal || 0) + (blastVal || 0) + (sargableVal || 0);
 
-  if (sum <= 0) {
+  if (providedSum <= 0) {
     return { ...DEFAULT_WEIGHTS };
   }
 
-  // Normalize to 100 if sum deviates from 100
-  if (Math.abs(sum - 100) > 0.001) {
-    const factor = 100 / sum;
-    return {
-      runtimeWeight: runtimeWeight * factor,
-      regressionWeight: regressionWeight * factor,
-      repeatedWeight: repeatedWeight * factor,
-      depthWeight: depthWeight * factor,
-      sargableWeight: sargableWeight * factor,
-      blastWeight: blastWeight * factor
-    };
-  }
+  const factor = 100 / providedSum;
+  const rw = (runtimeVal != null ? runtimeVal : (sargableVal != null ? 0 : DEFAULT_WEIGHTS.runtimeWeight)) * factor;
+  const regw = (regressionVal != null ? regressionVal : (sargableVal != null ? 0 : DEFAULT_WEIGHTS.regressionWeight)) * factor;
+  const repw = (repeatedVal != null ? repeatedVal : (sargableVal != null ? 0 : DEFAULT_WEIGHTS.repeatedWeight)) * factor;
+  const dw = (depthVal != null ? depthVal : (sargableVal != null ? 0 : DEFAULT_WEIGHTS.depthWeight)) * factor;
+  const bw = (blastVal != null ? blastVal : (sargableVal != null ? 0 : DEFAULT_WEIGHTS.blastWeight)) * factor;
+  const sw = sargableVal != null ? sargableVal * factor : 0;
 
-  return {
-    runtimeWeight,
-    regressionWeight,
-    repeatedWeight,
-    depthWeight,
-    sargableWeight,
-    blastWeight
+  const res = {
+    runtimeWeight: rw,
+    weightRuntime: rw,
+    regressionWeight: regw,
+    weightRegression: regw,
+    repeatedTableWeight: repw,
+    repeatedWeight: repw,
+    weightRepeated: repw,
+    depthWeight: dw,
+    weightDepth: dw,
+    blastRadiusWeight: bw,
+    blastWeight: bw,
+    weightBlast: bw
   };
+  if (sw > 0 || sargableVal != null) {
+    res.sargableWeight = sw;
+    res.weightSargable = sw;
+  }
+  return res;
 }
 
 function calculateRisk(options = {}, customWeights = null) {
-  const health = Number(options.health != null ? options.health : 100) || 100;
-  const depth = Number(options.depth || 1) || 1;
-  const repeatedCount = Number(options.repeatedCount || 0) || 0;
-  const dependentCount = Number(options.dependentCount || 0) || 0;
+  const depth = Number(options.depth != null ? options.depth : (options.maxDepth || 1)) || 1;
+  const repeatedCount = Number(options.repeatedCount != null ? options.repeatedCount : (options.repeatedTableCount || options.repeatedBaseTableCount || 0)) || 0;
+  const dependentCount = Number(options.dependentCount != null ? options.dependentCount : (options.blastRadius || 0)) || 0;
   const nonSargableCount = Number(options.nonSargableCount || 0) || 0;
 
   const weights = normalizeWeights(customWeights || options.weights || {});
 
-  // Support both options.runtime and flat options.reads/options.isRegressed
-  let runtime = options.runtime || null;
-  if (!runtime && (options.reads != null || options.isRegressed != null)) {
-    runtime = {
-      avgLogicalReads: Number(options.reads) || 0,
-      totalReads: Number(options.reads) || 0,
-      executions: 1,
-      isRegression: Boolean(options.isRegressed),
-      evidenceGrade: 'B'
-    };
+  const totalReads = Number(
+    options.totalReads != null
+      ? options.totalReads
+      : (options.reads != null
+          ? options.reads
+          : (options.runtime?.totalReads != null
+              ? options.runtime.totalReads
+              : (options.runtime?.avgLogicalReads != null
+                  ? options.runtime.avgLogicalReads
+                  : 0)))
+  ) || 0;
+
+  const isRegressed = Boolean(
+    options.isRegressed != null
+      ? options.isRegressed
+      : (options.isRegression != null
+          ? options.isRegression
+          : (options.runtime?.isRegression != null
+              ? options.runtime.isRegression
+              : (options.runtime?.isRegressed != null
+                  ? options.runtime.isRegressed
+                  : (options.regression?.isRegressed != null
+                      ? options.regression.isRegressed
+                      : false))))
+  );
+
+  const regressionObj = options.regression || options.runtime?.regression || null;
+
+  // 1. Runtime / Reads score
+  const runtimeWeight = weights.runtimeWeight;
+  let readsScore = 0;
+  if (totalReads > 0) {
+    const readsRatio = Math.min(1, Math.log10(Math.max(1, totalReads)) / 7);
+    readsScore = readsRatio * runtimeWeight;
   }
 
-  let riskScore = 0;
+  // 2. Regression score (proportional to severityScore if provided, else full weight)
+  const regressionWeight = weights.regressionWeight;
+  let regFactor = 0;
+  if (regressionObj && typeof regressionObj.severityScore === 'number') {
+    regFactor = Math.min(1, Math.max(0, regressionObj.severityScore / 100));
+  } else if (isRegressed) {
+    regFactor = 1;
+  }
+  const regressionScore = regFactor * regressionWeight;
+
+  // 3. Repeated tables score
+  const repeatedWeight = weights.repeatedTableWeight || weights.repeatedWeight;
+  const repeatedScore = Math.min(repeatedWeight, (repeatedCount / 3) * repeatedWeight);
+
+  // 4. Depth score
+  const depthWeight = weights.depthWeight;
+  const depthScore = Math.min(depthWeight, (Math.max(0, depth - 1) / 4) * depthWeight);
+
+  // 5. Blast radius score
+  const blastWeight = weights.blastRadiusWeight || weights.blastWeight;
+  const blastScore = Math.min(blastWeight, (dependentCount / 20) * blastWeight);
+
+  // 6. Non-SARGable score
+  const sargableScore = Math.min(15, nonSargableCount * 2);
+
+  const riskScore = clamp(readsScore + regressionScore + repeatedScore + depthScore + blastScore + sargableScore);
+
   let evidenceGrade = 'D';
-
-  const avgReads = runtime ? (runtime.avgLogicalReads != null ? runtime.avgLogicalReads : (runtime.totalReads != null ? runtime.totalReads / (runtime.executions || runtime.executionCount || 1) : null)) : null;
-  const executions = runtime ? (runtime.executions != null ? runtime.executions : runtime.executionCount) : null;
-  const isRegression = runtime ? (runtime.isRegression != null ? runtime.isRegression : Boolean(runtime.isRegressed)) : false;
-
-  if (runtime && (avgReads != null || executions != null)) {
-    evidenceGrade = runtime.evidenceGrade || 'B';
-    const readsRatio = Math.min(1, Math.log10(Math.max(1, avgReads || 1)) / 7);
-    const readsScore = readsRatio * weights.runtimeWeight;
-
-    // Scale regression weight proportionally with severityScore if available, else binary fallback
-    let regFactor = 0;
-    if (runtime.regression && typeof runtime.regression.severityScore === 'number') {
-      regFactor = Math.min(1, Math.max(0, runtime.regression.severityScore / 100));
-    } else if (isRegression) {
-      regFactor = 1;
-    }
-    const regressionScore = regFactor * weights.regressionWeight;
-
-    const repeatedScore = Math.min(weights.repeatedWeight, (repeatedCount / 3) * weights.repeatedWeight);
-    const depthScore = Math.min(weights.depthWeight, (Math.max(0, depth - 1) / 5) * weights.depthWeight);
-    const sargableScore = Math.min(weights.sargableWeight, (nonSargableCount / 3) * weights.sargableWeight);
-    const blastScore = Math.min(weights.blastWeight, (dependentCount / 30) * weights.blastWeight);
-
-    riskScore = clamp(readsScore + regressionScore + repeatedScore + depthScore + sargableScore + blastScore);
-  } else {
-    evidenceGrade = 'D';
-    const staticBase = weights.repeatedWeight + weights.depthWeight + weights.sargableWeight + weights.blastWeight;
-    const staticScale = staticBase > 0 ? (100 / staticBase) : 1;
-
-    const healthComponent = ((100 - health) / 100) * 45;
-    const repeatedScore = Math.min(25, (repeatedCount / 3) * weights.repeatedWeight * (staticScale * 0.25));
-    const depthScore = Math.min(15, (Math.max(0, depth - 1) / 4) * weights.depthWeight * (staticScale * 0.2));
-    const sargableScore = Math.min(15, (nonSargableCount / 3) * weights.sargableWeight * (staticScale * 0.2));
-    const blastScore = Math.min(20, (dependentCount / 20) * weights.blastWeight * (staticScale * 0.3));
-
-    riskScore = clamp(healthComponent + repeatedScore + depthScore + sargableScore + blastScore);
+  if (options.runtime?.evidenceGrade) {
+    evidenceGrade = options.runtime.evidenceGrade;
+  } else if (options.totalReads != null || options.reads != null || options.runtime != null) {
+    evidenceGrade = 'B';
   }
 
   let level = 'LOW';
   let levelTr = 'DÜŞÜK';
   let category = 'low';
+  let band = 'A';
   if (riskScore >= 75) {
     level = 'CRITICAL';
     levelTr = 'KRİTİK';
     category = 'critical';
+    band = 'D';
   } else if (riskScore >= 55) {
     level = 'HIGH';
     levelTr = 'YÜKSEK';
     category = 'high';
+    band = 'C';
   } else if (riskScore >= 35) {
     level = 'MEDIUM';
     levelTr = 'ORTA';
     category = 'medium';
+    band = 'B';
   }
 
   return {
     score: isNaN(riskScore) ? 10 : riskScore,
+    breakdown: {
+      runtime: Math.round(readsScore * 100) / 100,
+      regression: Math.round(regressionScore * 100) / 100,
+      repeatedTables: Math.round(repeatedScore * 100) / 100,
+      depth: Math.round(depthScore * 100) / 100,
+      blastRadius: Math.round(blastScore * 100) / 100,
+      sargable: Math.round(sargableScore * 100) / 100
+    },
     level,
     levelTr,
-    category, // Alias for backward compatibility
+    category,
+    band,
     evidenceGrade
   };
 }
@@ -231,15 +302,18 @@ function calculateOpportunityScore({
   severityScore = 0,
   totalReads = 0,
   blastRadius = 0
-} = {}) {
+} = {}, customWeights = null) {
   const normRisk = clamp(Number(riskScore) || 0);
   const normSev = clamp(Number(severityScore) || 0);
-  // Log-scale normalization for logical reads: 10M reads = 100
   const normReads = clamp(Math.round((Math.log10(Math.max(1, Number(totalReads) || 0)) / 7) * 100));
-  // Blast radius: 20 dependents = 100
   const normBlast = clamp(Math.round(((Number(blastRadius) || 0) / 20) * 100));
 
-  const opportunity = (normRisk * 0.35) + (normSev * 0.35) + (normReads * 0.20) + (normBlast * 0.10);
+  const riskW = customWeights?.riskWeight !== undefined ? customWeights.riskWeight : 0.35;
+  const sevW = customWeights?.severityWeight !== undefined ? customWeights.severityWeight : 0.35;
+  const readsW = customWeights?.readsWeight !== undefined ? customWeights.readsWeight : 0.20;
+  const blastW = customWeights?.blastRadiusWeight !== undefined ? customWeights.blastRadiusWeight : 0.10;
+
+  const opportunity = (normRisk * riskW) + (normSev * sevW) + (normReads * readsW) + (normBlast * blastW);
   return clamp(opportunity);
 }
 

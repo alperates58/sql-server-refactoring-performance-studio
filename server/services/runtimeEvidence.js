@@ -17,10 +17,10 @@ const sql = require('mssql');
 const db = require('./sqlServer');
 
 const WINDOW_MAP = {
-  '1h': { key: '1h', datepart: 'hour', offset: -1, currentOffset: -1, baselineOffset: -2, bucketMinutes: 5 },
-  '24h': { key: '24h', datepart: 'hour', offset: -24, currentOffset: -24, baselineOffset: -48, bucketMinutes: 60 },
-  '7d': { key: '7d', datepart: 'day', offset: -7, currentOffset: -7, baselineOffset: -14, bucketMinutes: 360 },
-  '30d': { key: '30d', datepart: 'day', offset: -30, currentOffset: -30, baselineOffset: -60, bucketMinutes: 1440 }
+  '1h': { key: '1h', datepart: 'hour', offset: 1, currentOffset: 1, baselineOffset: 2, bucketMinutes: 5 },
+  '24h': { key: '24h', datepart: 'hour', offset: 24, currentOffset: 24, baselineOffset: 48, bucketMinutes: 60 },
+  '7d': { key: '7d', datepart: 'day', offset: 7, currentOffset: 7, baselineOffset: 14, bucketMinutes: 360 },
+  '30d': { key: '30d', datepart: 'day', offset: 30, currentOffset: 30, baselineOffset: 60, bucketMinutes: 1440 }
 };
 
 const REGRESSION_THRESHOLDS = {
@@ -41,7 +41,7 @@ function resolveWindowConfig(windowKey) {
   return {
     key: spec.key,
     datepart: spec.datepart,
-    offset: Math.abs(spec.offset),
+    offset: spec.offset,
     currentOffset: spec.currentOffset,
     baselineOffset: spec.baselineOffset,
     bucketMinutes: spec.bucketMinutes
@@ -71,80 +71,71 @@ function calculateDelta(current, baseline) {
   const c = Number.isFinite(Number(current)) ? Number(current) : 0;
   const b = Number.isFinite(Number(baseline)) ? Number(baseline) : 0;
 
-  if (b <= 0) {
+  let deltaValue = c - b;
+  let deltaPercent = 0;
+
+  if (b === 0) {
     if (c > 0) {
-      return { percent: 0, delta: Math.round(c * 10) / 10, status: 'NEW_ACTIVITY' };
+      deltaPercent = 100;
+      deltaValue = c;
+    } else {
+      deltaPercent = 0;
+      deltaValue = 0;
     }
-    return { percent: 0, delta: 0, status: 'NO_BASELINE' };
+  } else {
+    deltaPercent = ((c - b) / b) * 100;
   }
 
-  const percent = ((c - b) / b) * 100;
-  const delta = c - b;
+  const roundedVal = Math.round(deltaValue * 10) / 10;
+  const roundedPct = Math.round(deltaPercent * 10) / 10;
+
   return {
-    percent: Math.round(percent * 10) / 10,
-    delta: Math.round(delta * 10) / 10,
-    status: 'OK'
+    deltaValue: roundedVal,
+    deltaPercent: roundedPct,
+    delta: roundedVal,
+    percent: roundedPct,
+    status: b <= 0 ? (c > 0 ? 'NEW_ACTIVITY' : 'NO_BASELINE') : 'OK'
   };
 }
 
 /**
  * Calculates deterministic regression severity score (0-100).
  */
-function calculateSeverityScore({
-  durationDeltaPercent = 0,
-  durationDeltaMs = 0,
-  cpuDeltaPercent = 0,
-  readsDeltaPercent = 0,
-  planChanged = false,
-  currentExecutions = 0
-}) {
-  let score = 0;
+function calculateSeverityScore(options = {}) {
+  const durationPct = options.durationDeltaPct ?? options.durationDeltaPercent ?? 0;
+  const cpuPct = options.cpuDeltaPct ?? options.cpuDeltaPercent ?? 0;
+  const readsPct = options.readsDeltaPct ?? options.readsDeltaPercent ?? 0;
+  const planChanged = Boolean(options.planChanged);
 
-  // 1. Duration degradation (up to 40 pts)
-  if (durationDeltaPercent > 0) {
-    const pctFactor = Math.min(1, durationDeltaPercent / 200); // 200%+ maxes percentage
-    const msFactor = Math.min(1, Math.max(0, durationDeltaMs) / 3000); // 3s+ maxes absolute
-    score += (pctFactor * 25) + (msFactor * 15);
-  }
-
-  // 2. CPU degradation (up to 20 pts)
-  if (cpuDeltaPercent > 0) {
-    score += Math.min(20, (cpuDeltaPercent / 200) * 20);
-  }
-
-  // 3. Logical reads degradation (up to 20 pts)
-  if (readsDeltaPercent > 0) {
-    score += Math.min(20, (readsDeltaPercent / 250) * 20);
-  }
-
-  // 4. Plan flip penalty (up to 10 pts)
-  if (planChanged) {
-    score += 10;
-  }
-
-  // 5. Execution frequency scale (up to 10 pts)
-  if (currentExecutions >= 100) score += 10;
-  else if (currentExecutions >= 20) score += 7;
-  else if (currentExecutions >= 5) score += 4;
-  else if (currentExecutions >= 1) score += 2;
-
-  const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+  const rawScore = (durationPct * 0.42) + (cpuPct * 0.32) + (readsPct * 0.32) + (planChanged ? 20 : 0);
+  const finalScore = Math.min(100, Math.max(0, Math.round(rawScore)));
 
   let severity = 'INFO';
-  if (finalScore >= 75) severity = 'CRITICAL';
-  else if (finalScore >= 50) severity = 'HIGH';
-  else if (finalScore >= 25) severity = 'MODERATE';
+  if (finalScore >= 80) severity = 'CRITICAL';
+  else if (finalScore >= 60) severity = 'HIGH';
+  else if (finalScore >= 30) severity = 'MODERATE';
 
-  return { severityScore: finalScore, severity };
+  return {
+    severityScore: finalScore,
+    severity,
+    severityCategory: severity
+  };
 }
 
 /**
  * Evaluates statistical noise and sample sufficiency.
  */
-function calculateConfidence(currentExecutions = 0, baselineExecutions = 0) {
-  const curr = Number(currentExecutions) || 0;
-  const base = Number(baselineExecutions) || 0;
-
+function calculateConfidence(arg1, arg2) {
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    const execCount = Number(arg1.executionCount ?? arg1.currentExecutions ?? 0);
+    const method = String(arg1.attributionMethod || 'NONE');
+    if (execCount < 5 || method === 'NONE') return 'LOW';
+    if (method === 'OBJECT_CORRELATED' && execCount >= 20) return 'HIGH';
+    if (method === 'TEXT_SEARCH' || execCount >= 10) return 'MEDIUM';
+    return 'LOW';
+  }
+  const curr = Number(arg1) || 0;
+  const base = Number(arg2) || 0;
   if (curr < 3 || base < 1) return 'LOW';
   if (curr < 10 || base < 3) return 'MEDIUM';
   return 'HIGH';
@@ -153,8 +144,18 @@ function calculateConfidence(currentExecutions = 0, baselineExecutions = 0) {
 /**
  * Pure regression decision engine using threshold constants.
  */
-function detectRegression({ current, baseline, planChanged = false, currentPlanId = null, baselinePlanId = null }) {
-  if (!current || current.executionCount === 0) {
+function detectRegression(arg1, arg2) {
+  let current, baseline, options = {};
+  if (arg1 && arg2) {
+    current = arg1;
+    baseline = arg2;
+  } else if (arg1 && typeof arg1 === 'object') {
+    current = arg1.current;
+    baseline = arg1.baseline;
+    options = arg1;
+  }
+
+  if (!current || (current.executionCount || 0) < REGRESSION_THRESHOLDS.MIN_EXECUTIONS) {
     return {
       isRegressed: false,
       status: 'NO_ACTIVITY',
@@ -165,88 +166,68 @@ function detectRegression({ current, baseline, planChanged = false, currentPlanI
     };
   }
 
-  if (!baseline || baseline.executionCount === 0) {
+  if (!baseline || (baseline.executionCount || 0) === 0) {
     return {
       isRegressed: false,
       status: 'NO_BASELINE',
       severity: 'INFO',
       severityScore: 0,
       confidence: calculateConfidence(current.executionCount, 0),
-      reasons: [{ code: 'NEW_ACTIVITY', note: 'Önceki referans döneminde (baseline) çalışma kaydı bulunmuyor.' }]
+      reasons: []
     };
   }
 
-  const durDelta = calculateDelta(current.avgDurationMs, baseline.avgDurationMs);
-  const cpuDelta = calculateDelta(current.avgCpuMs, baseline.avgCpuMs);
-  const readsDelta = calculateDelta(current.avgLogicalReads, baseline.avgLogicalReads);
+  const curDur = current.avgDurationMs || 0;
+  const baseDur = baseline.avgDurationMs || 0;
+  const durDeltaMs = curDur - baseDur;
+  const durDeltaPct = baseDur > 0 ? ((durDeltaMs / baseDur) * 100) : 0;
 
-  const confidence = calculateConfidence(current.executionCount, baseline.executionCount);
+  const curCpu = current.avgCpuMs || 0;
+  const baseCpu = baseline.avgCpuMs || 0;
+  const cpuDeltaMs = curCpu - baseCpu;
+  const cpuDeltaPct = baseCpu > 0 ? ((cpuDeltaMs / baseCpu) * 100) : 0;
+
+  const curReads = current.totalLogicalReads ?? current.avgLogicalReads ?? 0;
+  const baseReads = baseline.totalLogicalReads ?? baseline.avgLogicalReads ?? 0;
+  const readsDelta = curReads - baseReads;
+  const readsDeltaPct = baseReads > 0 ? ((readsDelta / baseReads) * 100) : 0;
+
+  const currentPlanId = options.currentPlanId ?? current.planIds?.[0] ?? null;
+  const baselinePlanId = options.baselinePlanId ?? baseline.planIds?.[0] ?? null;
+  const planChanged = Boolean(options.planChanged || (currentPlanId && baselinePlanId && currentPlanId !== baselinePlanId));
 
   const reasons = [];
   let isRegressed = false;
 
-  // Criterion A: Minimum execution count
-  const hasMinExecs = current.executionCount >= REGRESSION_THRESHOLDS.MIN_EXECUTIONS;
-
-  // Criterion B & C: Duration degradation
-  if (durDelta.percent >= REGRESSION_THRESHOLDS.MIN_DURATION_PERCENT && durDelta.delta >= REGRESSION_THRESHOLDS.MIN_DURATION_DELTA_MS) {
-    reasons.push({
-      code: 'DURATION_INCREASE',
-      title: 'Çalışma Süresi Artışı',
-      baseline: baseline.avgDurationMs,
-      current: current.avgDurationMs,
-      deltaPercent: durDelta.percent,
-      deltaMs: durDelta.delta
-    });
-    if (hasMinExecs) isRegressed = true;
+  // Duration regression
+  if (durDeltaPct >= REGRESSION_THRESHOLDS.MIN_DURATION_PERCENT && durDeltaMs >= REGRESSION_THRESHOLDS.MIN_DURATION_DELTA_MS) {
+    isRegressed = true;
+    reasons.push(`Süre Regresyonu: Çalışma süresi ${baseDur}ms -> ${curDur}ms (+${Math.round(durDeltaPct)}%) arttı.`);
   }
 
-  // CPU degradation
-  if (cpuDelta.percent >= REGRESSION_THRESHOLDS.MIN_CPU_PERCENT && cpuDelta.delta >= 30) {
-    reasons.push({
-      code: 'CPU_INCREASE',
-      title: 'İşlemci (CPU) Tüketim Artışı',
-      baseline: baseline.avgCpuMs,
-      current: current.avgCpuMs,
-      deltaPercent: cpuDelta.percent,
-      deltaMs: cpuDelta.delta
-    });
-    if (hasMinExecs) isRegressed = true;
+  // CPU regression
+  if (cpuDeltaPct >= REGRESSION_THRESHOLDS.MIN_CPU_PERCENT && cpuDeltaMs >= 20) {
+    isRegressed = true;
+    reasons.push(`CPU Tüketim Sıçraması: CPU süresi %${Math.round(cpuDeltaPct)} arttı.`);
   }
 
-  // Reads degradation
-  if (readsDelta.percent >= REGRESSION_THRESHOLDS.MIN_READS_PERCENT && readsDelta.delta >= 500) {
-    reasons.push({
-      code: 'LOGICAL_READS_INCREASE',
-      title: 'Mantıksal Okuma (I/O) Artışı',
-      baseline: baseline.avgLogicalReads,
-      current: current.avgLogicalReads,
-      deltaPercent: readsDelta.percent,
-      deltaReads: readsDelta.delta
-    });
-    if (hasMinExecs) isRegressed = true;
+  // Reads regression
+  if (readsDeltaPct >= REGRESSION_THRESHOLDS.MIN_READS_PERCENT && readsDelta >= 500) {
+    isRegressed = true;
+    reasons.push(`Mantıksal Okuma Artışı: Okuma sayısı %${Math.round(readsDeltaPct)} arttı.`);
   }
 
-  // Plan flip detection
+  // Plan flip
   if (planChanged) {
-    reasons.push({
-      code: 'PLAN_CHANGED',
-      title: 'Yürütme Planı Değişimi (Plan Flip)',
-      baselinePlanId,
-      currentPlanId
-    });
-    if (hasMinExecs && durDelta.percent >= 15) {
-      isRegressed = true;
-    }
+    isRegressed = true;
+    reasons.push(`Plan Değişimi: Aktif plan ${baselinePlanId} -> ${currentPlanId} olarak değişti.`);
   }
 
   const { severityScore, severity } = calculateSeverityScore({
-    durationDeltaPercent: durDelta.percent,
-    durationDeltaMs: durDelta.delta,
-    cpuDeltaPercent: cpuDelta.percent,
-    readsDeltaPercent: readsDelta.percent,
-    planChanged,
-    currentExecutions: current.executionCount
+    durationDeltaPct: durDeltaPct,
+    cpuDeltaPct: cpuDeltaPct,
+    readsDeltaPct: readsDeltaPct,
+    planChanged
   });
 
   return {
@@ -254,11 +235,11 @@ function detectRegression({ current, baseline, planChanged = false, currentPlanI
     status: isRegressed ? 'REGRESSED' : 'STABLE',
     severity: isRegressed ? severity : 'INFO',
     severityScore: isRegressed ? severityScore : 0,
-    confidence,
-    durationDeltaPercent: durDelta.percent,
-    durationDeltaMs: durDelta.delta,
-    cpuDeltaPercent: cpuDelta.percent,
-    readsDeltaPercent: readsDelta.percent,
+    confidence: calculateConfidence(current.executionCount, baseline.executionCount),
+    durationDeltaMs: Math.round(durDeltaMs),
+    durationDeltaPercent: Math.round(durDeltaPct),
+    cpuDeltaPercent: Math.round(cpuDeltaPct),
+    readsDeltaPercent: Math.round(readsDeltaPct),
     planChanged,
     baselinePlanId,
     currentPlanId,
@@ -312,13 +293,13 @@ function buildQueryStoreMetricsQuery(winSpec) {
       qt.query_sql_text,
       p.plan_id,
       CASE 
-        WHEN rs.last_execution_time >= DATEADD(${winSpec.datepart}, @currOffset, GETUTCDATE()) THEN 'CURRENT'
-        WHEN rs.last_execution_time >= DATEADD(${winSpec.datepart}, @baseOffset, GETUTCDATE()) THEN 'BASELINE'
+        WHEN rs.last_execution_time >= DATEADD(${winSpec.datepart}, -${winSpec.currentOffset}, GETUTCDATE()) THEN 'CURRENT'
+        WHEN rs.last_execution_time >= DATEADD(${winSpec.datepart}, -${winSpec.baselineOffset}, GETUTCDATE()) THEN 'BASELINE'
         ELSE 'OLD'
       END AS window_bucket,
       rs.count_executions,
-      rs.avg_duration,
-      rs.avg_cpu_time,
+      rs.avg_duration / 1000.0 AS avg_duration_ms,
+      rs.avg_cpu_time / 1000.0 AS avg_cpu_ms,
       rs.avg_logical_io_reads,
       rs.avg_physical_io_reads,
       rs.first_execution_time,
@@ -327,7 +308,7 @@ function buildQueryStoreMetricsQuery(winSpec) {
     JOIN sys.query_store_query_text AS qt ON q.query_text_id = qt.query_text_id
     JOIN sys.query_store_plan AS p ON p.query_id = q.query_id
     JOIN sys.query_store_runtime_stats AS rs ON rs.plan_id = p.plan_id
-    WHERE rs.last_execution_time >= DATEADD(${winSpec.datepart}, @baseOffset, GETUTCDATE())
+    WHERE rs.last_execution_time >= DATEADD(${winSpec.datepart}, -${winSpec.baselineOffset}, GETUTCDATE())
     ORDER BY rs.avg_logical_io_reads DESC;
   `;
 }
@@ -338,17 +319,17 @@ function buildQueryStoreMetricsQuery(winSpec) {
 function buildQueryStoreTimeseriesQuery(winSpec) {
   return `
     SELECT 
-      rsi.start_time,
-      rsi.end_time,
+      rsi.start_time AS bucket_start,
+      rsi.end_time AS bucket_end,
       SUM(rs.count_executions) AS executions,
       AVG(rs.avg_duration) / 1000.0 AS avg_duration_ms,
       AVG(rs.avg_cpu_time) / 1000.0 AS avg_cpu_ms,
       SUM(rs.avg_logical_io_reads * rs.count_executions) AS total_logical_reads
     FROM sys.query_store_runtime_stats_interval rsi
     JOIN sys.query_store_runtime_stats rs ON rs.runtime_stats_interval_id = rsi.runtime_stats_interval_id
-    WHERE rsi.start_time >= DATEADD(${winSpec.datepart}, @currOffset, GETUTCDATE())
+    WHERE rsi.start_time >= DATEADD(${winSpec.datepart}, -${winSpec.currentOffset}, GETUTCDATE())
     GROUP BY rsi.start_time, rsi.end_time
-    ORDER BY rsi.start_time ASC;
+    ORDER BY bucket_start ASC;
   `;
 }
 
@@ -362,8 +343,8 @@ function buildPlanCacheFallbackQuery() {
       qs.plan_handle,
       qs.execution_count,
       qs.total_logical_reads,
-      qs.total_elapsed_time,
-      qs.total_worker_time,
+      qs.total_elapsed_time / 1000.0 AS total_elapsed_ms,
+      qs.total_worker_time / 1000.0 AS total_worker_ms,
       qs.last_execution_time,
       st.text
     FROM sys.dm_exec_query_stats qs

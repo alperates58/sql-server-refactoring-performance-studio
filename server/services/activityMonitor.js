@@ -185,7 +185,7 @@ function categorizeWaitType(waitType, waitResource = null) {
     return {
       category: 'MEMORY',
       categoryNameTr: 'Bellek Tahsisi (Memory Grant)',
-      explanationTr: 'Sorgu yürütülmek için çalışma belleği (Sort/Hash Grant) bekliyor. Büyük sorting veya join işlemleri kaynaklı olabilir.',
+      explanationTr: 'Sorgu yürütülmek için çalışma belleği (Memory Grant / Sort / Hash) bekliyor. Büyük sorting veya join işlemleri kaynaklı olabilir.',
       severity: 'CRITICAL'
     };
   }
@@ -195,7 +195,7 @@ function categorizeWaitType(waitType, waitResource = null) {
     return {
       category: 'NETWORK',
       categoryNameTr: 'İstemci Ağ İletişimi',
-      explanationTr: 'SQL Server veriyi hazırladı ancak istemci uygulama sonuçları yavaş tüketiyor (Fetch gecikmesi) olabilir.',
+      explanationTr: 'SQL Server veriyi hazırladı ancak İstemci uygulama sonuçları yavaş tüketiyor (Fetch gecikmesi) olabilir.',
       severity: 'WARNING'
     };
   }
@@ -205,7 +205,7 @@ function categorizeWaitType(waitType, waitResource = null) {
     return {
       category: 'LOG',
       categoryNameTr: 'Transaction Log Yazımı',
-      explanationTr: 'Log kayıtlarının diske kalıcı olarak yazılması bekleniyor. Yavaş log diski veya sık tekil COMMIT işlemleri olabilir.',
+      explanationTr: 'Transaction log kayıtlarının diske kalıcı olarak yazılması bekleniyor. Yavaş log diski veya sık tekil COMMIT işlemleri olabilir.',
       severity: 'HIGH'
     };
   }
@@ -217,7 +217,7 @@ function categorizeWaitType(waitType, waitResource = null) {
       return {
         category: 'TEMPDB',
         categoryNameTr: 'TempDB Tahsis Çekişmesi (PAGELATCH)',
-        explanationTr: 'TempDB sistem sayfalarında (PFS/GAM/SGAM tahsis sayfaları, Veritabanı ID: 2) çekişme yaşanıyor olabilir. Eşzamanlı geçici tablo veya tablo değişkeni yükü incelenmelidir.',
+        explanationTr: 'TempDB sistem sayfalarında (PFS, GAM veya SGAM tahsis sayfaları, Veritabanı ID: 2) çekişme yaşanıyor olabilir. Eşzamanlı geçici tablo veya tablo değişkeni yükü incelenmelidir.',
         severity: 'HIGH'
       };
     }

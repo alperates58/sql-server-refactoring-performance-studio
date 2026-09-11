@@ -113,7 +113,7 @@ function canTransitionWorkspace(currentStatus, targetStatus, context = {}) {
         return { allowed: false, reason: 'Doğrulama (validation) sonucu bulunamadı.' };
       }
       if (verdict === 'FAIL') {
-        return { allowed: false, reason: 'Doğrulamadan başarısız (FAIL) olan aday için workspace VALIDATED durumuna geçirilemez.' };
+        return { allowed: false, reason: 'Doğrulamadan başarısız FAIL olan aday için workspace VALIDATED durumuna geçirilemez.' };
       }
       return { allowed: true };
     }
