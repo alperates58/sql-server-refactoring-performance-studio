@@ -2910,10 +2910,10 @@
       views.forEach(v => {
         const cId = v.canonicalId || v.name || v.view_name;
         const displayName = v.name || v.view_name;
-        const dbPrefix = v.database ? `[${v.database}] ` : '';
+        const dbSuffix = v.database ? ` (${v.database})` : '';
         const opt = document.createElement('option');
         opt.value = cId;
-        opt.textContent = `${dbPrefix}${displayName}`;
+        opt.textContent = `${displayName}${dbSuffix}`;
         select.appendChild(opt);
       });
       select.dataset.db = currentDbKey;
@@ -2941,9 +2941,17 @@
 
     const currentName = v.name || v.view_name;
     const currentCanonical = v.canonicalId || currentName;
+    const currentDb = v.database || (currentCanonical.includes('.') ? currentCanonical.split('.')[0] : '');
     state.selectedViewName = currentName;
     state.selectedCanonicalId = currentCanonical;
     select.value = currentCanonical;
+
+    // Prominent Target View Title & Database Badge Update
+    if ($('#refactorViewTitle')) $('#refactorViewTitle').textContent = currentName;
+    if ($('#refactorDbBadge')) {
+      $('#refactorDbBadge').textContent = currentDb || 'Veritabanı';
+      $('#refactorDbBadge').style.display = currentDb ? 'inline-block' : 'none';
+    }
 
     // 3. Update Risk Pill & Class
     const riskBadge = $('#refactorRiskBadge');

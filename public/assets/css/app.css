@@ -5467,3 +5467,84 @@ body.theme-light .thinking-step .step-body strong {
   color: #0f172a;
 }
 
+/* ============================================================
+   NEW: PROMINENT REFACTOR TARGET VIEW HEADER
+   ============================================================ */
+.refactor-hero-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: var(--surface2, #121620);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+body.theme-light .refactor-hero-header {
+  background: #ffffff;
+  border-color: #e2e8f0;
+}
+
+.refactor-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.refactor-kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.refactor-view-title {
+  margin: 2px 0 0;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-bright, #ffffff);
+  font-family: var(--font-mono, monospace);
+  letter-spacing: -0.3px;
+  word-break: break-all;
+}
+
+body.theme-light .refactor-view-title {
+  color: #0f172a;
+}
+
+.refactor-switch-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.refactor-switch-box label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  letter-spacing: 0.5px;
+}
+
+.refactor-switch-box select {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-xs);
+  min-width: 220px;
+  max-width: 320px;
+  background: var(--surface, #0d111a);
+  border: 1px solid var(--line);
+  color: var(--text-primary);
+}
+
+body.theme-light .refactor-switch-box select {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+
+

@@ -442,13 +442,18 @@
       <section class="page" id="page-refactor">
         <div class="refactor-layout">
           <section class="refactor-source">
-            <div class="pane-head">
-              <div style="flex:1">
-                <span class="panel-kicker">HEDEF VIEW</span>
-                <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
-                  <select id="refactorViewSelect" class="setting-input select-styled" style="font-size:14px;font-weight:700;color:var(--text-bright);background:var(--card-bg);border:1px solid var(--border);padding:4px 10px;border-radius:var(--radius-sm);max-width:380px"></select>
+            <div class="refactor-hero-header">
+              <div class="refactor-title-block">
+                <div class="refactor-kicker-row">
+                  <span class="panel-kicker">HEDEF VIEW ANALİZİ</span>
+                  <span class="db-badge" id="refactorDbBadge" style="font-size:10px;padding:2px 7px">--</span>
                   <span class="severity-pill" id="refactorRiskBadge">RISK --</span>
                 </div>
+                <h2 class="refactor-view-title" id="refactorViewTitle">--</h2>
+              </div>
+              <div class="refactor-switch-box">
+                <label for="refactorViewSelect">Farklı Bir View İncele:</label>
+                <select id="refactorViewSelect" class="select-styled" title="İncelenecek view'i değiştirin"></select>
               </div>
             </div>
             <div class="context-pack">
