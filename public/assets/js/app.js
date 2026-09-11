@@ -3686,6 +3686,27 @@ LEFT JOIN BaseSummary AS b
         reportBody.innerHTML = renderDiagnosticReportHtml(analysisText);
       }
 
+      // Automatically sync any generated SQL into candidate SQL editors
+      const sqlMatches = analysisText.match(/```(?:sql)?\s*([\s\S]*?)```/gi);
+      if (sqlMatches && sqlMatches.length > 0) {
+        let bestSql = '';
+        for (let idx = sqlMatches.length - 1; idx >= 0; idx--) {
+          const raw = sqlMatches[idx].replace(/^```(?:sql)?/i, '').replace(/```$/, '').trim();
+          if (raw.toUpperCase().includes('CREATE OR ALTER') || raw.toUpperCase().includes('SELECT') || raw.toUpperCase().includes('WITH ')) {
+            bestSql = raw;
+            break;
+          }
+        }
+        if (bestSql && isValidCandidateSql(bestSql)) {
+          if ($('#candidateSqlText')) $('#candidateSqlText').value = bestSql;
+          if ($('#candidateSqlTextSplit')) $('#candidateSqlTextSplit').value = bestSql;
+          if ($('#candidateStatusBadge')) {
+            $('#candidateStatusBadge').textContent = 'SEMANTICALLY_PROPOSED (UNVALIDATED)';
+            $('#candidateStatusBadge').className = 'needs-validation';
+          }
+        }
+      }
+
       toast(
         isFallback ? 'Derinlemesine Analiz Hazır' : 'AI Derinlemesine Analiz Hazır',
         `${viewName} için alt sorgular ve fonksiyonlar katman katman analiz edildi.`,
@@ -3967,10 +3988,18 @@ ${baseQuery};`;
     return $('#candidateSqlText')?.value || $('#candidateSqlTextSplit')?.value || '';
   }
 
-  function handleOpenCandidateInWorkbench() {
-    const candSql = getActiveCandidateSql();
+  function handleOpenCandidateInWorkbench(customSql = null) {
+    let candSql = (typeof customSql === 'string' && customSql.trim()) ? customSql.trim() : getActiveCandidateSql();
     if (!isValidCandidateSql(candSql)) {
-      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
+      const codeBlock = $('#deepAnalysisReportBody pre code') || $('#candidateFullAnalysis pre code');
+      if (codeBlock && isValidCandidateSql(codeBlock.innerText)) {
+        candSql = codeBlock.innerText.trim();
+        if ($('#candidateSqlText')) $('#candidateSqlText').value = candSql;
+        if ($('#candidateSqlTextSplit')) $('#candidateSqlTextSplit').value = candSql;
+      }
+    }
+    if (!isValidCandidateSql(candSql)) {
+      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" veya "Derinlemesine Analiz" ile bir sorgu üretin.', 'warning');
       return;
     }
     const wbInput = $('#wbSqlInput');
@@ -3982,19 +4011,29 @@ ${baseQuery};`;
     toast('SQL Workbench', 'Aday SQL sorgusu Workbench editörüne yüklendi.', 'success');
   }
 
-  function handleSendCandidateToValidation() {
+  function handleSendCandidateToValidation(customSql = null) {
     const origSql = $('#refactorSourceCode')?.textContent || '';
-    const candSql = getActiveCandidateSql();
+    let candSql = (typeof customSql === 'string' && customSql.trim()) ? customSql.trim() : getActiveCandidateSql();
     if (!isValidCandidateSql(candSql)) {
-      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
+      const codeBlock = $('#deepAnalysisReportBody pre code') || $('#candidateFullAnalysis pre code');
+      if (codeBlock && isValidCandidateSql(codeBlock.innerText)) {
+        candSql = codeBlock.innerText.trim();
+        if ($('#candidateSqlText')) $('#candidateSqlText').value = candSql;
+        if ($('#candidateSqlTextSplit')) $('#candidateSqlTextSplit').value = candSql;
+      }
+    }
+    if (!isValidCandidateSql(candSql)) {
+      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" veya "Derinlemesine Analiz" ile bir sorgu üretin.', 'warning');
       return;
     }
     const valOrig = $('#valOrigSql');
     const valCand = $('#valCandSql');
+    const valTitle = $('#valPipelineTitle');
     if (valOrig) valOrig.value = origSql;
     if (valCand) valCand.value = candSql;
+    if (valTitle) valTitle.textContent = state.selectedViewName || 'Doğrulama İncelemesi';
     gotoPage('validation');
-    toast('Validation Lab', 'Orijinal ve Aday SQL sorguları Doğrulama Laboratuvarına aktarıldı.', 'success');
+    toast('Validation Lab', `${state.selectedViewName || 'Seçili view'} için orijinal ve aday sorgular Doğrulama Laboratuvarına aktarıldı.`, 'success');
   }
 
   function handleCopyCandidateSql() {
@@ -4011,15 +4050,30 @@ ${baseQuery};`;
   }
 
   // Bind Open in Workbench buttons
-  $('#btnOpenCandidateInWorkbench')?.addEventListener('click', handleOpenCandidateInWorkbench);
-  $('#btnOpenCandidateInWorkbenchSplit')?.addEventListener('click', handleOpenCandidateInWorkbench);
-  $('#btnGlobalOpenWorkbench')?.addEventListener('click', handleOpenCandidateInWorkbench);
+  $('#btnOpenCandidateInWorkbench')?.addEventListener('click', () => handleOpenCandidateInWorkbench());
+  $('#btnOpenCandidateInWorkbenchSplit')?.addEventListener('click', () => handleOpenCandidateInWorkbench());
+  $('#btnGlobalOpenWorkbench')?.addEventListener('click', () => handleOpenCandidateInWorkbench());
+  $('#btnDeepSendToWorkbench')?.addEventListener('click', () => handleOpenCandidateInWorkbench());
 
   // Bind Send to Validation Lab buttons
-  $('#btnSendCandidateToValidation')?.addEventListener('click', handleSendCandidateToValidation);
-  $('#btnSendCandidateToValidationSplit')?.addEventListener('click', handleSendCandidateToValidation);
-  $('#btnGlobalSendValidation')?.addEventListener('click', handleSendCandidateToValidation);
-  $$('[data-detail-tab-jump="validation"]').forEach(el => el.addEventListener('click', handleSendCandidateToValidation));
+  $('#btnSendCandidateToValidation')?.addEventListener('click', () => handleSendCandidateToValidation());
+  $('#btnSendCandidateToValidationSplit')?.addEventListener('click', () => handleSendCandidateToValidation());
+  $('#btnGlobalSendValidation')?.addEventListener('click', () => handleSendCandidateToValidation());
+  $('#btnDeepSendToValidation')?.addEventListener('click', () => handleSendCandidateToValidation());
+  $$('[data-detail-tab-jump="validation"]').forEach(el => el.addEventListener('click', () => handleSendCandidateToValidation()));
+
+  // Global window helpers for inline code blocks
+  window.sendCodeBlockToValidation = function(codeId) {
+    const el = document.getElementById(codeId);
+    if (!el) return;
+    handleSendCandidateToValidation(el.innerText.trim());
+  };
+
+  window.sendCodeBlockToWorkbench = function(codeId) {
+    const el = document.getElementById(codeId);
+    if (!el) return;
+    handleOpenCandidateInWorkbench(el.innerText.trim());
+  };
 
   // Bind Copy buttons
   $('#btnCopyCandidateSql')?.addEventListener('click', handleCopyCandidateSql);

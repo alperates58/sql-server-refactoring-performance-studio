@@ -530,7 +530,11 @@
                     </h4>
                     <p style="margin:0;font-size:12px;color:var(--text-muted)">Dış SELECT → Alt Sorgular / CTE → Skalar Fonksiyonlar (UDF) → Fiziksel Tablo Taramaları</p>
                   </div>
-                  <span id="deepAnalysisModelBadge" class="provider-pill mini">deepseek-flash</span>
+                  <div style="display:flex;align-items:center;gap:8px">
+                    <button type="button" class="button ghost mini" id="btnDeepSendToValidation" title="Üretilen optimize sorguyu Doğrulama Laboratuvarına aktar">✓ Doğrulama Laboratuvarı</button>
+                    <button type="button" class="button ghost mini" id="btnDeepSendToWorkbench" title="Sorguyu SQL Çalışma Alanında Aç">⚡ Workbench</button>
+                    <span id="deepAnalysisModelBadge" class="provider-pill mini">deepseek-flash</span>
+                  </div>
                 </div>
 
                 <!-- Live Thinking Terminal -->
