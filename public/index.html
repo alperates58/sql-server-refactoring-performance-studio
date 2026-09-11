@@ -879,7 +879,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
 
               <div class="setting-card">
                 <div><strong>API Temel URL'si</strong><p>Sağlayıcı API uç noktası</p></div>
-                <input id="settingAiBaseUrl" class="setting-input wide" value="https://api.deepseek.com/v1" />
+                <input id="settingAiBaseUrl" class="setting-input wide" value="https://api.deepseek.com" />
               </div>
 
               <div class="setting-card">
@@ -888,8 +888,15 @@ ORDER BY IslemAdedi DESC;"></textarea>
               </div>
 
               <div class="setting-card">
-                <div><strong>Model Adı</strong><p>Kullanılacak spesifik model adı</p></div>
-                <input id="settingAiModel" class="setting-input wide" value="deepseek-coder" />
+                <div><strong>Model Adı</strong><p>Kullanılacak spesifik model adı (örn: deepseek-chat, deepseek-reasoner)</p></div>
+                <input id="settingAiModel" class="setting-input wide" value="deepseek-chat" list="aiModelSuggestions" placeholder="deepseek-chat (Önerilen)" />
+                <datalist id="aiModelSuggestions">
+                  <option value="deepseek-chat">deepseek-chat (DeepSeek-V3, Genel Refaktör - Önerilen)</option>
+                  <option value="deepseek-reasoner">deepseek-reasoner (DeepSeek-R1, Derin Akıl Yürütme)</option>
+                  <option value="gpt-4o">gpt-4o (OpenAI)</option>
+                  <option value="gpt-4o-mini">gpt-4o-mini (OpenAI Hızlı)</option>
+                  <option value="claude-3-5-sonnet-20241022">claude-3-5-sonnet-20241022 (Anthropic)</option>
+                </datalist>
               </div>
 
               <div class="setting-card">

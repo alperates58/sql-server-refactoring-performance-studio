@@ -2115,6 +2115,21 @@
     }
     loadSettingsFromBackend();
 
+    // 4a. Provider Change Preset Auto-Fill
+    $('#settingAiProvider')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      if (val === 'deepseek') {
+        if ($('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = 'https://api.deepseek.com';
+        if ($('#settingAiModel')) $('#settingAiModel').value = 'deepseek-chat';
+      } else if (val === 'openai') {
+        if ($('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = 'https://api.openai.com/v1';
+        if ($('#settingAiModel')) $('#settingAiModel').value = 'gpt-4o';
+      } else if (val === 'anthropic') {
+        if ($('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = 'https://api.anthropic.com/v1';
+        if ($('#settingAiModel')) $('#settingAiModel').value = 'claude-3-5-sonnet-20241022';
+      }
+    });
+
     // 4. Save AI Settings Button
     $('#btnSaveAi')?.addEventListener('click', async () => {
       const btn = $('#btnSaveAi');
@@ -2836,6 +2851,15 @@
     renderRefactorPage(selectedVal);
   });
 
+  function isValidCandidateSql(sql) {
+    if (!sql || typeof sql !== 'string') return false;
+    const trimmed = sql.trim();
+    if (trimmed.length < 10) return false;
+    const upper = trimmed.toUpperCase();
+    if (upper.startsWith('-- AI REFACTOR AÇIKLAMASI') || upper.startsWith('-- CANDIDATE SQL')) return false;
+    return upper.includes('SELECT') || upper.includes('WITH ');
+  }
+
   // Real AI Refactor Runner Execution
   $('#runRefactor')?.addEventListener('click', async () => {
     const btn = $('#runRefactor');
@@ -2896,7 +2920,7 @@
     try {
       let candSql = '';
       let candNotes = '';
-      let usedModel = state.aiConfig?.model || 'DeepSeek Coder';
+      let usedModel = state.aiConfig?.model || 'deepseek-chat';
       let isFallback = false;
 
       try {
@@ -2914,16 +2938,24 @@
 
         const json = await res.json().catch(() => ({}));
         if (res.ok && json.ok && json.data) {
-          candSql = json.data.candidateSql || '';
-          candNotes = json.data.notes || '';
-          usedModel = json.data.model || usedModel;
+          const receivedSql = json.data.candidateSql || '';
+          if (isValidCandidateSql(receivedSql)) {
+            candSql = receivedSql;
+            candNotes = json.data.notes || '';
+            usedModel = json.data.model || usedModel;
+          } else {
+            throw new Error(json.data.notes || json.error || 'AI geçerli bir SQL sorgusu (SELECT / WITH) üretemedi.');
+          }
         } else {
-          isFallback = true;
-          candNotes = json.error || 'Canlı AI anahtarı tanımlanmadı (Demo Modu).';
+          throw new Error(json.error || 'AI aday sorgusu üretilemedi.');
         }
       } catch (networkErr) {
-        isFallback = true;
-        candNotes = networkErr.message || 'Ağ bağlantısı kurulamadı.';
+        if (!state.aiConfig?.hasApiKey) {
+          isFallback = true;
+          candNotes = networkErr.message || 'Canlı AI anahtarı tanımlanmadı (Demo Modu).';
+        } else {
+          throw networkErr;
+        }
       }
 
       // If live AI did not return a valid candidate (demo mode / offline / no key), provide realistic expert-crafted fallback
@@ -3072,8 +3104,8 @@ ${baseQuery};`;
   // Bind Open Candidate in SQL Workbench Button
   $('#btnOpenCandidateInWorkbench')?.addEventListener('click', () => {
     const candSql = $('#candidateSqlText')?.value || '';
-    if (!candSql || candSql.startsWith('-- Candidate SQL')) {
-      toast('Uyarı', 'Henüz bir aday SQL üretilmedi.', 'warning');
+    if (!isValidCandidateSql(candSql)) {
+      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
       return;
     }
     const wbInput = $('#wbSqlInput');
@@ -3089,8 +3121,8 @@ ${baseQuery};`;
   const handleSendToValidation = () => {
     const origSql = $('#refactorSourceCode')?.textContent || '';
     const candSql = $('#candidateSqlText')?.value || '';
-    if (!candSql || candSql.startsWith('-- Candidate SQL')) {
-      toast('Uyarı', 'Lütfen önce geçerli bir aday SQL üretin.', 'warning');
+    if (!isValidCandidateSql(candSql)) {
+      toast('Uyarı', 'Geçerli bir aday SQL bulunamadı. Lütfen önce "Aday Refaktör Oluştur" ile geçerli bir sorgu üretin.', 'warning');
       return;
     }
     const valOrig = $('#valOrigSql');
@@ -3107,8 +3139,8 @@ ${baseQuery};`;
   // Bind Copy Candidate SQL Button
   $('#btnCopyCandidateSql')?.addEventListener('click', () => {
     const candSql = $('#candidateSqlText')?.value || '';
-    if (!candSql || candSql.startsWith('-- Candidate SQL')) {
-      toast('Uyarı', 'Kopyalanacak aday SQL bulunamadı.', 'warning');
+    if (!isValidCandidateSql(candSql)) {
+      toast('Uyarı', 'Kopyalanacak geçerli bir aday SQL bulunamadı.', 'warning');
       return;
     }
     navigator.clipboard.writeText(candSql).then(() => {

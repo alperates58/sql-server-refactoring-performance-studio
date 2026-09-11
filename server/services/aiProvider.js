@@ -63,7 +63,10 @@ async function testConnection({ provider, baseUrl, apiKey, model }) {
   if (!global.fetch) throw new Error('Node.js 20+ fetch API gereklidir.');
 
   const url = normalizeChatUrl(baseUrl);
-  const targetModel = (model || '').trim() || 'deepseek-coder';
+  let targetModel = (model || '').trim() || 'deepseek-chat';
+  if (targetModel.toLowerCase() === 'deepseek-v4-flash' || targetModel.toLowerCase() === 'deepseek-flash' || targetModel.toLowerCase() === 'deepseek-coder') {
+    targetModel = 'deepseek-chat';
+  }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
@@ -166,7 +169,10 @@ async function proposeRefactor(params = {}) {
   const conf = settings.getConfig().ai;
   const activeBaseUrl = baseUrl || conf.baseUrl || 'https://api.deepseek.com';
   const url = normalizeChatUrl(activeBaseUrl);
-  const activeModel = (model || conf.model || 'deepseek-chat').trim();
+  let activeModel = (model || conf.model || 'deepseek-chat').trim();
+  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
+    activeModel = 'deepseek-chat';
+  }
   const activeTemp = temperature ?? conf.temperature ?? 0.15;
   const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
 
@@ -211,17 +217,33 @@ async function proposeRefactor(params = {}) {
   }
 
   const resJson = await response.json();
-  const content = resJson.choices?.[0]?.message?.content || '';
+  const choice = resJson.choices?.[0];
+  const content = (choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '').trim();
+
+  if (!content) {
+    const finishReason = choice?.finish_reason || 'unknown';
+    const reasonMsg = finishReason === 'length'
+      ? 'Belirteç sınırı (maxTokens) aşıldı. Ayarlar sekmesinden Maksimum Belirteç değerini artırın.'
+      : `AI sağlayıcıdan boş yanıt döndü (finish_reason: ${finishReason}). Lütfen model adının ("deepseek-chat") geçerli olduğunu kontrol edin.`;
+    throw new Error(reasonMsg);
+  }
 
   // Extract SQL from markdown code block
   let candidateSql = '';
   const sqlMatch = content.match(/```(?:sql|tsql)?\s*([\s\S]*?)\s*```/i);
-  if (sqlMatch && sqlMatch[1]) {
+  if (sqlMatch && sqlMatch[1] && (sqlMatch[1].toUpperCase().includes('SELECT') || sqlMatch[1].toUpperCase().includes('WITH '))) {
     candidateSql = sqlMatch[1].trim();
-  } else if (content.toUpperCase().includes('SELECT') || content.toUpperCase().includes('CREATE VIEW')) {
-    candidateSql = content.trim();
+  } else if (content.toUpperCase().includes('SELECT') || content.toUpperCase().includes('WITH ')) {
+    const sUpper = content.toUpperCase();
+    const selectIdx = sUpper.indexOf('SELECT');
+    const withIdx = sUpper.indexOf('WITH ');
+    let startIdx = 0;
+    if (selectIdx >= 0 && withIdx >= 0) startIdx = Math.min(selectIdx, withIdx);
+    else if (selectIdx >= 0) startIdx = selectIdx;
+    else if (withIdx >= 0) startIdx = withIdx;
+    candidateSql = content.substring(startIdx).trim();
   } else {
-    candidateSql = `-- AI Refactor Açıklaması:\n${content}`;
+    throw new Error('AI modeli geçerli bir SQL sorgu adayı (SELECT / WITH) üretemedi.');
   }
 
   // Strip CREATE VIEW / ALTER VIEW wrapper if present to ensure subquery compatibility in Validation Lab
@@ -235,6 +257,8 @@ async function proposeRefactor(params = {}) {
   let notes = '';
   if (sqlMatch) {
     notes = (content.substring(0, sqlMatch.index) + '\n' + content.substring(sqlMatch.index + sqlMatch[0].length)).trim();
+  } else {
+    notes = content.replace(candidateSql, '').trim();
   }
   if (!notes) {
     notes = 'Guardrail kontrolleri uygulandı. Sütun isimleri, tipleri ve satır tekilliği korunmalıdır.';
