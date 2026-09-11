@@ -2120,7 +2120,7 @@
       const val = e.target.value;
       if (val === 'deepseek') {
         if ($('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = 'https://api.deepseek.com';
-        if ($('#settingAiModel')) $('#settingAiModel').value = 'deepseek-chat';
+        if ($('#settingAiModel')) $('#settingAiModel').value = 'deepseek-flash';
       } else if (val === 'openai') {
         if ($('#settingAiBaseUrl')) $('#settingAiBaseUrl').value = 'https://api.openai.com/v1';
         if ($('#settingAiModel')) $('#settingAiModel').value = 'gpt-4o';

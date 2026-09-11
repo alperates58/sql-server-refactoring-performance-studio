@@ -63,9 +63,9 @@ async function testConnection({ provider, baseUrl, apiKey, model }) {
   if (!global.fetch) throw new Error('Node.js 20+ fetch API gereklidir.');
 
   const url = normalizeChatUrl(baseUrl);
-  let targetModel = (model || '').trim() || 'deepseek-chat';
-  if (targetModel.toLowerCase() === 'deepseek-v4-flash' || targetModel.toLowerCase() === 'deepseek-flash' || targetModel.toLowerCase() === 'deepseek-coder') {
-    targetModel = 'deepseek-chat';
+  let targetModel = (model || '').trim() || 'deepseek-flash';
+  if (targetModel.toLowerCase() === 'deepseek-v4-flash' || targetModel.toLowerCase() === 'deepseek-coder') {
+    targetModel = 'deepseek-flash';
   }
 
   const controller = new AbortController();
@@ -169,9 +169,9 @@ async function proposeRefactor(params = {}) {
   const conf = settings.getConfig().ai;
   const activeBaseUrl = baseUrl || conf.baseUrl || 'https://api.deepseek.com';
   const url = normalizeChatUrl(activeBaseUrl);
-  let activeModel = (model || conf.model || 'deepseek-chat').trim();
-  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
-    activeModel = 'deepseek-chat';
+  let activeModel = (model || conf.model || 'deepseek-flash').trim();
+  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
+    activeModel = 'deepseek-flash';
   }
   const activeTemp = temperature ?? conf.temperature ?? 0.15;
   const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
