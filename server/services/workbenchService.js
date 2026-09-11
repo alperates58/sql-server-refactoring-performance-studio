@@ -118,7 +118,8 @@ async function execute({
       ? result.recordsets[0]
       : [];
 
-    const truncatedRows = primaryRecordset.slice(0, maxRows);
+    const rowLimit = maxRows !== undefined && maxRows !== null ? Number(maxRows) : 500;
+    const truncatedRows = rowLimit > 0 ? primaryRecordset.slice(0, rowLimit) : primaryRecordset;
     const columns = truncatedRows.length > 0 ? Object.keys(truncatedRows[0]) : [];
 
     const response = {
@@ -129,7 +130,8 @@ async function execute({
       rows: truncatedRows,
       totalRows: primaryRecordset.length,
       rowsReturned: primaryRecordset.length,
-      truncated: primaryRecordset.length > maxRows,
+      maxRows: rowLimit,
+      truncated: rowLimit > 0 && primaryRecordset.length > rowLimit,
       metrics: {
         durationMs,
         cpuMs: timeStats.cpuMs,

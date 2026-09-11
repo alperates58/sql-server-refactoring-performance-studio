@@ -199,6 +199,20 @@ router.post('/ai/analyze', async (req, res) => {
   }
 });
 
+// 10-alt2. AI Multi-Level Deep Dive Query Analysis
+router.post('/ai/deep-analyze', async (req, res) => {
+  try {
+    const { viewName, sql, problems = [], baseTables = [], options = {} } = req.body;
+    if (!viewName || !sql) {
+      return res.status(400).json({ ok: false, error: 'viewName ve sql alanları zorunludur.' });
+    }
+    const result = await ai.deepAnalyzeQuery({ viewName, sql, problems, baseTables, options });
+    res.json(result);
+  } catch (error) {
+    handleSafeError(res, error, 'Derinlemesine sorgu analizi yapılamadı.');
+  }
+});
+
 // 10b. AI Connection Test
 router.post('/ai/test', async (req, res) => {
   try {
@@ -252,6 +266,7 @@ router.post('/workbench/run', async (req, res) => {
       sql: req.body.sql,
       database: req.body.database,
       timeoutMs: req.body.timeoutMs,
+      maxRows: req.body.maxRows,
       requestId: req.body.requestId
     });
     res.json(result);

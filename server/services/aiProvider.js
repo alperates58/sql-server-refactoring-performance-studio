@@ -386,11 +386,123 @@ async function analyzeQuery(params = {}) {
   };
 }
 
+function buildDeepAnalyzePrompt(payload) {
+  return `You are a world-class Microsoft SQL Server Principal Performance Architect & Query Tuning Specialist.\n\n` +
+    `YOUR MISSION:\n` +
+    `Perform a deep-dive, multi-level hierarchical performance analysis of the given SQL query in TURKISH (Türkçe).\n` +
+    `Drill down recursively: from the Outer Query -> Subqueries/CTEs -> Scalar UDFs/Dependent Objects -> Base Tables/Indexes.\n\n` +
+    `CRITICAL INSTRUCTIONS:\n` +
+    `1. Language MUST be 100% TURKISH (Türkçe).\n` +
+    `2. Expose your step-by-step THINKING PROCESS (Chain of Thought) at each layer so the user sees what you are inspecting in real-time.\n` +
+    `3. Structure your response in clear, beautifully formatted markdown with the following required sections:\n\n` +
+    `### 🧠 Canlı Analiz & Düşünce Süreci (Katman Katman İnceleme)\n` +
+    `- **1. Katman (Dış Sorgu & Projeksiyon):** [Analyze outer SELECT, DISTINCT, GROUP BY, TOP, projection width, memory grant risks]\n` +
+    `- **2. Katman (İç Alt Sorgular & CTE Blokları):** [Analyze nested subqueries, CTE materialization limits, derived tables, correlated filters]\n` +
+    `- **3. Katman (Fonksiyon Çağrıları & Bağımlı Nesneler):** [Analyze dbo.fn_* scalar UDFs, RBAR behavior, CROSS/OUTER APPLY, inline vs multi-statement TVF]\n` +
+    `- **4. Katman (Fiziksel Tablo Taramaları & İndeksler):** [Analyze repeated table scans, non-SARGable predicates like CONVERT/CAST, missing covering indexes]\n\n` +
+    `### 🌳 Katman Katman Darboğaz Hiyerarşisi\n` +
+    `Provide an ASCII tree or structured list of the query components and where the worst bottlenecks are located.\n\n` +
+    `### 🚨 Neden Yavaş Çalışıyor? (Madde Madde Kök Nedenler)\n` +
+    `- Provide rigorous, concrete bullet points explaining exactly why this query is slow in production.\n\n` +
+    `### 💡 Derinlemesine Mimari İyileştirme ve Refaktör Önerileri\n` +
+    `- Provide concrete, set-based architectural solutions (e.g. flattening subqueries, inlining UDFs, window functions, covering indexes).\n\n` +
+    `TARGET QUERY CONTEXT:\n` +
+    JSON.stringify(payload, null, 2);
+}
+
+async function deepAnalyzeQuery(params = {}) {
+  const {
+    viewName,
+    sql,
+    problems = [],
+    baseTables = [],
+    options = {},
+    apiKey,
+    baseUrl,
+    model,
+    temperature,
+    maxTokens
+  } = params;
+
+  const key = apiKey || settings.getApiKey();
+  if (!key) throw new Error('AI API anahtarı eksik. Lütfen Ayarlar sekmesinden API anahtarınızı girin ve kaydedin.');
+  if (!global.fetch) throw new Error('Node.js 20+ fetch API gereklidir.');
+
+  const conf = settings.getConfig().ai;
+  const activeBaseUrl = baseUrl || conf.baseUrl || 'https://api.deepseek.com';
+  const url = normalizeChatUrl(activeBaseUrl);
+  let activeModel = (model || conf.model || 'deepseek-flash').trim();
+  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
+    activeModel = 'deepseek-flash';
+  }
+  const activeTemp = temperature ?? conf.temperature ?? 0.2;
+  const activeTokens = maxTokens ?? 4096;
+
+  const contextPack = {
+    targetView: viewName,
+    originalSql: sql,
+    problems,
+    baseTables,
+    options
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify({
+      model: activeModel,
+      temperature: activeTemp,
+      max_tokens: activeTokens,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a principal Microsoft SQL Server performance architect and internals tuning specialist. ' +
+            'Provide an exhaustive, hierarchical deep-dive diagnostic analysis in TURKISH (Türkçe), systematically drilling down into outer queries, subqueries, CTEs, scalar UDFs, and table access patterns.'
+        },
+        {
+          role: 'user',
+          content: buildDeepAnalyzePrompt(contextPack)
+        }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '');
+    throw new Error(parseApiError(response, errorBody, key));
+  }
+
+  const resJson = await response.json();
+  const choice = resJson.choices?.[0];
+  const content = (choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '').trim();
+
+  if (!content) {
+    throw new Error('AI sağlayıcıdan derinlemesine analiz yanıtı alınamadı.');
+  }
+
+  return {
+    ok: true,
+    data: {
+      viewName,
+      analysis: content,
+      model: resJson.model || activeModel
+    },
+    analysis: content,
+    model: resJson.model || activeModel
+  };
+}
+
 module.exports = {
   buildRefactorPrompt,
   buildAnalyzePrompt,
+  buildDeepAnalyzePrompt,
   proposeRefactor,
   analyzeQuery,
+  deepAnalyzeQuery,
   generateCandidate: proposeRefactor,
   testConnection
 };

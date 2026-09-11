@@ -128,16 +128,16 @@
                 <circle cx="684" cy="75" r="5" class="chart-point danger-point"></circle>
               </svg>
               <div class="chart-axis"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>Şimdi</span></div>
-              <div class="chart-callout" id="regressionCallout"><span>AA_URETIM_MALZEME_PLANLAMA</span><strong>0.94s → 284s</strong><small>+30,112%</small></div>
+              <div class="chart-callout" id="regressionCallout"><span id="regressionCalloutName">En Yüksek Plan Regresyonu</span><strong id="regressionCalloutDelta">0.94s → 284s</strong><small id="regressionCalloutPct">+30,112%</small></div>
             </div>
           </section>
 
           <section class="panel span-5">
             <div class="panel-header"><div><span class="panel-kicker">SON BULGULAR</span><h3>Analiz Akışı</h3></div><button class="icon-button" id="refreshFeedBtn">↻</button></div>
             <div class="feed" id="overviewFeed">
-              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Patlaması</strong><p>Tahmin 1 → Gerçek 187,431</p><small>AA_ISEMRI_MALZEME_DURUMLARI · 1 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>STOK_HAREKETLERI x4 mantıksal yol</p><small>AA_URETIM_MALZEME_PLANLAMA · 3 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT(date, sth_tarih)</p><small>AA_STOK_HAREKET_OZET · 8 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Sapması</strong><p>Tahmin 1 → Gerçek 187,431 satır</p><small id="feedItemView1">Kritik Tüketici View · 1 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>STOK_HAREKETLERI x4 mantıksal yol</p><small id="feedItemView2">Yüksek I/O Baskısı · 3 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT / CAST fonksiyonuyla sarılı indeks</p><small id="feedItemView3">Taranan Nesneler · 8 dk önce</small></div></div>
             </div>
           </section>
         </div>
@@ -158,8 +158,8 @@
           </section>
           <section class="view-detail-pane">
             <div class="detail-hero">
-              <div><span class="object-type">VIEW</span><h2 id="detailViewName">AA_URETIM_MALZEME_PLANLAMA</h2><p id="detailViewMeta">dbo · modify 03.09.2026 16:47</p></div>
-              <div class="detail-score"><div class="score-ring"><strong id="detailHealth">38</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">CRITICAL · 92</strong></div></div>
+              <div><span class="object-type">VIEW</span><h2 id="detailViewName">View Seçiniz</h2><p id="detailViewMeta">Sol listeden bir view seçerek detayları inceleyin</p></div>
+              <div class="detail-score"><div class="score-ring"><strong id="detailHealth">--</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">--</strong></div></div>
             </div>
             <div class="detail-tabs">
               <button class="active" data-detail-tab="overview">Genel Bakış</button>
@@ -168,14 +168,14 @@
               <button data-detail-tab="runtime">Çalışma Zamanı</button>
               <button data-detail-tab="plans">Çalıştırma Planları</button>
               <button data-detail-tab="indexes">İndeksler</button>
-              <button data-detail-tab="problems">Sorunlar <span id="tabProblemCount">6</span></button>
+              <button data-detail-tab="problems">Sorunlar <span id="tabProblemCount">0</span></button>
               <button data-detail-tab="ai">AI Refaktör</button>
               <button data-detail-tab="history">Geçmiş</button>
             </div>
 
             <div class="detail-tab active" id="detail-tab-overview">
               <div class="stat-strip">
-                <div><span>Derinlik</span><strong id="statDepth">6</strong><small id="statDepthWarn">⚠ &gt; 3</small></div><div><span>Temel Tablolar</span><strong id="statTables">9</strong><small id="statTablesWarn">3 mükerrer</small></div><div><span>Bağımlılar</span><strong id="statDependents">27</strong><small>Etki alanı</small></div><div><span>24s Okuma</span><strong id="statReads">4.1B</strong><small id="statReadsDelta">+186%</small></div><div><span>Medyan</span><strong id="statMedian">284s</strong><small id="statMedianDelta">önce 0.94s</small></div>
+                <div><span>Derinlik</span><strong id="statDepth">--</strong><small id="statDepthWarn">--</small></div><div><span>Temel Tablolar</span><strong id="statTables">--</strong><small id="statTablesWarn">--</small></div><div><span>Bağımlılar</span><strong id="statDependents">--</strong><small>Etki alanı</small></div><div><span>24s Okuma</span><strong id="statReads">--</strong><small id="statReadsDelta">--</small></div><div><span>Medyan</span><strong id="statMedian">--</strong><small id="statMedianDelta">--</small></div>
               </div>
               <div class="detail-grid">
                 <section class="inner-panel">
@@ -183,18 +183,18 @@
                   <div class="risk-bars" id="riskBars"></div>
                 </section>
                 <section class="inner-panel">
-                  <div class="inner-head"><h4>Önemli Sorunlar</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">6 bulgu</span> →</button></div>
+                  <div class="inner-head"><h4>Önemli Sorunlar</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">0 bulgu</span> →</button></div>
                   <div class="problem-list" id="topProblems"></div>
                 </section>
               </div>
               <section class="inner-panel impact-panel">
                 <div class="inner-head"><div><h4>Etki Alanı (Blast Radius)</h4><span>Bu view değişirse etkilenebilecek üst nesneler</span></div><button class="button ghost small" data-goto="graph">Haritada Gör</button></div>
-                <div class="impact-chain" id="impactChain"><span>AA_GENEL_PLAN</span><i>→</i><span>AA_PLANLAMA_EKRANI</span><i>→</i><b>AA_URETIM_MALZEME_PLANLAMA</b><i>→</i><span>4 rapor</span><i>+</i><span>23 view</span></div>
+                <div class="impact-chain" id="impactChain"><span style="color:var(--text-muted)">Bir view seçildiğinde bağımlılık zinciri burada listelenecektir.</span></div>
               </section>
             </div>
 
             <div class="detail-tab" id="detail-tab-sql">
-              <div class="code-toolbar"><span id="sqlToolbarName">dbo.AA_URETIM_MALZEME_PLANLAMA.sql</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="workbench" id="btnOpenSqlInWorkbench">⚡ Workbench'te Aç</button></div></div>
+              <div class="code-toolbar"><span id="sqlToolbarName">Sorgu Tanımı</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="workbench" id="btnOpenSqlInWorkbench">⚡ Workbench'te Aç</button></div></div>
               <pre class="code-editor"><code id="sqlCode"></code></pre>
             </div>
 
@@ -216,7 +216,7 @@
                     <div class="full-problem">
                       <div>
                         <h4>sp_GunlukUretimRaporu (Line 42)</h4>
-                        <p>SELECT * FROM dbo.AA_URETIM_MALZEME_PLANLAMA WHERE sth_tarih >= DATEADD(day, -1, GETDATE())</p>
+                        <p>SELECT * FROM dbo.[Seçili View] WHERE sth_tarih &gt;= DATEADD(day, -1, GETDATE())</p>
                         <small style="color:var(--text-muted)">Günde ~180 execution · 3.2B total logical reads · 12,400 ms avg CPU</small>
                       </div>
                       <span class="severity-pill critical">HOT CALLER</span>
@@ -286,7 +286,7 @@
           <div class="graph-search-wrap">
             <div class="search-box graph-search">
               <span>⌕</span>
-              <input id="graphSearchInput" value="AA_URETIM_MALZEME_PLANLAMA" placeholder="View, tablo veya fonksiyon ara..." autocomplete="off" />
+              <input id="graphSearchInput" placeholder="View, tablo veya fonksiyon ara..." autocomplete="off" />
             </div>
             <div class="autocomplete-dropdown hidden" id="graphSearchDropdown"></div>
           </div>
@@ -355,11 +355,87 @@
       </section>
 
       <section class="page" id="page-runtime">
-        <div class="section-intro"><div><span class="hero-kicker"><span class="pulse"></span> Query Store + Plan Cache</span><h2>Regresyonları <em>olduğu anda</em> yakala.</h2><p>View'lar bağımsız executable object değildir. Studio, view tanımlarını calling-query metni ve execution plan ile ilişkilendirerek runtime maliyetini kanıt seviyesine göre sınıflandırır.</p></div><div class="data-quality"><span>Çalışma Zamanı Kanıtı</span><strong>A</strong><small>Query Store devrede</small></div></div>
+        <div class="section-intro">
+          <div>
+            <span class="hero-kicker"><span class="pulse"></span> Query Store + Plan Cache Denetimi</span>
+            <h2>Performans Regresyonları ve <em>Çalışma Zamanı Sapmaları</em></h2>
+            <p>Geçmişte hızlı çalışan bir sorgunun veri büyümesi, plan değişimi veya istatistik eskimesi nedeniyle aniden yavaşlamasını izleyin.</p>
+          </div>
+          <div class="data-quality">
+            <span>Çalışma Zamanı Kanıtı</span>
+            <strong id="runtimeProofGrade">A</strong>
+            <small id="runtimeProofDesc">Query Store / DMV Cache</small>
+          </div>
+        </div>
+
+        <!-- Educational Explainer Banner -->
+        <div class="explainer-banner">
+          <div class="explainer-icon">💡</div>
+          <div class="explainer-content">
+            <strong>Performans Regresyonu Nedir ve Neden Oluşur?</strong>
+            <p>Daha önce hızlı çalışan bir sorgunun (örneğin 0.5 sn / 1.000 okuma); tablodaki verilerin büyümesiyle <b>istatistiklerin eskimesi (stale stats)</b>, optimizasyon motorunun <b>yürütme planını değiştirmesi</b> (örn: Hash Join yerine Nested Loops'a dönmesi) veya <b>parametre duyarlılığı (parameter sniffing)</b> nedeniyle aniden aşırı yavaşlaması durumudur. Aşağıdaki tablodan bir satıra tıklayarak ilgili sorgunun Plan X-Ray ve olası kök neden analizini anında inceleyebilirsiniz.</p>
+          </div>
+        </div>
+
         <div class="runtime-grid">
-          <section class="panel span-12"><div class="panel-header"><div><span class="panel-kicker">AKTİF REGRESYONLAR</span><h3>14 anomali</h3></div><div class="toolbar-group"><button class="button ghost small">24 saat⌄</button><button class="button ghost small">Dışa Aktar</button></div></div><div class="regression-table" id="regressionTable"></div></section>
-          <section class="panel span-7"><div class="panel-header"><div><span class="panel-kicker">PLAN X-RAY</span><h3>AA_URETIM_MALZEME_PLANLAMA</h3></div><span class="severity-pill critical">KRİTİK</span></div><div class="plan-xray"><div class="operator good"><small>Index Seek</small><strong>ISEMIRLERI</strong><span>18K satır</span></div><i>→</i><div class="operator danger"><small>Nested Loops</small><strong>Tahmin 1</strong><span>Gerçek 187,431</span></div><i>→</i><div class="operator warning"><small>Key Lookup</small><strong>STOK_HAREKETLERI</strong><span>4.8M çalıştırma</span></div></div><div class="xray-foot"><span>⚠ Kardinalite hatası: <strong>187,431×</strong></span><span>Mantıksal okuma: <strong>3,482,771</strong></span><span>Bellek tahsisi: <strong>24 MB</strong></span></div></section>
-          <section class="panel span-5"><div class="panel-header"><div><span class="panel-kicker">KÖK NEDEN ADAYLARI</span><h3>Neden Değişti?</h3></div></div><div class="cause-list"><div><span class="cause-score">92%</span><div><strong>İstatistikler Güncel Değil</strong><p>STOK_HAREKETLERI · %31.4 değişim</p></div></div><div><span class="cause-score">87%</span><div><strong>Plan Değişti</strong><p>Hash Match → Nested Loops</p></div></div><div><span class="cause-score">74%</span><div><strong>Parametre Duyarlılığı</strong><p>Yeni plan belirli kardinalite aralığında yetersiz.</p></div></div></div></section>
+          <section class="panel span-12">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">PLAN REGRESYONU TESPİT EDİLEN SORGULAR</span>
+                <h3 id="regCountHeadline">Aktif Regresyonlar</h3>
+              </div>
+              <div class="toolbar-group">
+                <span style="font-size:12px;color:var(--text-muted);margin-right:8px">Satıra tıklayarak X-Ray planını inceleyin</span>
+                <button class="button ghost small" id="btnExportRegression">Dışa Aktar</button>
+              </div>
+            </div>
+            <div class="regression-table" id="regressionTable"></div>
+          </section>
+
+          <section class="panel span-7">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">PLAN X-RAY OPERATÖR AKIŞI</span>
+                <h3 id="xrayTargetViewTitle">Seçili Sorgu Yürütme Planı</h3>
+              </div>
+              <span class="severity-pill critical" id="xraySeverityBadge">KRİTİK</span>
+            </div>
+            <div class="plan-xray" id="xrayOperatorsContainer">
+              <div class="operator good"><small>Index Seek</small><strong id="xrayOp1Name">ISEMIRLERI</strong><span id="xrayOp1Stat">18K satır</span></div>
+              <i>→</i>
+              <div class="operator danger"><small>Nested Loops</small><strong id="xrayOp2Name">Tahmin 1</strong><span id="xrayOp2Stat">Gerçek 187,431</span></div>
+              <i>→</i>
+              <div class="operator warning"><small>Key Lookup</small><strong id="xrayOp3Name">STOK_HAREKETLERI</strong><span id="xrayOp3Stat">4.8M çalıştırma</span></div>
+            </div>
+            <div class="xray-foot" id="xrayFootMetrics">
+              <span>⚠ Kardinalite sapması: <strong id="xrayCardError">187,431×</strong></span>
+              <span>Mantıksal okuma: <strong id="xrayLogicalReads">3,482,771</strong></span>
+              <span>Bellek tahsisi: <strong id="xrayMemoryGrant">24 MB</strong></span>
+            </div>
+          </section>
+
+          <section class="panel span-5">
+            <div class="panel-header">
+              <div>
+                <span class="panel-kicker">OLASI KÖK NEDENLER</span>
+                <h3>Plan Neden Değişti?</h3>
+              </div>
+            </div>
+            <div class="cause-list" id="xrayCausesContainer">
+              <div>
+                <span class="cause-score">92%</span>
+                <div><strong>İstatistikler Güncel Değil</strong><p id="xrayCause1">STOK_HAREKETLERI · %31.4 veri değişimi</p></div>
+              </div>
+              <div>
+                <span class="cause-score">87%</span>
+                <div><strong>Plan Değişimi Tespit Edildi</strong><p id="xrayCause2">Hash Match → Maliyetli Nested Loops</p></div>
+              </div>
+              <div>
+                <span class="cause-score">74%</span>
+                <div><strong>Parametre Duyarlılığı (Sniffing)</strong><p id="xrayCause3">Mevcut plan genel kardinalite aralığında verimsiz.</p></div>
+              </div>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -409,7 +485,8 @@
             </div>
             <div class="ai-warning"><p>CTE materialize olmaz. Tekrar eden tablonun yalnız execution plan doğrulamasıyla tek taramaya indiği iddia edilebilir.</p></div>
             <div class="refactor-btn-row">
-              <button type="button" class="button ghost ai-analyze-button" id="btnAnalyzeQuery" title="Sorgunun neden yavaş çalıştığını madde madde analiz et">🔍 Sorguyu Analiz Et</button>
+              <button type="button" class="button ghost ai-analyze-button" id="btnAnalyzeQuery" title="Sorgunun neden yavaş çalıştığını madde madde analiz et">🔍 Hızlı Teşhis</button>
+              <button type="button" class="button ghost ai-deep-analyze-button" id="btnDeepAnalyzeQuery" title="Sorgunun içindeki alt sorguları, CTE'leri ve fonksiyonları katman katman derinlemesine incele">🔬 Derinlemesine Analiz Et</button>
               <button type="button" class="button primary ai-button" id="runRefactor" title="Performans odaklı V2 alternatif SQL sorgusu üret">✦ Aday Refaktör Oluştur</button>
             </div>
             <div class="ai-progress hidden" id="aiProgress">
@@ -435,6 +512,7 @@
                 </div>
               </div>
               <div class="candidate-view-tabs" id="candidateTabs">
+                <button type="button" class="candidate-tab-btn" data-tab="deep" id="tabBtnDeepAnalysis">🔬 Çok Katmanlı Derin Analiz & Canlı Akış</button>
                 <button type="button" class="candidate-tab-btn active" data-tab="analysis" id="tabBtnAnalysis">📋 Performans Teşhisi (Neden Yavaş?)</button>
                 <button type="button" class="candidate-tab-btn" data-tab="sql" id="tabBtnSql">⚡ Aday Refaktör SQL (V2)</button>
                 <button type="button" class="candidate-tab-btn" data-tab="split" id="tabBtnSplit">◫ Yan Yana Görünüm</button>
@@ -443,6 +521,38 @@
 
             <!-- Tab Content Wrapper -->
             <div class="candidate-tab-content-wrap">
+              <!-- Tab 0: Multi-Level Deep Analysis & Real-Time Thinking Stream -->
+              <div class="candidate-tab-pane" id="tabPaneDeepAnalysis">
+                <div class="diagnostic-pane-head">
+                  <div>
+                    <h4 style="margin:0 0 4px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
+                      <span>🔬</span> Çok Katmanlı Sorgu İncelemesi & Canlı Düşünce Akışı
+                    </h4>
+                    <p style="margin:0;font-size:12px;color:var(--text-muted)">Dış SELECT → Alt Sorgular / CTE → Skalar Fonksiyonlar (UDF) → Fiziksel Tablo Taramaları</p>
+                  </div>
+                  <span id="deepAnalysisModelBadge" class="provider-pill mini">deepseek-flash</span>
+                </div>
+
+                <!-- Live Thinking Terminal -->
+                <div class="deep-thinking-wrap">
+                  <div class="deep-thinking-head">
+                    <div style="display:flex;align-items:center;gap:8px">
+                      <span class="pulse-dot"></span>
+                      <strong style="font-size:13px;color:var(--text-bright)">AI Düşünce & Analiz Akışı (Canlı İnceleme)</strong>
+                    </div>
+                    <span id="aiThinkingStatus" class="thinking-chip ready">Hazır</span>
+                  </div>
+                  <div class="ai-thinking-stream" id="aiThinkingStream">
+                    <p style="color:var(--text-muted);font-style:italic">Yukarıdaki <strong>"🔬 Derinlemesine Analiz Et"</strong> butonuna bastığınızda, yapay zekanın sorgunun dış katmanından başlayarak iç alt sorgulara, CTE'lere ve fonksiyonlara doğru düşünce adımları burada canlı olarak akacaktır.</p>
+                  </div>
+                </div>
+
+                <!-- Deep Analysis Report Content -->
+                <div class="diagnostic-report-body" id="deepAnalysisReportBody" style="margin-top:14px">
+                  <p style="color:var(--text-muted);font-style:italic">Derinlemesine analiz sonuçları ve mimari çözüm ağacı burada listelenecektir.</p>
+                </div>
+              </div>
+
               <!-- Tab 1: In-depth Diagnostic Analysis (Full Width) -->
               <div class="candidate-tab-pane active" id="tabPaneAnalysis">
                 <div class="diagnostic-pane-head">
@@ -567,7 +677,7 @@
             <div class="panel-header">
               <div>
                 <span class="panel-kicker">4 AŞAMALI DOĞRULAMA PİPELİNE'I</span>
-                <h3 id="valPipelineTitle">AA_URETIM_MALZEME_PLANLAMA</h3>
+                <h3 id="valPipelineTitle">Doğrulama İncelemesi</h3>
               </div>
               <span class="status-pill" id="valPipelineStatus">HAZIR</span>
             </div>
@@ -698,6 +808,16 @@
               <button class="button ghost small icon-only" id="btnWbRefreshMetadata" title="Metadata Önbelleğini Yenile (Refresh Metadata)" style="width:26px;height:26px;font-size:12px;padding:0">↻</button>
             </div>
             <div class="wb-timeout-wrap">
+              <label for="wbMaxRowsSelect">Satır Sınırı:</label>
+              <select id="wbMaxRowsSelect" class="select-styled mini-select" title="Maksimum getirilecek satır adedi">
+                <option value="100">100</option>
+                <option value="500" selected>500</option>
+                <option value="1000">1.000</option>
+                <option value="5000">5.000</option>
+                <option value="0">Limitsiz</option>
+              </select>
+            </div>
+            <div class="wb-timeout-wrap">
               <label for="wbTimeoutSelect">Zaman Aşımı:</label>
               <select id="wbTimeoutSelect" class="select-styled mini-select">
                 <option value="5000">5s</option>
@@ -775,7 +895,17 @@ ORDER BY IslemAdedi DESC;"></textarea>
             </div>
 
             <div class="wb-tab-pane" id="wbPane-messages">
-              <pre class="wb-terminal" id="wbMessagesTerminal">Sorgu henüz çalıştırılmadı.</pre>
+              <div class="wb-msg-toolbar">
+                <div class="wb-msg-toggle-group">
+                  <button type="button" class="button ghost mini active" id="btnWbMsgHumanized">📋 Anlamlı Türkçe Özet</button>
+                  <button type="button" class="button ghost mini" id="btnWbMsgRaw">💻 Ham SQL Server Konsolu</button>
+                </div>
+                <span id="wbMsgHelpText" style="font-size:12px;color:var(--text-muted)">Yürütme süresi ve tablo bazlı mantıksal okuma özeti</span>
+              </div>
+              <div id="wbMessagesHumanized" class="wb-messages-humanized">
+                <div class="empty-state" style="padding:40px 10px"><p>Sorgu çalıştırıldığında anlamlı Türkçe I/O ve süre dökümü burada görüntülenecektir.</p></div>
+              </div>
+              <pre class="wb-terminal hidden" id="wbMessagesTerminal">Sorgu henüz çalıştırılmadı.</pre>
             </div>
 
             <div class="wb-tab-pane" id="wbPane-statistics">
