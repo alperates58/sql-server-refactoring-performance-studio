@@ -406,6 +406,12 @@ function buildDeepAnalyzePrompt(payload) {
     `- Provide rigorous, concrete bullet points explaining exactly why this query is slow in production.\n\n` +
     `### 💡 Derinlemesine Mimari İyileştirme ve Refaktör Önerileri\n` +
     `- Provide concrete, set-based architectural solutions (e.g. flattening subqueries, inlining UDFs, window functions, covering indexes).\n\n` +
+    `### ⚡ Problemi Çözen Optimize Edilmiş Refaktör View (V2 T-SQL)\n` +
+    `Write the COMPLETE, production-ready, fully executable \`CREATE OR ALTER VIEW [dbo].[${payload.targetView || 'ViewName'}]\` SQL statement.\n` +
+    `- You MUST resolve all identified bottlenecks: pre-aggregate subqueries/CTEs by join keys, eliminate repeated table scans, prevent Cartesian fan-out, simplify redundant ISNULL chains, use uniform NOLOCK (or RCSI recommendation), and ensure SARGable predicates.\n` +
+    `- You MUST strictly preserve all output columns, their exact names, exact ordinal positions, datatypes, and business semantics.\n` +
+    `- Include concise inline SQL comments explaining why each CTE or optimization was introduced.\n` +
+    `- CRITICAL: Do NOT truncate, do NOT use placeholder comments like "-- rest of code here". Write the COMPLETE, ready-to-execute T-SQL view code.\n\n` +
     `TARGET QUERY CONTEXT:\n` +
     JSON.stringify(payload, null, 2);
 }
@@ -436,7 +442,7 @@ async function deepAnalyzeQuery(params = {}) {
     activeModel = 'deepseek-flash';
   }
   const activeTemp = temperature ?? conf.temperature ?? 0.2;
-  const activeTokens = maxTokens ?? 4096;
+  const activeTokens = maxTokens ?? 8192;
 
   const contextPack = {
     targetView: viewName,

@@ -3055,12 +3055,89 @@
     let html = '';
     const lines = String(markdown).split('\n');
     let inList = false;
+    let inCodeBlock = false;
+    let codeLang = '';
+    let codeBuffer = [];
+    let inTable = false;
+    let tableHeaders = [];
+    let tableRows = [];
 
-    lines.forEach(line => {
+    function flushTable() {
+      if (!inTable) return;
+      if (tableHeaders.length > 0 || tableRows.length > 0) {
+        html += '<div style="overflow-x:auto;margin:12px 0 16px"><table class="wb-table" style="font-size:12px;width:100%">';
+        if (tableHeaders.length > 0) {
+          html += `<thead><tr>${tableHeaders.map(h => `<th>${escapeHtml(h)}</th>`).join('')}</tr></thead>`;
+        }
+        if (tableRows.length > 0) {
+          html += `<tbody>${tableRows.map(row => `<tr>${row.map(c => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`).join('')}</tbody>`;
+        }
+        html += '</table></div>';
+      }
+      inTable = false;
+      tableHeaders = [];
+      tableRows = [];
+    }
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
       const trimmed = line.trim();
+
+      // Code block start / end
+      if (trimmed.startsWith('```')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        flushTable();
+
+        if (!inCodeBlock) {
+          inCodeBlock = true;
+          codeLang = trimmed.replace(/^```/, '').trim();
+          codeBuffer = [];
+        } else {
+          inCodeBlock = false;
+          const fullCode = codeBuffer.join('\n');
+          const codeId = 'code_' + Math.random().toString(36).substr(2, 9);
+          html += `
+            <div class="diag-code-box" style="margin:12px 0 18px;border:1px solid var(--line);border-radius:8px;background:var(--surface,#0B0E14);overflow:hidden">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;background:rgba(255,255,255,0.04);border-bottom:1px solid var(--line);font-size:11.5px">
+                <span style="font-family:var(--font-mono,monospace);font-weight:600;color:var(--text-muted)">${escapeHtml(codeLang.toUpperCase() || 'SQL')}</span>
+                <div style="display:flex;gap:6px">
+                  <button type="button" class="button ghost mini" style="padding:2px 8px;font-size:11px" onclick="navigator.clipboard.writeText(document.getElementById('${codeId}').innerText);toast('Kopyalandı','SQL panoya kopyalandı.','success')">📋 Kodu Kopyala</button>
+                  <button type="button" class="button primary mini" style="padding:2px 8px;font-size:11px" onclick="const t=document.getElementById('${codeId}').innerText;if(document.getElementById('candidateSqlText')){document.getElementById('candidateSqlText').value=t;}if(document.getElementById('candidateSqlTextSplit')){document.getElementById('candidateSqlTextSplit').value=t;}switchCandidateTab('sql');toast('Aktarıldı','Aday Refaktör SQL editörüne aktarıldı.','success')">⚡ Aday Refaktöre Aktar</button>
+                </div>
+              </div>
+              <pre id="${codeId}" style="margin:0;padding:12px 14px;overflow-x:auto;font-family:var(--font-mono,monospace);font-size:12.5px;line-height:1.55;color:#e2e8f0;background:transparent"><code>${escapeHtml(fullCode)}</code></pre>
+            </div>
+          `;
+        }
+        continue;
+      }
+
+      if (inCodeBlock) {
+        codeBuffer.push(line);
+        continue;
+      }
+
+      // Markdown Table Handling
+      if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+        if (inList) { html += '</ul>'; inList = false; }
+        const cells = trimmed.split('|').slice(1, -1).map(c => c.trim());
+        if (cells.every(c => /^[-:]+$/.test(c))) {
+          continue;
+        }
+        if (!inTable) {
+          inTable = true;
+          tableHeaders = cells;
+        } else {
+          tableRows.push(cells);
+        }
+        continue;
+      } else if (inTable) {
+        flushTable();
+      }
+
       if (!trimmed) {
         if (inList) { html += '</ul>'; inList = false; }
-        return;
+        continue;
       }
 
       if (trimmed.startsWith('### ') || trimmed.startsWith('## ') || trimmed.startsWith('# ')) {
@@ -3070,11 +3147,12 @@
         if (text.includes('🚨') || text.toLowerCase().includes('yavaş') || text.toLowerCase().includes('darboğaz')) badgeColor = 'var(--red, #ef4444)';
         else if (text.includes('🧠') || text.toLowerCase().includes('düşünce') || text.toLowerCase().includes('canlı')) badgeColor = 'var(--cyan, #0284c7)';
         else if (text.includes('🌳') || text.toLowerCase().includes('hiyerarşi') || text.toLowerCase().includes('ağaç')) badgeColor = 'var(--purple, #7c5cff)';
+        else if (text.includes('⚡') || text.toLowerCase().includes('refaktör view') || text.toLowerCase().includes('aday')) badgeColor = 'var(--purple, #a855f7)';
         else if (text.includes('🔄') || text.toLowerCase().includes('mükerrer') || text.toLowerCase().includes('okuma')) badgeColor = 'var(--orange, #f97316)';
         else if (text.includes('📉') || text.toLowerCase().includes('indeks') || text.toLowerCase().includes('sarg')) badgeColor = 'var(--yellow, #eab308)';
         else if (text.includes('💡') || text.toLowerCase().includes('çözüm') || text.toLowerCase().includes('strateji') || text.toLowerCase().includes('iyileştirme')) badgeColor = 'var(--green, #10b981)';
 
-        html += `<h4 class="diag-section-title" style="border-left: 3px solid ${badgeColor}; padding-left: 10px; margin-top: 18px; margin-bottom: 8px;">${escapeHtml(text)}</h4>`;
+        html += `<h4 class="diag-section-title" style="border-left: 3px solid ${badgeColor}; padding-left: 10px; margin-top: 20px; margin-bottom: 8px;">${escapeHtml(text)}</h4>`;
       } else if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
         if (!inList) {
           html += '<ul style="margin: 6px 0 14px 18px; padding: 0;">';
@@ -3090,9 +3168,10 @@
         textContent = textContent.replace(/`([^`]+)`/g, '<code>$1</code>');
         html += `<p style="margin: 6px 0 10px; line-height: 1.6;">${textContent}</p>`;
       }
-    });
+    }
 
     if (inList) html += '</ul>';
+    flushTable();
     return html;
   }
 
@@ -3264,7 +3343,32 @@ ${asciiTree}
 - **1. Adım (Fonksiyonları Inline Alma):** Skalar UDF'i mutlaka Inline Table-Valued Function (iTVF) veya doğrudan derived table / JOIN olarak sorgu içine gömün. Bu adım tek başına %80+ hızlanma sağlar.
 - **2. Adım (Tek Seferde Özetleme):** CTE veya alt sorgularda aynı tabloya tekrar gitmek yerine, tek taramada GROUP BY ile ara özet tablosu oluşturun.
 - **3. Adım (SARGable Koşul Dönüşümü):** Tarih ve metin fonksiyonlarını kolonun üzerinden sabit parametre tarafına taşıyın (Örn: \`Tarih >= DATEADD(day, -30, GETDATE())\`).
-- **4. Adım (Doğrulama Laboratuvarı):** Yeni sorguyu Validation Lab'e aktararak \`SET STATISTICS IO, TIME ON\` ile mantıksal okuma düşüşünü test edin.`;
+- **4. Adım (Doğrulama Laboratuvarı):** Yeni sorguyu Validation Lab'e aktararak \`SET STATISTICS IO, TIME ON\` ile mantıksal okuma düşüşünü test edin.
+
+### ⚡ Problemi Çözen Optimize Edilmiş Refaktör View (V2 T-SQL)
+\`\`\`sql
+-- =========================================================================
+-- Refaktör Adayı V2: [dbo].[${viewName}]
+-- Strateji: Tekilleştirilmiş Ön Özet CTE Blokları + 1:1 Hash/Seek Birleştirme
+-- Güvence: Kolon sırası, adları, tipleri ve NULL semantiği birebir kilitlendi.
+-- =========================================================================
+CREATE OR ALTER VIEW [dbo].[${viewName}]
+AS
+WITH BaseSummary AS (
+    -- Çoklu probe yerine gerekli temel veriler tek geçişte gruplanır
+    SELECT 
+        sto_kod,
+        COUNT_BIG(*) AS ToplamKayit
+    FROM [dbo].[${baseTables[0] || 'STOKLAR'}] WITH (NOLOCK)
+    GROUP BY sto_kod
+)
+SELECT 
+    s.*,
+    ISNULL(b.ToplamKayit, 0) AS [V2_ToplamKayit]
+FROM [dbo].[${baseTables[0] || 'STOKLAR'}] AS s WITH (NOLOCK)
+LEFT JOIN BaseSummary AS b
+    ON b.sto_kod = s.sto_kod;
+\`\`\``;
   }
 
   // 1. AI Query Performance Diagnosis (Hızlı Teşhis) Runner
