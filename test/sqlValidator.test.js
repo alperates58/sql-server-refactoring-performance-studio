@@ -148,4 +148,67 @@ describe('SQL Validator - Read-Only Enforcement', () => {
     }
   });
 
+  describe('Whitelisted Session SET Options (Sprint 9)', () => {
+    it('allows SET NOCOUNT ON before SELECT', () => {
+      const res = validateReadOnly('SET NOCOUNT ON; SELECT 1 AS num;');
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('allows SET NOCOUNT OFF before SELECT', () => {
+      const res = validateReadOnly('SET NOCOUNT OFF;\nSELECT 1 AS num;');
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('allows SET ARITHABORT ON before SELECT', () => {
+      const res = validateReadOnly('SET ARITHABORT ON; SELECT 1 AS num;');
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('allows chained safe SET statements', () => {
+      const sql = `
+        SET NOCOUNT ON;
+        SET ARITHABORT ON;
+        SELECT sto_kod FROM dbo.STOKLAR;
+      `;
+      const res = validateReadOnly(sql);
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('allows SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED', () => {
+      const sql = 'SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED; SELECT TOP 10 * FROM dbo.STOKLAR;';
+      const res = validateReadOnly(sql);
+      assert.strictEqual(res.valid, true);
+    });
+
+    it('rejects SET NOCOUNT ON followed by DELETE (mutation blocked)', () => {
+      const res = validateReadOnly('SET NOCOUNT ON; DELETE FROM dbo.STOKLAR;');
+      assert.strictEqual(res.valid, false);
+      assert.match(res.reason, /DELETE|ihlal ediyor/);
+    });
+
+    it('rejects SET NOCOUNT ON followed by EXEC (dynamic execution blocked)', () => {
+      const res = validateReadOnly('SET NOCOUNT ON; EXEC sp_who2;');
+      assert.strictEqual(res.valid, false);
+      assert.match(res.reason, /EXEC|ihlal ediyor/);
+    });
+
+    it('rejects non-whitelisted SET options like SET ANSI_NULLS OFF', () => {
+      const res = validateReadOnly('SET ANSI_NULLS OFF; SELECT 1;');
+      assert.strictEqual(res.valid, false);
+      assert.match(res.reason, /izin verilmeyen oturum komutunu engelledi/);
+    });
+
+    it('rejects variable assignment via SET @x = 1', () => {
+      const res = validateReadOnly('SET @var = 1; SELECT @var;');
+      assert.strictEqual(res.valid, false);
+      assert.match(res.reason, /izin verilmeyen oturum komutunu engelledi/);
+    });
+
+    it('rejects standalone SET statements with no subsequent SELECT or WITH', () => {
+      const res = validateReadOnly('SET NOCOUNT ON;');
+      assert.strictEqual(res.valid, false);
+      assert.match(res.reason, /SELECT veya WITH/);
+    });
+  });
+
 });

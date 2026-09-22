@@ -300,5 +300,36 @@ LEFT JOIN dbo.AA_ISEMRI_MALZEME_DURUMLARI AS i
 LEFT JOIN [RAPOR_DB].dbo.URETIM_MALZEME_PLANLAMA AS u
     ON u.upl_isemri = a.[İş Kodu]
 LEFT JOIN [RAPOR_DB].dbo.STOKLAR AS s
-    ON s.sto_kod = u.upl_kodu;`
+    ON s.sto_kod = u.upl_kodu;`,
+  timeseries: {
+    source: 'QUERY_STORE',
+    window: '24h',
+    database: 'MikroDB_V16_LIDER25',
+    points: [
+      { bucketStart: '2026-09-21T12:00:00Z', avgDurationMs: 42, executionCount: 142, totalReads: 51200 },
+      { bucketStart: '2026-09-21T13:00:00Z', avgDurationMs: 48, executionCount: 168, totalReads: 62400 },
+      { bucketStart: '2026-09-21T14:00:00Z', avgDurationMs: 65, executionCount: 215, totalReads: 89300 },
+      { bucketStart: '2026-09-21T15:00:00Z', avgDurationMs: 142, executionCount: 384, totalReads: 341000 },
+      { bucketStart: '2026-09-21T16:00:00Z', avgDurationMs: 198, executionCount: 420, totalReads: 482000 },
+      { bucketStart: '2026-09-21T17:00:00Z', avgDurationMs: 110, executionCount: 290, totalReads: 195000 },
+      { bucketStart: '2026-09-21T18:00:00Z', avgDurationMs: 52, executionCount: 112, totalReads: 58000 },
+      { bucketStart: '2026-09-21T19:00:00Z', avgDurationMs: 38, executionCount: 75, totalReads: 31000 },
+      { bucketStart: '2026-09-21T20:00:00Z', avgDurationMs: 35, executionCount: 42, totalReads: 18000 },
+      { bucketStart: '2026-09-21T21:00:00Z', avgDurationMs: 32, executionCount: 35, totalReads: 14000 },
+      { bucketStart: '2026-09-21T22:00:00Z', avgDurationMs: 30, executionCount: 28, totalReads: 11000 },
+      { bucketStart: '2026-09-21T23:00:00Z', avgDurationMs: 30, executionCount: 22, totalReads: 9500 },
+      { bucketStart: '2026-09-22T00:00:00Z', avgDurationMs: 29, executionCount: 18, totalReads: 8200 },
+      { bucketStart: '2026-09-22T01:00:00Z', avgDurationMs: 31, executionCount: 19, totalReads: 8400 },
+      { bucketStart: '2026-09-22T02:00:00Z', avgDurationMs: 33, executionCount: 21, totalReads: 9100 },
+      { bucketStart: '2026-09-22T03:00:00Z', avgDurationMs: 36, executionCount: 25, totalReads: 11200 },
+      { bucketStart: '2026-09-22T04:00:00Z', avgDurationMs: 40, executionCount: 38, totalReads: 16800 },
+      { bucketStart: '2026-09-22T05:00:00Z', avgDurationMs: 48, executionCount: 65, totalReads: 28400 },
+      { bucketStart: '2026-09-22T06:00:00Z', avgDurationMs: 82, executionCount: 180, totalReads: 89000 },
+      { bucketStart: '2026-09-22T07:00:00Z', avgDurationMs: 164, executionCount: 395, totalReads: 410000 },
+      { bucketStart: '2026-09-22T08:00:00Z', avgDurationMs: 220, executionCount: 480, totalReads: 615000 },
+      { bucketStart: '2026-09-22T09:00:00Z', avgDurationMs: 185, executionCount: 430, totalReads: 520000 },
+      { bucketStart: '2026-09-22T10:00:00Z', avgDurationMs: 140, executionCount: 370, totalReads: 380000 },
+      { bucketStart: '2026-09-22T11:00:00Z', avgDurationMs: 125, executionCount: 340, totalReads: 315000 }
+    ]
+  }
 };

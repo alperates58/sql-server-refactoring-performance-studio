@@ -11,35 +11,40 @@
   const $$ = s => [...document.querySelectorAll(s)];
 
   const pageTitles = {
-    overview: ['SQL SAĞLIK KONTROL MERKEZİ', 'Genel Bakış'],
-    views: ['VIEW ENVANTERİ', 'View Envanteri'],
+    overview: ['GENEL BAKIŞ & METRİKLER', 'Genel Bakış'],
+    views: ['VIEW ENVANTERİ & TEŞHİS', 'View Envanteri'],
+    studio: ['REFAKTÖR STÜDYOSU', 'Refaktör Stüdyosu (Pipeline)'],
+    workbench: ['SQL GELİŞTİRME VE TEST', 'SQL Workbench'],
+    'dba-tools': ['DBA PERFORMANS KONSOLU', 'DBA Araçları'],
+    settings: ['SİSTEM VE AYARLAR', 'Ayarlar'],
+    // Legacy route titles for backward compatibility
     graph: ['BAĞIMLILIK HARİTASI & X-RAY', 'Bağımlılık Haritası'],
     runtime: ['PERFORMANS VE ÇALIŞMA ZAMANI', 'Çalışma Zamanı ve Regresyon'],
-    refactor: ['AI DESTEKLİ İYİLEŞTİRME', 'AI Refaktör'],
-    validation: ['SEMANTİK DOĞRULAMA STÜDYOSU', 'Doğrulama Laboratuvarı'],
-    workbench: ['SQL GELİŞTİRME VE TEST', 'SQL Çalışma Alanı'],
-    tables: ['TEMEL TABLO BASKI ANALİZİ', 'Tablo Baskısı'],
-    duplicates: ['MÜKERRER MANTIK VE FINGERPRINT', 'Mükerrer Mantık'],
-    settings: ['SİSTEM VE BAĞLANTI AYARLARI', 'Ayarlar'],
-    activity: ['SQL SERVER ÇALIŞMA ZAMANI DENETİMİ', 'Canlı Aktivite, Kilit & Beklemeler'],
-    indexes: ['VERİTABANI TASARIM & METADATA DENETİMİ', 'Index Advisor & İstatistik Sağlığı'],
-    workspaces: ['REFACTOR YAŞAM DÖNGÜSÜ & GEÇMİŞİ', 'Refactor Çalışmaları (Workspaces)']
+    refactor: ['REFAKTÖR STÜDYOSU', 'Refaktör Stüdyosu'],
+    validation: ['SEMANTİK DOĞRULAMA STÜDYOSU', 'Refaktör Stüdyosu (Doğrulama)'],
+    tables: ['VIEW ENVANTERİ', 'View Envanteri (Tablo Baskısı)'],
+    duplicates: ['VIEW ENVANTERİ', 'View Envanteri (Mükerrer Mantık)'],
+    activity: ['DBA PERFORMANS KONSOLU', 'DBA Araçları (Aktivite)'],
+    indexes: ['DBA PERFORMANS KONSOLU', 'DBA Araçları (İndeksler)'],
+    workspaces: ['REFACTOR YAŞAM DÖNGÜSÜ', 'Kayıtlı Çalışma Alanları']
   };
 
   const pageSubtitles = {
-    overview: 'SQL Server view envanteri, bağımlılık haritası ve regresyon analizleri.',
-    views: 'Filtre önekine göre taranan SQL Server view listesi ve sağlık puanları.',
+    overview: 'SQL Server view envanteri, özet metrikler ve Query Store zaman serisi analizleri.',
+    views: 'Filtre önekine göre taranan SQL Server view listesi ve 4 konsolide teşhis sekmesi.',
+    studio: 'Tek sayfada 4 adımlı lineer süreç: Teşhis → SQL Dönüşümü → Doğrulama & Performans → Sonuç & Eylemler.',
+    workbench: 'Çok sekmeli profesyonel T-SQL editörü, execution plan ve sonuç ızgarası.',
+    'dba-tools': 'İndeks önerileri, istatistik güncelliği ve canlı aktivite/kilit monitörü tek merkezde.',
+    settings: 'Sistem parametreleri, AI sağlayıcı, puanlama ağırlıkları ve destek tanılaması.',
     graph: 'İki yönlü bağımlılık grafiği, döngüsel bağımlılıklar ve etki alanı analizi.',
     runtime: 'Query Store ve DMV kanıtlarıyla çalışma zamanı maliyeti ve regresyon tespiti.',
-    refactor: 'Yapay zeka destekli view refaktör önerileri, güvenli SQL adayları ve diff.',
-    validation: 'Semantik doğrulama, IO/süre benchmark karşılaştırması ve deployment scriptleri.',
-    workbench: 'Çok sekmeli profesyonel T-SQL editörü, execution plan ve sonuç ızgarası.',
-    tables: 'View ağaçları altında en çok baskı gören temel tablolar ve erişim sıklıkları.',
-    duplicates: 'Farklı viewlar arasındaki mükerrer mantık ve fingerprint benzerlikleri.',
-    settings: 'Sistem parametreleri, AI sağlayıcı, puanlama ağırlıkları ve destek tanılaması.',
-    activity: 'Canlı SQL Server oturumları, kilitlenmeler, bekleme istatistikleri ve aktif sorgular.',
-    indexes: 'Eksik indeks tavsiyeleri, istatistik güncelliği ve parçalanma durumu.',
-    workspaces: 'SQL taslaklarını, aday sürümleri ve doğrulama sonuçlarını tek yerde takip edin.'
+    refactor: 'Refaktör Stüdyosu sayfasına yönlendiriliyorsunuz.',
+    validation: 'Refaktör Stüdyosu sayfasına yönlendiriliyorsunuz.',
+    tables: 'View ağaçları altında en çok baskı gören temel tablolar filtrelendi.',
+    duplicates: 'Farklı viewlar arasındaki mükerrer mantık ve fingerprint benzerlikleri filtrelendi.',
+    activity: 'DBA Araçları sayfasına yönlendiriliyorsunuz.',
+    indexes: 'DBA Araçları sayfasına yönlendiriliyorsunuz.',
+    workspaces: 'Refaktör Stüdyosu içindeki kayıtlı çalışmalar paneline yönlendiriliyorsunuz.'
   };
 
   let isNavigating = false;
@@ -70,6 +75,7 @@
       duplicates: MOCK.duplicates,
       regressions: MOCK.regressions,
       dependencies: [],
+      timeseries: MOCK.timeseries || null,
       databaseSummaries: MOCK.databaseSummaries || {},
       metrics: {
         totalViews: MOCK.views.length,
@@ -209,6 +215,30 @@
 
   function gotoPage(name) {
     if (!name || !pageTitles[name]) name = 'overview';
+
+    // Sprint 9: Backward-compatibility aliases & consolidation
+    const aliases = {
+      refactor: 'studio',
+      validation: 'studio',
+      workspaces: 'studio',
+      indexes: 'dba-tools',
+      activity: 'dba-tools',
+      tables: 'views',
+      duplicates: 'views'
+    };
+
+    let targetTabOrFilter = null;
+    if (name === 'workspaces') targetTabOrFilter = 'workspaces';
+    if (name === 'indexes') targetTabOrFilter = 'indexes';
+    if (name === 'activity') targetTabOrFilter = 'activity';
+    if (name === 'tables') targetTabOrFilter = 'tables';
+    if (name === 'duplicates') targetTabOrFilter = 'duplicates';
+
+    const originalRequestedName = name;
+    if (aliases[name]) {
+      name = aliases[name];
+    }
+
     $('.app-shell')?.classList.remove('nav-open');
     $('#mobileNavToggle')?.setAttribute('aria-expanded', 'false');
 
@@ -220,10 +250,10 @@
     isNavigating = false;
 
     $$('.page').forEach(p => p.classList.toggle('active', p.id === `page-${name}`));
-    $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name));
+    $$('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.page === name || b.dataset.page === originalRequestedName));
 
     // Auto-expand parent nav-group if closed
-    const activeBtn = document.querySelector(`.nav-item[data-page="${name}"]`);
+    const activeBtn = document.querySelector(`.nav-item[data-page="${name}"]`) || document.querySelector(`.nav-item[data-page="${originalRequestedName}"]`);
     if (activeBtn) {
       const parentGroup = activeBtn.closest('.nav-group');
       if (parentGroup && !parentGroup.classList.contains('open')) {
@@ -245,36 +275,32 @@
 
     updateBreadcrumbs(name);
 
-    if (name === 'validation') {
-      const select = $('#validationDatabaseSelect');
-      if (select) {
-        const database = state.validationDatabase || state.activeDatabase || state.primaryDatabase;
-        select.innerHTML = [...new Set([database, ...state.selectedDatabases].filter(Boolean))]
-          .map(db => `<option value="${escapeHtml(db)}">${escapeHtml(db)}</option>`).join('');
-        select.value = database;
-      }
-    }
-
     const main = $('.main');
     if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
 
     if (name === 'graph') {
       renderGraph();
     }
-    if (name === 'refactor') {
-      renderRefactorPage(state.selectedCanonicalId || state.selectedViewName);
+    if (name === 'studio') {
+      if (targetTabOrFilter === 'workspaces') {
+        window.STUDIO_MODULES?.refactorStudio?.switchSubTab?.('workspaces');
+      } else {
+        const vName = state.selectedCanonicalId || state.selectedViewName;
+        if (vName && window.STUDIO_MODULES?.refactorStudio?.loadView) {
+          window.STUDIO_MODULES.refactorStudio.loadView(vName);
+        }
+      }
     }
-    if (name === 'activity') {
-      loadActivityData();
-      resetActivityPolling();
-    } else {
-      stopActivityPolling();
+    if (name === 'dba-tools') {
+      if (targetTabOrFilter && window.STUDIO_MODULES?.dbaTools?.switchTab) {
+        window.STUDIO_MODULES.dbaTools.switchTab(targetTabOrFilter);
+      } else if (window.STUDIO_MODULES?.dbaTools?.refresh) {
+        window.STUDIO_MODULES.dbaTools.refresh();
+      }
     }
-    if (name === 'indexes') {
-      loadIndexesData();
-    }
-    if (name === 'workspaces') {
-      loadWorkspacesList();
+    if (name === 'views' && targetTabOrFilter) {
+      const chip = document.querySelector(`.filter-chip[data-view-filter="${targetTabOrFilter}"]`);
+      if (chip) chip.click();
     }
   }
 
@@ -796,10 +822,13 @@
   }
 
   // --- 3. View Inventory & Detail Pane ---
+  let viewListLimit = 50;
+
   function renderViewList(search = '') {
     const q = search.toLocaleLowerCase('tr').trim();
     const views = state.data.views || [];
-    const filter = state.currentRiskFilter;
+    const filter = state.currentRiskFilter || 'all';
+    const specialFilter = state.currentSpecialFilter || null;
     const dbFilter = state.dbFilter || 'all';
 
     // Populate or update #viewDbFilter
@@ -818,7 +847,6 @@
         opts += `<option value="${dbName}">${dbName} (${count})</option>`;
       });
 
-      // Avoid re-rendering if options and values are identical
       if (dbFilterSelect.dataset.lastDbs !== distinctDbs.join(',')) {
         dbFilterSelect.innerHTML = opts;
         dbFilterSelect.dataset.lastDbs = distinctDbs.join(',');
@@ -833,6 +861,7 @@
 
       dbFilterSelect.onchange = e => {
         state.dbFilter = e.target.value;
+        viewListLimit = 50;
         renderViewList($('#viewSearch')?.value || '');
       };
     }
@@ -843,7 +872,15 @@
       const vName = String(v.name || v.view_name || '').toLocaleLowerCase('tr');
       const matchesSearch = !q || vName.includes(q) || (v.database && v.database.toLowerCase().includes(q));
       const matchesDb = dbFilter === 'all' || (v.database && v.database.toLowerCase() === dbFilter.toLowerCase());
-      return matchesRisk && matchesSearch && matchesDb;
+
+      let matchesSpecial = true;
+      if (specialFilter === 'tables') {
+        matchesSpecial = (v.tables > 3 || (v.repeatedBaseTables && v.repeatedBaseTables.length > 0));
+      } else if (specialFilter === 'duplicates') {
+        matchesSpecial = Boolean(v.duplicateGroup || v.hasDuplicatePattern || (v.problems && v.problems.some(p => p.code === 'DUPLICATE_LOGIC')));
+      }
+
+      return matchesRisk && matchesSearch && matchesDb && matchesSpecial;
     });
 
     const criticalCount = views.filter(v => String(v.risk || v.riskLevel).toLowerCase() === 'critical').length;
@@ -860,11 +897,14 @@
     if (!list) return;
 
     if (rows.length === 0) {
-      list.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Aramaya veya seçili veritabanına uygun view bulunamadı.</p></div>';
+      list.innerHTML = '<div class="empty-state" style="padding:40px 10px"><p>Aramaya veya seçili filtreye uygun view bulunamadı.</p></div>';
       return;
     }
 
-    list.innerHTML = rows.map(v => {
+    const visibleSlice = rows.slice(0, viewListLimit);
+    const hasMore = rows.length > viewListLimit;
+
+    let html = visibleSlice.map(v => {
       const name = v.name || v.view_name;
       const canonical = v.canonicalId || name;
       const isActive = canonical === state.selectedCanonicalId || name === state.selectedViewName;
@@ -884,10 +924,29 @@
       `;
     }).join('');
 
-    $$('.view-row').forEach(r => {
+    if (hasMore) {
+      html += `
+        <div style="padding:10px;text-align:center">
+          <button type="button" class="button ghost small full" id="btnLoadMoreViews" style="font-size:12px;padding:6px 12px">
+            Daha Fazla Göster (${rows.length - viewListLimit} kalan)
+          </button>
+        </div>
+      `;
+    }
+
+    list.innerHTML = html;
+
+    list.querySelectorAll('.view-row').forEach(r => {
       r.addEventListener('click', () => selectView(r.dataset.canonical || r.dataset.view));
     });
-  }
+
+    const loadMoreBtn = $('#btnLoadMoreViews');
+    if (loadMoreBtn) {
+      loadMoreBtn.addEventListener('click', () => {
+        viewListLimit += 50;
+        renderViewList($('#viewSearch')?.value || '');
+      });
+    }
 
   async function getViewDefinition(identifier) {
     if (!identifier) return '';
@@ -1060,7 +1119,8 @@
       });
       $$('.btn-spc-sql').forEach(b => {
         b.onclick = () => {
-          $(`.detail-tabs button[data-detail-tab="sql"]`)?.click();
+          const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"], .detail-tabs button[data-detail-tab="sql"]`);
+          if (tabBtn) tabBtn.click();
         };
       });
       $$('.btn-spc-ai').forEach(b => {
@@ -1477,10 +1537,17 @@
     if (graphSearch) graphSearch.value = name;
   }
 
-  // Filter Chips in Views
+  // Filter Chips in Views (Sprint 9: Risk + Special Filters Tables & Duplicates)
   $$('.filter-chip').forEach(btn => {
     btn.addEventListener('click', () => {
-      state.currentRiskFilter = btn.dataset.risk;
+      viewListLimit = 50;
+      if (btn.dataset.viewFilter) {
+        state.currentSpecialFilter = btn.dataset.viewFilter;
+        state.currentRiskFilter = 'all';
+      } else {
+        state.currentSpecialFilter = null;
+        state.currentRiskFilter = btn.dataset.risk || 'all';
+      }
       $$('.filter-chip').forEach(b => b.classList.toggle('active', b === btn));
       renderViewList($('#viewSearch')?.value || '');
     });
@@ -1488,18 +1555,37 @@
 
   const viewSearchInput = $('#viewSearch');
   if (viewSearchInput) {
-    viewSearchInput.addEventListener('input', e => renderViewList(e.target.value));
+    viewSearchInput.addEventListener('input', e => {
+      viewListLimit = 50;
+      renderViewList(e.target.value);
+    });
   }
 
   const refreshInventoryBtn = $('#refreshInventoryBtn');
   if (refreshInventoryBtn) {
     refreshInventoryBtn.addEventListener('click', () => {
+      viewListLimit = 50;
       renderViewList($('#viewSearch')?.value || '');
       toast('Yenilendi', 'View envanter listesi güncellendi.', 'info');
     });
   }
 
-  // Detail Tabs Switcher
+  // Detail Tabs Switcher (Sprint 9: 4 Consolidated Tabs)
+  const detailTabAliases = {
+    overview: 'diagnosis',
+    problems: 'diagnosis',
+    sql: 'sql-deps',
+    dependencies: 'sql-deps',
+    runtime: 'runtime',
+    plans: 'runtime',
+    indexes: 'runtime',
+    history: 'runtime',
+    ai: 'refactor',
+    refactor: 'refactor',
+    diagnosis: 'diagnosis',
+    'sql-deps': 'sql-deps'
+  };
+
   $$('.detail-tabs button').forEach(b => {
     b.addEventListener('click', () => {
       $$('.detail-tabs button').forEach(x => x.classList.toggle('active', x === b));
@@ -1509,9 +1595,19 @@
 
   $$('[data-detail-tab-jump]').forEach(b => {
     b.addEventListener('click', () => {
-      const tabBtn = $(`.detail-tabs button[data-detail-tab="${b.dataset.detailTabJump}"]`);
+      const target = detailTabAliases[b.dataset.detailTabJump] || b.dataset.detailTabJump;
+      const tabBtn = $(`.detail-tabs button[data-detail-tab="${target}"]`);
       if (tabBtn) tabBtn.click();
     });
+  });
+
+  // Sprint 9: Open in Unified Refactor Studio button
+  $('#btnOpenInUnifiedStudio')?.addEventListener('click', () => {
+    const vName = state.selectedCanonicalId || state.selectedViewName;
+    gotoPage('studio');
+    if (window.STUDIO_MODULES?.refactorStudio?.loadView) {
+      window.STUDIO_MODULES.refactorStudio.loadView(vName);
+    }
   });
 
   $('#copySqlBtn')?.addEventListener('click', () => {
@@ -6047,11 +6143,11 @@ WHERE sth_tarih >= '2026-01-01';`;
     const actions = [
       { title: 'Genel Bakış (Overview)', category: 'SAYFALAR & AKSIYONLAR', icon: '◫', action: () => gotoPage('overview') },
       { title: 'View Envanteri (View Inventory)', category: 'SAYFALAR & AKSIYONLAR', icon: '⌘', action: () => gotoPage('views') },
-      { title: 'Bağımlılık Haritası (Dependency X-Ray)', category: 'SAYFALAR & AKSIYONLAR', icon: '⌁', action: () => gotoPage('graph') },
-      { title: 'Runtime & Regresyon Analizi', category: 'SAYFALAR & AKSIYONLAR', icon: '∿', action: () => gotoPage('runtime') },
-      { title: 'AI Refactoring Danışmanı', category: 'SAYFALAR & AKSIYONLAR', icon: '✦', action: () => gotoPage('refactor') },
-      { title: 'Validation Lab (Semantik Kanıt)', category: 'SAYFALAR & AKSIYONLAR', icon: '✓', action: () => gotoPage('validation') },
+      { title: 'Refaktör Stüdyosu (4 Adımlı Dönüşüm)', category: 'SAYFALAR & AKSIYONLAR', icon: '✦', action: () => gotoPage('studio') },
       { title: 'SQL Workbench (Sorgu & Plan Editörü)', category: 'SAYFALAR & AKSIYONLAR', icon: '⚡', action: () => gotoPage('workbench') },
+      { title: 'DBA Araçları (İndeks, İstatistik, Aktivite)', category: 'SAYFALAR & AKSIYONLAR', icon: '⚲', action: () => gotoPage('dba-tools') },
+      { title: 'Çalışma Alanları (Workspaces)', category: 'SAYFALAR & AKSIYONLAR', icon: '◫', action: () => gotoPage('workspaces') },
+      { title: 'Bağımlılık Haritası (Dependency X-Ray)', category: 'SAYFALAR & AKSIYONLAR', icon: '⌁', action: () => gotoPage('graph') },
       { title: 'Table Pressure (Fiziksel Tablo Baskısı)', category: 'SAYFALAR & AKSIYONLAR', icon: '▦', action: () => gotoPage('tables') },
       { title: 'Duplicate Logic (Mükerrer SQL Tespiti)', category: 'SAYFALAR & AKSIYONLAR', icon: '≋', action: () => gotoPage('duplicates') },
       { title: 'Stüdyo Ayarları (Configuration)', category: 'SAYFALAR & AKSIYONLAR', icon: '⚙', action: () => gotoPage('settings') },
@@ -10142,6 +10238,23 @@ ORDER BY IslemAdedi DESC;`;
     renderTables();
     renderDuplicates();
     renderRuntime();
+
+    // SPRINT 9: Initialize Unified Studio & DBA Tools controllers
+    if (window.STUDIO_MODULES?.refactorStudio?.init) {
+      window.STUDIO_MODULES.refactorStudio.init(null, state, {
+        toast,
+        openWorkbenchSql,
+        loadWorkspacesList: () => loadWorkspacesList(),
+        getViewDefinition
+      });
+    }
+
+    if (window.STUDIO_MODULES?.dbaTools?.init) {
+      window.STUDIO_MODULES.dbaTools.init(state, {
+        loadActivityData,
+        loadIndexesData
+      });
+    }
 
     // Hash routing on load & history change
     const initialPage = window.location.hash.replace('#', '') || 'overview';

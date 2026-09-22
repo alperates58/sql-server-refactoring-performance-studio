@@ -25,66 +25,34 @@
       </div>
 
       <nav class="sidebar-groups" id="sidebarGroups" aria-label="Ana navigasyon">
-        <!-- GROUP: GENEL -->
-        <div class="nav-group open" data-group="genel">
-          <button class="nav-group-header" type="button">
-            <span class="nav-group-title">GENEL</span>
-            <span class="nav-group-arrow">▾</span>
-          </button>
+        <div class="nav-group open" data-group="ana-menu">
           <div class="nav-group-items">
-            <button class="nav-item active" data-page="overview" title="Genel Bakış"><span class="nav-icon">◫</span><span>Genel Bakış</span></button>
-          </div>
-        </div>
-
-        <!-- GROUP: ANALİZ -->
-        <div class="nav-group open" data-group="analiz">
-          <button class="nav-group-header" type="button">
-            <span class="nav-group-title">ANALİZ</span>
-            <span class="nav-group-arrow">▾</span>
-          </button>
-          <div class="nav-group-items">
-            <button class="nav-item" data-page="views" title="View Envanteri"><span class="nav-icon">⌘</span><span>View Envanteri</span><span class="nav-badge" id="sidebarViewCount">600</span></button>
-            <button class="nav-item" data-page="graph" title="Bağımlılık Haritası"><span class="nav-icon">⌁</span><span>Bağımlılık Haritası</span></button>
-            <button class="nav-item" data-page="runtime" title="Regresyon & Çalışma Zamanı"><span class="nav-icon">∿</span><span>Regresyon & Süre</span><span class="status-dot danger"></span></button>
-            <button class="nav-item" data-page="tables" title="Tablo Baskısı"><span class="nav-icon">▦</span><span>Tablo Baskısı</span></button>
-            <button class="nav-item" data-page="duplicates" title="Mükerrer Mantık"><span class="nav-icon">≋</span><span>Mükerrer Mantık</span></button>
-          </div>
-        </div>
-
-        <!-- GROUP: OPTİMİZASYON -->
-        <div class="nav-group open" data-group="optimizasyon">
-          <button class="nav-group-header" type="button">
-            <span class="nav-group-title">OPTİMİZASYON</span>
-            <span class="nav-group-arrow">▾</span>
-          </button>
-          <div class="nav-group-items">
-            <button class="nav-item" data-page="refactor" title="AI Refaktör"><span class="nav-icon">✦</span><span>AI Refaktör</span></button>
-            <button class="nav-item" data-page="validation" title="Doğrulama Laboratuvarı"><span class="nav-icon">✓</span><span>Doğrulama Lab</span></button>
-            <button class="nav-item" data-page="workspaces" title="Çalışma Alanları"><span class="nav-icon">📁</span><span>Çalışma Alanları</span><span class="nav-badge" id="sidebarWorkspaceCount" style="display:none">0</span></button>
-          </div>
-        </div>
-
-        <!-- GROUP: SQL ARAÇLARI -->
-        <div class="nav-group open" data-group="araclar">
-          <button class="nav-group-header" type="button">
-            <span class="nav-group-title">SQL ARAÇLARI</span>
-            <span class="nav-group-arrow">▾</span>
-          </button>
-          <div class="nav-group-items">
-            <button class="nav-item" data-page="workbench" title="SQL Workbench"><span class="nav-icon">⚡</span><span>SQL Workbench</span></button>
-            <button class="nav-item" data-page="indexes" title="İndeks & İstatistik"><span class="nav-icon">⚲</span><span>İndeks & İstatistik</span></button>
-            <button class="nav-item" data-page="activity" title="Canlı Aktivite & Kilit"><span class="nav-icon">⏱</span><span>Canlı Aktivite & Kilit</span></button>
-          </div>
-        </div>
-
-        <!-- GROUP: SİSTEM -->
-        <div class="nav-group open" data-group="sistem">
-          <button class="nav-group-header" type="button">
-            <span class="nav-group-title">SİSTEM</span>
-            <span class="nav-group-arrow">▾</span>
-          </button>
-          <div class="nav-group-items">
-            <button class="nav-item" data-page="settings" title="Ayarlar & Tanılama"><span class="nav-icon">⚙</span><span>Ayarlar & Tanılama</span></button>
+            <button class="nav-item active" data-page="overview" title="Genel Bakış">
+              <span class="nav-icon">◫</span>
+              <span>Genel Bakış</span>
+            </button>
+            <button class="nav-item" data-page="views" title="View Envanteri & Keşif">
+              <span class="nav-icon">⌘</span>
+              <span>View Envanteri</span>
+              <span class="nav-badge" id="sidebarViewCount">600</span>
+            </button>
+            <button class="nav-item studio-nav-item" data-page="studio" title="Bütünleşik Refaktör Stüdyosu">
+              <span class="nav-icon">✦</span>
+              <span>Refaktör Stüdyosu</span>
+              <span class="status-dot purple"></span>
+            </button>
+            <button class="nav-item" data-page="workbench" title="SQL Workbench">
+              <span class="nav-icon">⚡</span>
+              <span>SQL Workbench</span>
+            </button>
+            <button class="nav-item" data-page="dba-tools" title="DBA Araçları (İndeks, İstatistik, Kilit)">
+              <span class="nav-icon">⚲</span>
+              <span>DBA Araçları</span>
+            </button>
+            <button class="nav-item" data-page="settings" title="Ayarlar & Tanılama">
+              <span class="nav-icon">⚙</span>
+              <span>Ayarlar</span>
+            </button>
           </div>
         </div>
       </nav>
@@ -168,11 +136,11 @@
             <div class="metric-top"><span class="metric-icon">≋</span><span class="trend warning-text" id="metricDuplicateTrend">%92 max</span></div>
             <strong id="metricDuplicates">48</strong><span>Duplicate Adayı</span><small>Normalize SQL benzerlik kümeleri</small>
           </article>
-          <article class="metric-card" style="cursor:pointer" data-goto="indexes">
+          <article class="metric-card" style="cursor:pointer" data-goto="dba-tools">
             <div class="metric-top"><span class="metric-icon">⚲</span><span class="trend purple-text" id="metricIndexAdvisorTrend">Tavsiyeler</span></div>
             <strong id="metricIndexAdvisorCount">—</strong><span>Eksik İndeks</span><small>DMV &amp; Plan tespitleri</small>
           </article>
-          <article class="metric-card" style="cursor:pointer" data-goto="indexes">
+          <article class="metric-card" style="cursor:pointer" data-goto="dba-tools">
             <div class="metric-top"><span class="metric-icon">📊</span><span class="trend warning-text" id="metricStatsHealthTrend">Sağlık</span></div>
             <strong id="metricStatsHealthCount">—</strong><span>Bayat İstatistik</span><small>Güncelliğini yitirmiş (Stale)</small>
           </article>
@@ -197,18 +165,18 @@
             <div class="chart-wrap" id="overviewChartWrap">
               <div class="empty-state" style="padding:48px 16px">
                 <div class="empty-icon">📈</div>
-                <h3>Zaman Serisi Verisi Henüz Mevcut Değil</h3>
-                <p>Query Store zaman aralığı ve saatlik trend analizi motoru bir sonraki güncellemede eklenecektir.</p>
+                <h3>Zaman Serisi Yükleniyor</h3>
+                <p>Query Store çalışma zamanı trendi taranıyor veya bu veritabanında Query Store etkinleştirilmemiş.</p>
               </div>
             </div>
           </section>
 
           <section class="panel span-5">
-            <div class="panel-header"><div><span class="panel-kicker">SON BULGULAR</span><h3>Analiz Akışı</h3></div><button class="icon-button" id="refreshFeedBtn">↻</button></div>
+            <div class="panel-header"><div><span class="panel-kicker">ANALİZ TESPİTLERİ</span><h3>Önemli Bulgular</h3></div><button class="icon-button" id="refreshFeedBtn" title="Bulguları Yenile">↻</button></div>
             <div class="feed" id="overviewFeed">
-              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Sapması</strong><p>Tahmin 1 → Gerçek 187,431 satır</p><small id="feedItemView1">Kritik Tüketici View · 1 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>STOK_HAREKETLERI x4 mantıksal yol</p><small id="feedItemView2">Yüksek I/O Baskısı · 3 dk önce</small></div></div>
-              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT / CAST fonksiyonuyla sarılı indeks</p><small id="feedItemView3">Taranan Nesneler · 8 dk önce</small></div></div>
+              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Sapması</strong><p>Tahmin ile gerçek satır sayısı arasında ciddi fark</p><small id="feedItemView1">Kritik Tüketici View</small></div></div>
+              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>Aynı temel tabloya çoklu mantıksal yol</p><small id="feedItemView2">Yüksek I/O Baskısı</small></div></div>
+              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT / CAST fonksiyonuyla sarılı indeks</p><small id="feedItemView3">Taranan Nesneler</small></div></div>
             </div>
           </section>
         </div>
@@ -224,7 +192,13 @@
               </select>
             </div>
             <div class="search-box"><span>⌕</span><input id="viewSearch" placeholder="View ara..."/><kbd>⌘ K</kbd></div>
-            <div class="filter-row"><button class="filter-chip active" data-risk="all">Tümü <b id="countAll">600</b></button><button class="filter-chip" data-risk="critical">Kritik <b id="countCritical">37</b></button><button class="filter-chip" data-risk="high">Yüksek <b id="countHigh">84</b></button></div>
+            <div class="filter-row">
+              <button class="filter-chip active" data-risk="all">Tümü <b id="countAll">600</b></button>
+              <button class="filter-chip" data-risk="critical">Kritik <b id="countCritical">37</b></button>
+              <button class="filter-chip" data-risk="high">Yüksek <b id="countHigh">84</b></button>
+              <button class="filter-chip" data-view-filter="tables" title="Çoklu tablo baskısı alan viewlar">Tablo Baskısı</button>
+              <button class="filter-chip" data-view-filter="duplicates" title="Mükerrer SQL mantığı içeren viewlar">Mükerrer Mantık</button>
+            </div>
             <div class="view-list" id="viewList"></div>
           </section>
           <section class="view-detail-pane">
@@ -233,18 +207,14 @@
               <div class="detail-score"><div class="score-ring"><strong id="detailHealth">--</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">--</strong></div></div>
             </div>
             <div class="detail-tabs">
-              <button class="active" data-detail-tab="overview">Genel Bakış</button>
-              <button data-detail-tab="sql">SQL</button>
-              <button data-detail-tab="dependencies">Bağımlılıklar</button>
+              <button class="active" data-detail-tab="diagnosis">Teşhis</button>
+              <button data-detail-tab="sql-deps">SQL &amp; Bağımlılıklar</button>
               <button data-detail-tab="runtime">Çalışma Zamanı</button>
-              <button data-detail-tab="plans">Çalıştırma Planları</button>
-              <button data-detail-tab="indexes">İndeksler</button>
-              <button data-detail-tab="problems">Sorunlar <span id="tabProblemCount">0</span></button>
-              <button data-detail-tab="ai">AI Refaktör</button>
-              <button data-detail-tab="history">Geçmiş</button>
+              <button data-detail-tab="refactor">Refaktör</button>
             </div>
 
-            <div class="detail-tab active" id="detail-tab-overview">
+            <!-- Tab 1: Teşhis (Diagnosis) -->
+            <div class="detail-tab active" id="detail-tab-diagnosis">
               <div class="stat-strip">
                 <div><span>Derinlik</span><strong id="statDepth">--</strong><small id="statDepthWarn">--</small></div><div><span>Temel Tablolar</span><strong id="statTables">--</strong><small id="statTablesWarn">--</small></div><div><span>Bağımlılar</span><strong id="statDependents">--</strong><small>Etki alanı</small></div><div><span>24s Okuma</span><strong id="statReads">--</strong><small id="statReadsDelta">--</small></div><div><span>Medyan</span><strong id="statMedian">--</strong><small id="statMedianDelta">--</small></div>
               </div>
@@ -254,27 +224,32 @@
                   <div class="risk-bars" id="riskBars"></div>
                 </section>
                 <section class="inner-panel">
-                  <div class="inner-head"><h4>Önemli Sorunlar</h4><button class="link-button" data-detail-tab-jump="problems"><span id="topProblemCountText">0 bulgu</span> →</button></div>
+                  <div class="inner-head"><h4>Önemli Bulgular</h4><span id="topProblemCountText">0 bulgu</span></div>
                   <div class="problem-list" id="topProblems"></div>
                 </section>
               </div>
-              <section class="inner-panel impact-panel">
+              <div style="margin-top:16px">
+                <h4 style="font-size:13.5px;font-weight:600;margin-bottom:10px;color:var(--text-secondary)">Tüm Teşhis &amp; Bulgu Kayıtları (<span id="tabProblemCount">0</span>)</h4>
+                <div class="full-problem-list" id="fullProblemList"></div>
+              </div>
+            </div>
+
+            <!-- Tab 2: SQL & Bağımlılıklar (SQL & Dependencies) -->
+            <div class="detail-tab" id="detail-tab-sql-deps">
+              <div class="code-toolbar"><span id="sqlToolbarName">Sorgu Tanımı</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="workbench" id="btnOpenSqlInWorkbench">⚡ Workbench'te Aç</button></div></div>
+              <pre class="code-editor"><code id="sqlCode"></code></pre>
+              
+              <section class="inner-panel impact-panel" style="margin-top:16px">
                 <div class="inner-head"><div><h4>Etki Alanı (Blast Radius)</h4><span>Bu view değişirse etkilenebilecek üst nesneler</span></div><button class="button ghost small" data-goto="graph">Haritada Gör</button></div>
                 <div class="impact-chain" id="impactChain"><span style="color:var(--text-muted)">Bir view seçildiğinde bağımlılık zinciri burada listelenecektir.</span></div>
               </section>
-            </div>
 
-            <div class="detail-tab" id="detail-tab-sql">
-              <div class="code-toolbar"><span id="sqlToolbarName">Sorgu Tanımı</span><div><button class="button ghost small" id="copySqlBtn">Kopyala</button><button class="button primary small" data-goto="workbench" id="btnOpenSqlInWorkbench">⚡ Workbench'te Aç</button></div></div>
-              <pre class="code-editor"><code id="sqlCode"></code></pre>
-            </div>
-
-            <div class="detail-tab" id="detail-tab-dependencies">
-              <div id="dependenciesContent">
+              <div id="dependenciesContent" style="margin-top:16px">
                 <div class="empty-state"><div class="empty-icon">⌁</div><h3>Dependency Graph hazır</h3><p>Seçili view'ın upstream ve downstream ilişkilerini interaktif haritada incele.</p><button class="button primary" data-goto="graph">Haritayı Aç</button></div>
               </div>
             </div>
 
+            <!-- Tab 3: Çalışma Zamanı (Runtime) -->
             <div class="detail-tab" id="detail-tab-runtime">
               <div id="runtimeDetailContent">
                 <div class="empty-state" style="padding:40px 10px">
@@ -283,10 +258,16 @@
                   <p>Bu view için Query Store veya DMV önbelleğinde doğrulanmış çalışma zamanı kanıtı aranıyor...</p>
                 </div>
               </div>
-            </div>
 
-            <div class="detail-tab" id="detail-tab-plans">
-              <div class="plan-list" id="planList">
+              <div class="permission-box" id="detailHistoryContent" style="margin-top:16px">
+                <div class="empty-state" style="padding:28px 10px">
+                  <div class="empty-icon">🕒</div>
+                  <h3>Geçmiş Kaydı Bulunmuyor</h3>
+                  <p>Bu view için Query Store üzerinde kayıtlı bir plan regresyonu veya indeks değişiklik geçmişi tespit edilmedi.</p>
+                </div>
+              </div>
+
+              <div class="plan-list" id="planList" style="margin-top:16px">
                 <div class="empty-state" style="padding:40px 10px">
                   <div class="empty-icon">🗂</div>
                   <h3>Henüz Execution Plan Kaydı Bulunmuyor</h3>
@@ -294,12 +275,10 @@
                   <button class="button ghost small" data-goto="workbench" style="margin-top:12px">SQL Workbench'te İncele →</button>
                 </div>
               </div>
-            </div>
 
-            <div class="detail-tab" id="detail-tab-indexes">
-              <div id="indexesDetailContent">
+              <div id="indexesDetailContent" style="margin-top:16px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                  <h4 style="font-size:14px">Base Tablo İndeksleri & Kapsama Oranı</h4>
+                  <h4 style="font-size:14px">Base Tablo İndeksleri &amp; Kapsama Oranı</h4>
                   <button class="button ghost small" id="btnRefreshIndexes">İndeksleri Sorgula</button>
                 </div>
                 <div id="detailIndexTableWrap">
@@ -313,23 +292,20 @@
               </div>
             </div>
 
-            <div class="detail-tab" id="detail-tab-problems"><div class="full-problem-list" id="fullProblemList"></div></div>
-
-            <div class="detail-tab" id="detail-tab-ai">
-              <div class="permission-box" style="margin-bottom:14px">
-                <strong>AI Refactoring Context Pack</strong>
-                <p style="margin-top:4px">Seçili view için metadata, kolon tipleri, SARGable kuralları ve plan bulguları hazırlandı.</p>
-              </div>
-              <button class="button primary" data-goto="refactor">✦ AI Refactor Sayfasına Git</button>
-            </div>
-
-            <div class="detail-tab" id="detail-tab-history">
-              <div class="permission-box" id="detailHistoryContent">
-                <div class="empty-state" style="padding:28px 10px">
-                  <div class="empty-icon">🕒</div>
-                  <h3>Geçmiş Kaydı Bulunmuyor</h3>
-                  <p>Bu view için Query Store üzerinde kayıtlı bir plan regresyonu veya indeks değişiklik geçmişi tespit edilmedi.</p>
+            <!-- Tab 4: Refaktör (Refactor) -->
+            <div class="detail-tab" id="detail-tab-refactor">
+              <div class="permission-box" style="margin-bottom:16px">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span style="font-size:24px;color:var(--purple-light)">✦</span>
+                  <div>
+                    <strong style="font-size:14px;color:var(--text-bright);display:block;margin-bottom:4px">Refaktör Stüdyosu Entegrasyonu</strong>
+                    <p style="margin:0;font-size:12.5px;color:var(--text-muted);line-height:1.4">Seçili view için metadata, kolon tipleri, SARGable kural seti ve plan bulguları hazırlandı. Tek tıkla 4 adımlı refaktör hattını başlatabilirsiniz.</p>
+                  </div>
                 </div>
+              </div>
+              <div style="display:flex;gap:12px;align-items:center">
+                <button class="button primary" id="btnOpenInUnifiedStudio" style="padding:10px 20px;font-weight:600">✦ Refaktör Stüdyosu'nda Aç (4 Adım) →</button>
+                <button class="button ghost" data-goto="workbench">⚡ SQL Workbench'te Aç</button>
               </div>
             </div>
           </section>
@@ -494,366 +470,222 @@
         </div>
       </section>
 
-      <section class="page" id="page-refactor">
-        <div class="refactor-layout">
-          <section class="refactor-source">
-            <div class="refactor-hero-header">
-              <div class="refactor-title-block">
-                <div class="refactor-kicker-row">
-                  <span class="panel-kicker">HEDEF VIEW ANALİZİ</span>
-                  <span class="db-badge" id="refactorDbBadge" style="font-size:10px;padding:2px 7px">--</span>
-                  <span class="severity-pill" id="refactorRiskBadge">RISK --</span>
-                </div>
-                <h2 class="refactor-view-title" id="refactorViewTitle">--</h2>
-              </div>
-              <div class="refactor-switch-box">
-                <label for="refactorViewSelect">Farklı Bir View İncele:</label>
-                <select id="refactorViewSelect" class="select-styled" title="İncelenecek view'i değiştirin"></select>
-              </div>
+      <!-- UNIFIED REFACTOR STUDIO (Sprint 9: Tek Sayfada 4 Adımlı Lineer Süreç + Workspaces) -->
+      <section class="page" id="page-studio">
+        <div class="views-header" style="margin-bottom:14px">
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span class="hero-kicker">UNIFIED REFACTOR &amp; PERFORMANCE STUDIO</span>
+              <span class="db-badge" id="studioHeaderDbBadge">--</span>
+              <span class="severity-pill" id="studioHeaderRiskBadge">RISK --</span>
+              <span class="connected-pill" id="studioHeaderEvidencePill" style="font-size:10.5px">Kanıt Modeli</span>
             </div>
-            <div class="context-pack">
-              <div><span>Kaynak Zinciri</span><strong id="refactorChainCount">--</strong></div>
-              <div><span>Temel Tablolar</span><strong id="refactorTableCount">--</strong></div>
-              <div><span>İndeksler</span><strong id="refactorIndexCount">--</strong></div>
-              <div><span>Plan Bulguları</span><strong id="refactorFindingCount">--</strong></div>
+            <h2 style="font-size:22px;margin:0 0 4px" id="studioHeaderViewName">Refaktör Stüdyosu</h2>
+            <p style="color:var(--text-muted);font-size:12.5px;margin:0">
+              4 Adımlı Güvenli Refaktör Hattı: Teşhis → SQL Dönüşümü → Anlamsal Doğrulama &amp; Performans → Sonuç &amp; Eylemler.
+            </p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <label for="studioViewSelect" style="font-size:12px;color:var(--text-muted)">Hedef View:</label>
+              <select id="studioViewSelect" class="setting-input select-styled" style="width:210px;height:32px;font-size:12px" title="İncelenecek View"></select>
             </div>
-            <div class="code-label"><span>Mevcut SQL · Bağlam Önizleme</span><span id="refactorLineCount">-- satır</span></div>
-            <pre class="code-editor tall"><code id="refactorSourceCode">-- View seçildiğinde SQL burada görüntülenecektir...</code></pre>
-          </section>
-
-          <section class="refactor-control">
-            <div class="ai-head">
-              <div class="ai-orb">✦</div>
-              <div>
-                <span class="panel-kicker">AI MOTORU</span>
-                <h3>Refaktör Asistanı</h3>
-              </div>
-              <span class="provider-pill" id="refactorProviderPill">DeepSeek</span>
+            <div class="segmented" style="margin-left:8px">
+              <button type="button" class="active" id="studioTabBtnPipeline">Refaktör Hattı (4 Adım)</button>
+              <button type="button" id="studioTabBtnWorkspaces">Kayıtlı Çalışmalarım (<span id="studioWorkspaceCountBadge">0</span>)</button>
             </div>
-            <div class="guardrail">
-              <span>🛡</span>
-              <div>
-                <strong>Semantik Guardrail Aktif</strong>
-                <p>Sütun isimleri, tipleri, duplicate multiplicity ve NULL davranışları zorunlu korunur. Deploy kararı asla otomatik verilmez.</p>
-              </div>
-            </div>
-            <div class="refactor-options">
-              <label><input type="checkbox" id="optInlineRepeated" checked> Tekrar eden tablo dallarını satır içine (inline) al</label>
-              <label><input type="checkbox" id="optSetBasedApply" checked> OUTER APPLY skalar toplamlarını küme bazlı (set-based) yap</label>
-              <label><input type="checkbox" id="optIndexSuggestions"> Eksik kapsayıcı indeks (covering index) öner</label>
-              <label><input type="checkbox" id="optLockColumns" checked> Çıktı sütun sırasını ve adlarını kilitle</label>
-            </div>
-            <div class="ai-warning"><p>CTE materialize olmaz. Tekrar eden tablonun yalnız execution plan doğrulamasıyla tek taramaya indiği iddia edilebilir.</p></div>
-            <div class="refactor-btn-row">
-              <button type="button" class="button ghost ai-analyze-button" id="btnAnalyzeQuery" title="Sorgunun neden yavaş çalıştığını madde madde analiz et">🔍 Hızlı Teşhis</button>
-              <button type="button" class="button ghost ai-deep-analyze-button" id="btnDeepAnalyzeQuery" title="Sorgunun içindeki alt sorguları, CTE'leri ve fonksiyonları katman katman derinlemesine incele">🔬 Derinlemesine Analiz Et</button>
-              <button type="button" class="button primary ai-button" id="runRefactor" title="Performans odaklı V2 alternatif SQL sorgusu üret">✦ Aday Refaktör Oluştur</button>
-            </div>
-            <div class="ai-progress hidden" id="aiProgress">
-              <div class="progress-head">
-                <span id="aiProgressText">AI refaktör adayı üretiliyor...</span>
-                <b id="aiProgressPct">0%</b>
-              </div>
-              <div class="progress-track"><i id="aiProgressBar"></i></div>
-              <small id="aiProgressSub">Sözleşme kuralları denetleniyor</small>
-            </div>
-          </section>
-
-          <!-- Full Width Candidate & Diagnostic Studio Panel -->
-          <section class="candidate-panel hidden" id="candidatePanel">
-            <div class="candidate-header-bar">
-              <div class="candidate-header-left">
-                <div class="panel-kicker-group">
-                  <span class="panel-kicker">AI PERFORMANS VE REFAKTÖR STÜDYOSU</span>
-                  <div class="candidate-stats">
-                    <span>Durum: <b class="needs-validation" id="candidateStatusBadge">HAZIR (DOĞRULANMADI)</b></span>
-                    <span>Tahmini IO / Kazanç: <b id="candidateIoEstimate" style="color:var(--green)">Optimizasyon Hazır</b></span>
-                  </div>
-                </div>
-              </div>
-              <div class="candidate-view-tabs" id="candidateTabs">
-                <button type="button" class="candidate-tab-btn" data-tab="deep" id="tabBtnDeepAnalysis">🔬 Çok Katmanlı Derin Analiz & Canlı Akış</button>
-                <button type="button" class="candidate-tab-btn active" data-tab="analysis" id="tabBtnAnalysis">📋 Performans Teşhisi (Neden Yavaş?)</button>
-                <button type="button" class="candidate-tab-btn" data-tab="sql" id="tabBtnSql">⚡ Aday Refaktör SQL (V2)</button>
-                <button type="button" class="candidate-tab-btn" data-tab="split" id="tabBtnSplit">◫ Yan Yana Görünüm</button>
-                <button type="button" class="candidate-tab-btn" data-tab="compare" id="tabBtnCompare">📊 Karşılaştırma & X-Ray (Sprint 3)</button>
-                <button type="button" class="candidate-tab-btn" data-tab="ast" id="tabBtnAst">🌳 T-SQL AST & İndeks Kapsamı (Sprint 4)</button>
-              </div>
-            </div>
-
-            <!-- Tab Content Wrapper -->
-            <div class="candidate-tab-content-wrap">
-              <!-- Tab 0: Multi-Level Deep Analysis & Real-Time Thinking Stream -->
-              <div class="candidate-tab-pane" id="tabPaneDeepAnalysis">
-                <div class="diagnostic-pane-head">
-                  <div>
-                    <h4 style="margin:0 0 4px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>🔬</span> Çok Katmanlı Sorgu İncelemesi & Canlı Düşünce Akışı
-                    </h4>
-                    <p style="margin:0;font-size:12px;color:var(--text-muted)">Dış SELECT → Alt Sorgular / CTE → Skalar Fonksiyonlar (UDF) → Fiziksel Tablo Taramaları</p>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:8px">
-                    <button type="button" class="button ghost mini" id="btnDeepSendToValidation" title="Üretilen optimize sorguyu Doğrulama Laboratuvarına aktar">✓ Doğrulama Laboratuvarı</button>
-                    <button type="button" class="button ghost mini" id="btnDeepSendToWorkbench" title="Sorguyu SQL Çalışma Alanında Aç">⚡ Workbench</button>
-                    <span id="deepAnalysisModelBadge" class="provider-pill mini">deepseek-flash</span>
-                  </div>
-                </div>
-
-                <!-- Live Thinking Terminal -->
-                <div class="deep-thinking-wrap">
-                  <div class="deep-thinking-head">
-                    <div style="display:flex;align-items:center;gap:8px">
-                      <span class="pulse-dot"></span>
-                      <strong style="font-size:13px;color:var(--text-bright)">AI Düşünce & Analiz Akışı (Canlı İnceleme)</strong>
-                    </div>
-                    <span id="aiThinkingStatus" class="thinking-chip ready">Hazır</span>
-                  </div>
-                  <div class="ai-thinking-stream" id="aiThinkingStream">
-                    <p style="color:var(--text-muted);font-style:italic">Yukarıdaki <strong>"🔬 Derinlemesine Analiz Et"</strong> butonuna bastığınızda, yapay zekanın sorgunun dış katmanından başlayarak iç alt sorgulara, CTE'lere ve fonksiyonlara doğru düşünce adımları burada canlı olarak akacaktır.</p>
-                  </div>
-                </div>
-
-                <!-- Deep Analysis Report Content -->
-                <div class="diagnostic-report-body" id="deepAnalysisReportBody" style="margin-top:14px">
-                  <p style="color:var(--text-muted);font-style:italic">Derinlemesine analiz sonuçları ve mimari çözüm ağacı burada listelenecektir.</p>
-                </div>
-              </div>
-
-              <!-- Tab 1: In-depth Diagnostic Analysis (Full Width) -->
-              <div class="candidate-tab-pane active" id="tabPaneAnalysis">
-                <div class="diagnostic-pane-head">
-                  <div>
-                    <h4 style="margin:0 0 4px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>🚨</span> Sorgu Yürütme ve Darboğaz Teşhis Raporu
-                    </h4>
-                    <p style="margin:0;font-size:12px;color:var(--text-muted)">Sorgunun execution plan maliyetini artıran unsurlar ve önerilen çözümler</p>
-                  </div>
-                  <span id="analysisModelBadge" class="provider-pill mini">deepseek-flash</span>
-                </div>
-                <div class="diagnostic-report-body" id="candidateFullAnalysis">
-                  <p style="color:var(--text-muted);font-style:italic">Henüz analiz çalıştırılmadı. Yukarıdaki <strong>"🔍 Sorguyu Analiz Et"</strong> butonuna basarak sorgunun neden yavaş çalıştığına dair kapsamlı teşhis raporunu alabilirsiniz.</p>
-                </div>
-              </div>
-
-              <!-- Tab 2: Candidate SQL (Full Width Code Editor) -->
-              <div class="candidate-tab-pane" id="tabPaneSql">
-                <div class="code-label">
-                  <span>Aday Refaktör SQL (V2) · Semantik Guardrail Korumalı</span>
-                  <div class="code-label-actions">
-                    <button type="button" class="button ghost mini" id="btnCopyCandidateSql" title="Aday SQL'i Panoya Kopyala">📋 Kopyala</button>
-                    <button type="button" class="button primary mini" id="btnOpenCandidateInWorkbench">⚡ Workbench'te Aç</button>
-                    <button type="button" class="button ghost mini" id="btnSendCandidateToValidation" data-detail-tab-jump="validation">✓ Doğrulama Laboratuvarı</button>
-                  </div>
-                </div>
-                <textarea class="code-editor full-view" id="candidateSqlText" spellcheck="false" placeholder="-- Aday SQL üretildiğinde burada tam genişlikte görüntülenecek..."></textarea>
-              </div>
-
-              <!-- Tab 3: Split View (Side by side comparison) -->
-              <div class="candidate-tab-pane" id="tabPaneSplit">
-                <div class="diff-grid wide">
-                  <div class="candidate-sql-col">
-                    <div class="code-label">
-                      <span>Aday Refaktör SQL (V2)</span>
-                      <button type="button" class="button ghost mini" id="btnCopyCandidateSqlSplit" title="Aday SQL'i Kopyala">Kopyala</button>
-                    </div>
-                    <textarea class="code-editor" id="candidateSqlTextSplit" spellcheck="false" placeholder="-- Aday SQL burada görünecek..."></textarea>
-                  </div>
-                  <div class="candidate-notes-col">
-                    <div class="code-label"><span>Teknik Gerekçeler & Hipotezler</span></div>
-                    <div class="candidate-analysis-wrap" id="candidateNotes"></div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Tab 4: Unified Before/After Comparison & Execution Plan X-Ray (Sprint 3) -->
-              <div class="candidate-tab-pane" id="tabPaneCompare">
-                <div class="compare-action-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:16px;">
-                  <div>
-                    <h4 style="margin:0 0 4px;font-size:15px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>⚖️</span> Orijinal vs Aday Kapsamlı Karşılaştırma & Execution Plan X-Ray
-                    </h4>
-                    <p style="margin:0;font-size:12px;color:var(--text-muted)">Semantik Doğrulama, STATISTICS IO/TIME Benchmark, Plan Farkları ve Deterministik Karar</p>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:10px">
-                    <button type="button" class="button primary" id="btnRunFullCompare">▶ Karşılaştırmayı Başlat (Tüm Testler)</button>
-                  </div>
-                </div>
-
-                <!-- Loading State -->
-                <div id="compareLoadingState" class="hidden" style="padding:24px;text-align:center;">
-                  <div class="spinner" style="margin:0 auto 12px"></div>
-                  <strong id="compareLoadingText" style="color:var(--text-bright)">Doğrulama ve benchmark çalıştırılıyor...</strong>
-                </div>
-
-                <!-- Unified Result View Container -->
-                <div id="compareResultContainer" class="hidden">
-                  <!-- 1. Overall Verdict & Confidence Banner -->
-                  <div id="compareVerdictCard" class="card" style="margin-bottom:16px;padding:16px 20px;border-left:4px solid var(--accent);background:rgba(255,255,255,0.02)">
-                    <!-- Injected dynamically -->
-                  </div>
-
-                  <!-- 2. Performance Comparison Table -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <h4 style="margin:0 0 12px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>⏱️</span> Performans & Kaynak Tüketimi Karşılaştırması (STATISTICS IO / TIME)
-                    </h4>
-                    <div id="compareBenchmarkTableWrap" style="overflow-x:auto;">
-                      <!-- Injected dynamically -->
-                    </div>
-                  </div>
-
-                  <!-- 3. Semantic Validation Status -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <h4 style="margin:0 0 12px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>🛡️</span> Semantik Doğrulama Sonucu (Çıktı & Şema Eşdeğerliği)
-                    </h4>
-                    <div id="compareValidationWrap">
-                      <!-- Injected dynamically -->
-                    </div>
-                  </div>
-
-                  <!-- 4. Execution Plan X-Ray & Plan Changes -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                      <h4 style="margin:0;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                        <span>🔬</span> Execution Plan X-Ray & Yapısal Değişim Analizi
-                      </h4>
-                      <div style="display:flex;gap:8px;" id="comparePlanSourceBadges">
-                        <span class="status-pill status-ready" style="font-size:11px">WORKBENCH ESTIMATED PLAN</span>
-                      </div>
-                    </div>
-                    
-                    <!-- Plan changes pills -->
-                    <div id="comparePlanChangesWrap" style="margin-bottom:16px;">
-                      <!-- Injected dynamically -->
-                    </div>
-
-                    <!-- Side-by-side plan trees / cards -->
-                    <div class="diff-grid wide" style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
-                      <div style="background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
-                        <div style="font-weight:600;font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;justify-content:space-between;">
-                          <span>ORİJİNAL PLAN</span>
-                          <span id="compareOrigCostBadge" style="color:var(--text-muted)">--</span>
-                        </div>
-                        <div id="compareOrigPlanTree" style="max-height:380px;overflow-y:auto;font-family:var(--font-mono);font-size:11.5px;"></div>
-                      </div>
-                      <div style="background:rgba(0,0,0,0.25);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px;">
-                        <div style="font-weight:600;font-size:12px;color:var(--text-secondary);margin-bottom:8px;display:flex;justify-content:space-between;">
-                          <span>ADAY REFAKTÖR PLAN (V2)</span>
-                          <span id="compareCandCostBadge" style="color:var(--text-muted)">--</span>
-                        </div>
-                        <div id="compareCandPlanTree" style="max-height:380px;overflow-y:auto;font-family:var(--font-mono);font-size:11.5px;"></div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 5. SQL Diff -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <h4 style="margin:0 0 12px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>📝</span> SQL Kod Karşılaştırması (Orijinal vs Aday V2)
-                    </h4>
-                    <div class="diff-grid wide" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-                      <div>
-                        <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Orijinal SQL:</span>
-                        <textarea class="code-editor" id="compareOrigSqlText" readonly style="height:200px;width:100%;"></textarea>
-                      </div>
-                      <div>
-                        <span style="font-size:11.5px;color:var(--text-muted);display:block;margin-bottom:4px">Aday Refaktör SQL (V2):</span>
-                        <textarea class="code-editor" id="compareCandSqlText" readonly style="height:200px;width:100%;"></textarea>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Empty state before comparison -->
-                <div id="compareEmptyState" style="text-align:center;padding:48px 16px;color:var(--text-muted);">
-                  <div style="font-size:36px;margin-bottom:12px">⚖️</div>
-                  <h3 style="font-size:16px;color:var(--text-bright);margin-bottom:6px">Karşılaştırma Analizi Henüz Çalıştırılmadı</h3>
-                  <p style="font-size:13px;max-width:550px;margin:0 auto 16px">Yukarıdaki <strong>"▶ Karşılaştırmayı Başlat"</strong> butonuna basarak Orijinal sorgu ile Aday V2 sorgusunu aynı veritabanında semantik doğrulama, STATISTICS IO/TIME benchmark ve Execution Plan seviyesinde karşılaştırabilirsiniz.</p>
-                </div>
-              </div>
-
-              <!-- Tab 5: T-SQL AST & Index Coverage Studio (Sprint 4) -->
-              <div class="candidate-tab-pane" id="tabPaneAst">
-                <div class="diagnostic-pane-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-                  <div>
-                    <h4 style="margin:0 0 4px;font-size:15px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>🌳</span> T-SQL AST Yapısal Analiz & İndeks Kapsam Motoru
-                    </h4>
-                    <p style="margin:0;font-size:12px;color:var(--text-muted)">Kanonik AST Ayrıştırması, SARGability Denetimi, Örtük Tür Dönüşümü ve İndeks Kapsamı</p>
-                  </div>
-                  <div style="display:flex;align-items:center;gap:10px">
-                    <span id="astSourceBadge" class="status-pill status-ready" style="font-size:11px">AST: AVAILABLE</span>
-                    <button type="button" class="button primary small" id="btnRunAstAnalysis">▶ AST Analizini Yenile</button>
-                  </div>
-                </div>
-
-                <!-- AST Loading State -->
-                <div id="astLoadingState" class="hidden" style="padding:24px;text-align:center;">
-                  <div class="spinner" style="margin:0 auto 12px"></div>
-                  <strong style="color:var(--text-bright)">T-SQL sorgusu AST ağacına ayrıştırılıyor ve indeksler denetleniyor...</strong>
-                </div>
-
-                <!-- AST Content Container -->
-                <div id="astContentContainer">
-                  <!-- Section 1: AST Structural & SARGability Findings -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-                      <h4 style="margin:0;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                        <span>⚡</span> Yapısal ve SARGability Bulguları
-                      </h4>
-                      <span id="astFindingsCountBadge" class="severity-pill" style="font-size:11px">0 Bulgu</span>
-                    </div>
-                    <div id="astFindingsList" style="display:flex;flex-direction:column;gap:10px">
-                      <!-- Injected dynamically -->
-                    </div>
-                  </div>
-
-                  <!-- Section 2: Index Coverage & Overlapping Analysis -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <h4 style="margin:0 0 12px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>📑</span> Temel Tablo İndeks Kapsamı & Örtüşme Durumu
-                    </h4>
-                    <div id="astIndexCoverageWrap">
-                      <!-- Injected dynamically -->
-                    </div>
-                  </div>
-
-                  <!-- Section 3: Canonical AST Summary -->
-                  <div class="card" style="margin-bottom:16px;padding:16px 20px;background:rgba(255,255,255,0.02)">
-                    <h4 style="margin:0 0 12px;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:8px">
-                      <span>📐</span> Kanonik Model Bileşenleri
-                    </h4>
-                    <div class="context-pack" id="astMetricsGrid" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));gap:12px">
-                      <div><span>Tablo Sayısı</span><strong id="astTableCount">--</strong></div>
-                      <div><span>JOIN Sayısı</span><strong id="astJoinCount">--</strong></div>
-                      <div><span>Filtre (WHERE/ON)</span><strong id="astPredicateCount">--</strong></div>
-                      <div><span>CTE Tanımları</span><strong id="astCteCount">--</strong></div>
-                      <div><span>Alt Sorgular</span><strong id="astSubqueryCount">--</strong></div>
-                      <div><span>Window Fonk.</span><strong id="astWindowCount">--</strong></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Global Action Bar -->
-            <div class="candidate-footer-actions">
-              <div class="candidate-hint">
-                <span>🛡️ <strong>Güvenlik İlkesi:</strong> View'lar doğrudan mutate edilmez. Aday SQL'i devreye almadan önce lütfen SQL Workbench veya Doğrulama Laboratuvarında doğrulayın.</span>
-              </div>
-              <div class="candidate-actions-primary">
-                <button type="button" class="button primary small" id="btnGlobalOpenWorkbench">⚡ SQL Workbench'te Test Et</button>
-                <button type="button" class="button ghost small" id="btnGlobalSendValidation">✓ Doğrulama Laboratuvarına Aktar</button>
-                <button type="button" class="button purple small" id="btnGlobalSaveToWorkspace" title="Tüm analiz, aday, doğrulama ve kıyaslamaları kalıcı bir çalışmaya kaydet">📁 Çalışmaya Kaydet</button>
-              </div>
-            </div>
-          </section>
+          </div>
         </div>
-      </section>
 
-      <!-- SPRINT 6: REFACTOR WORKSPACE & LIFECYCLE MANAGEMENT -->
-      <section class="page" id="page-workspaces">
+        <!-- SUB-PANE 1: LINEAR 4-STEP PIPELINE -->
+        <div id="studioPanePipeline">
+          <!-- Step Indicator Bar -->
+          <div class="studio-pipeline-bar" style="display:grid;grid-template-columns:repeat(4, 1fr);gap:8px;margin-bottom:16px">
+            <div class="studio-step-badge active" id="studioStepBadge1" data-studio-step-jump="1" style="cursor:pointer;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px">
+              <span style="width:24px;height:24px;border-radius:50%;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">1</span>
+              <div>
+                <strong style="display:block;font-size:13px">1. Teşhis &amp; Bulgular</strong>
+                <small style="color:var(--text-muted);font-size:11px">I/O baskısı, SARGable, anti-pattern</small>
+              </div>
+            </div>
+            <div class="studio-step-badge" id="studioStepBadge2" data-studio-step-jump="2" style="cursor:pointer;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;opacity:0.65">
+              <span style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.1);color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">2</span>
+              <div>
+                <strong style="display:block;font-size:13px">2. SQL Dönüşümü &amp; Diff</strong>
+                <small style="color:var(--text-muted);font-size:11px">Yan yana diff ve AI optimizasyonu</small>
+              </div>
+            </div>
+            <div class="studio-step-badge" id="studioStepBadge3" data-studio-step-jump="3" style="cursor:pointer;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;opacity:0.65">
+              <span style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.1);color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">3</span>
+              <div>
+                <strong style="display:block;font-size:13px">3. Doğrulama &amp; Performans</strong>
+                <small style="color:var(--text-muted);font-size:11px">Semantik eşitlik ve IO karşılaştırma</small>
+              </div>
+            </div>
+            <div class="studio-step-badge" id="studioStepBadge4" data-studio-step-jump="4" style="cursor:pointer;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:10px;opacity:0.65">
+              <span style="width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,0.1);color:var(--text-muted);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700">4</span>
+              <div>
+                <strong style="display:block;font-size:13px">4. Sonuç &amp; Eylemler</strong>
+                <small style="color:var(--text-muted);font-size:11px">Workbench, kayıt ve güvenli script</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- STEP 1: TEŞHİS & BULGULAR -->
+          <div id="studioSectionStep1" class="panel" style="padding:16px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <div>
+                <h3 style="font-size:15px;margin:0 0 4px">Adım 1: Teşhis &amp; Performans Darboğazları</h3>
+                <p style="font-size:12.5px;color:var(--text-muted);margin:0">Seçili view için AST ve execution bulguları derlendi. Optimizasyon öncesi kritik nedenleri inceleyin.</p>
+              </div>
+              <button type="button" class="button primary" id="btnStudioOptimize">✦ Aday Refaktör Üret (İleri) →</button>
+            </div>
+
+            <div id="studioDiagnosisFindings" style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:12px;margin-bottom:14px">
+              <!-- Rendered dynamically by refactorStudioController -->
+            </div>
+
+            <div style="margin-top:12px">
+              <div class="code-toolbar" style="margin-bottom:6px"><span style="font-size:12px;color:var(--text-muted)">Mevcut Orijinal SQL Tanımı</span></div>
+              <pre class="code-editor" style="max-height:220px;overflow-y:auto;border-radius:6px"><code id="studioOriginalSqlStep1">-- SQL yükleniyor...</code></pre>
+            </div>
+
+            <div id="studioOptimizeProgress" class="hidden note-banner" style="margin-top:12px;background:rgba(124,92,255,0.08);border-color:var(--accent)">
+              <span>✦ <strong>AI Refaktör Motoru Çalışıyor:</strong> Semantik guardrail kuralları işletiliyor, alternatif sorgu dalları üretiliyor...</span>
+            </div>
+          </div>
+
+          <!-- STEP 2: SQL DÖNÜŞÜMÜ & DIFF -->
+          <div id="studioSectionStep2" class="panel hidden" style="padding:16px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <div>
+                <h3 style="font-size:15px;margin:0 0 4px">Adım 2: SQL Dönüşümü &amp; Yan Yana Diff</h3>
+                <p style="font-size:12.5px;color:var(--text-muted);margin:0">Orijinal tanım ile optimize edilen sorguyu karşılaştırın. Gerekirse sağ panelden sorguyu elle düzenleyebilirsiniz.</p>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="button ghost small" id="btnStudioEditCandidate">✎ Düzenle</button>
+                <button type="button" class="button primary" id="btnStudioValidate">✓ Doğrula ve Karşılaştır (İleri) →</button>
+              </div>
+            </div>
+
+            <div style="margin-bottom:12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:12px 16px">
+              <strong style="font-size:13px;color:var(--text-primary);display:block;margin-bottom:6px">AI Optimizasyon Özeti</strong>
+              <ul id="studioAiSummaryList" style="margin:0 0 0 16px;padding:0;font-size:12.5px;color:var(--text-secondary);line-height:1.5"></ul>
+              <div id="studioAiRisksBox" class="hidden note-banner" style="margin-top:10px;background:rgba(247,200,106,0.08);border-color:rgba(247,200,106,0.3)">
+                <strong style="color:var(--yellow);font-size:12px">Potansiyel Dikkat Noktaları:</strong>
+                <ul id="studioAiRisksList" style="margin:4px 0 0 16px;padding:0;font-size:12px"></ul>
+              </div>
+            </div>
+
+            <div class="studio-diff-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <div>
+                <div class="code-toolbar" style="margin-bottom:4px"><span style="font-size:12px;font-weight:600">Orijinal SQL</span></div>
+                <pre class="code-editor tall" style="height:380px;overflow-y:auto;border-radius:6px"><code id="studioOriginalSqlDiff"></code></pre>
+              </div>
+              <div>
+                <div class="code-toolbar" style="margin-bottom:4px">
+                  <span style="font-size:12px;font-weight:600;color:var(--accent)">Aday Refaktör SQL (V2)</span>
+                  <small style="color:var(--text-muted);font-size:11px">Düzenlenebilir</small>
+                </div>
+                <textarea id="studioCandidateSql" class="code-editor tall" style="width:100%;height:380px;background:rgba(0,0,0,0.3);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical" readonly placeholder="Aday SQL henüz üretilmedi..."></textarea>
+              </div>
+            </div>
+
+            <div id="studioValidateProgress" class="hidden note-banner" style="margin-top:12px;background:rgba(124,92,255,0.08);border-color:var(--accent)">
+              <span>⚡ <strong>Doğrulama ve Ölçüm Yürütülüyor:</strong> Dual EXCEPT, satır sayısı, NULL kontrolü ve IO benchmark çalıştırılıyor...</span>
+            </div>
+          </div>
+
+          <!-- STEP 3: DOĞRULAMA & PERFORMANS -->
+          <div id="studioSectionStep3" class="panel hidden" style="padding:16px;margin-bottom:16px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <div>
+                <h3 style="font-size:15px;margin:0 0 4px">Adım 3: Anlamsal Doğrulama &amp; Performans Kanıtı</h3>
+                <p style="font-size:12.5px;color:var(--text-muted);margin:0">Orijinal sorgu ile aday sorgunun satır doğruluğu ve kaynak tüketimi karşılaştırıldı.</p>
+              </div>
+              <button type="button" class="button primary" data-studio-step-jump="4">Sonuç ve Eylemler (İleri) →</button>
+            </div>
+
+            <!-- Stern Validation Failure Banner -->
+            <div id="studioValFailedWarning" class="note-banner hidden" style="background:rgba(255,93,114,0.12);border-color:var(--danger);margin-bottom:14px;padding:14px">
+              <strong style="color:var(--danger);font-size:13.5px;display:flex;align-items:center;gap:6px">
+                <span>⚠</span> DİKKAT: Semantik Doğrulama Başarısız Oldu!
+              </strong>
+              <p style="margin:6px 0 0;font-size:12.5px;color:var(--text-secondary);line-height:1.4">
+                Aday sorgunun sonuç kümesi orijinal view ile eşleşmiyor (çift yönlü EXCEPT veya şema uyuşmazlığı saptandı). Bu aday sorgu kesinlikle canlı ortama uygulanamaz.
+              </p>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+              <!-- Semantic Status Card -->
+              <div class="setting-card" style="padding:14px;border:1px solid var(--border);background:var(--surface2);border-radius:8px">
+                <span class="panel-kicker">SEMANTİK EŞİTLİK DOĞRULAMASI</span>
+                <div style="display:flex;align-items:center;gap:10px;margin:8px 0">
+                  <span id="studioValVerdictBadge" class="status-pill status-ready" style="font-size:13px;padding:4px 12px">PASS</span>
+                  <span id="studioValVerdictDesc" style="font-size:12.5px;color:var(--text-secondary)">Şema, satır sayısı ve çift yönlü EXCEPT testleri eşleşti.</span>
+                </div>
+              </div>
+
+              <!-- Key Plan Changes -->
+              <div class="setting-card" style="padding:14px;border:1px solid var(--border);background:var(--surface2);border-radius:8px">
+                <span class="panel-kicker">EXECUTION PLAN DÖNÜŞÜMLERİ</span>
+                <ul id="studioPlanChangesList" style="margin:8px 0 0 16px;padding:0;font-size:12.5px;color:var(--text-secondary);line-height:1.4">
+                  <li>Operatör ağacı optimize edildi.</li>
+                </ul>
+              </div>
+            </div>
+
+            <!-- Performance Metrics Comparison -->
+            <div class="metric-grid" style="grid-template-columns:repeat(2, 1fr);gap:14px">
+              <article class="metric-card" style="padding:14px">
+                <span style="font-size:11.5px;color:var(--text-muted);font-weight:600">YÜRÜTME SÜRESİ (MEDIAN DURATION)</span>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">
+                  <strong id="studioPerfDurationVal" style="font-size:20px;color:var(--text-primary)">—</strong>
+                  <span id="studioPerfDurationDelta" class="trend-pill trend-positive">—</span>
+                </div>
+                <small style="color:var(--text-muted);font-size:11px">Orijinal → Aday Karşılaştırması</small>
+              </article>
+              <article class="metric-card" style="padding:14px">
+                <span style="font-size:11.5px;color:var(--text-muted);font-weight:600">MANTIKSAL OKUMA (LOGICAL READS)</span>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:6px">
+                  <strong id="studioPerfReadsVal" style="font-size:20px;color:var(--text-primary)">—</strong>
+                  <span id="studioPerfReadsDelta" class="trend-pill trend-positive">—</span>
+                </div>
+                <small style="color:var(--text-muted);font-size:11px">I/O Tüketimi Değişimi</small>
+              </article>
+            </div>
+          </div>
+
+          <!-- STEP 4: SONUÇ & EYLEMLER -->
+          <div id="studioSectionStep4" class="panel hidden" style="padding:16px">
+            <div style="margin-bottom:16px">
+              <span class="panel-kicker">KARAR RAPORU</span>
+              <h3 style="font-size:16px;margin:4px 0 6px">Adım 4: Refaktör Kararı &amp; Güvenli Dağıtım Eylemleri</h3>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+                <span id="studioVerdictPill" class="connected-pill" style="font-size:13px;padding:5px 14px;font-weight:600;color:var(--green);border-color:rgba(67,217,156,0.3)">
+                  GÜVENLİ İYİLEŞTİRME
+                </span>
+                <span id="studioVerdictDescription" style="font-size:13px;color:var(--text-secondary)">
+                  Aday sorgu semantik doğrulamayı geçti ve kaynak tüketimini düşürdü.
+                </span>
+              </div>
+            </div>
+
+            <!-- Action Buttons Strip -->
+            <div style="display:flex;gap:10px;flex-wrap:wrap;padding:16px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+              <button type="button" class="button ghost" id="btnStudioOpenWorkbench">⚡ SQL Workbench'te Aç</button>
+              <button type="button" class="button ghost" id="btnStudioSaveWorkspace">💾 Çalışma Alanına Kaydet</button>
+              <button type="button" class="button primary" id="btnStudioGenerateScript">📜 Dağıtım Betiğini İndir (.sql)</button>
+            </div>
+
+            <div class="note-banner" style="margin-top:16px;font-size:12px">
+              ℹ <strong>Zero Database Mutation Kuralı:</strong> Stüdyo hiçbir koşulda canlı SQL Server üzerinde doğrudan şema veya veri değişikliği (ALTER VIEW vb.) uygulamaz. Üretilen güvenli dağıtım betiği DBA onayı ve planlı bakım aralığında çalıştırılmalıdır.
+            </div>
+          </div>
+        </div>
+
+        <!-- SUB-PANE 2: WORKSPACES (SPRINT 6 ENGINE INTEGRATED) -->
+        <div id="studioPaneWorkspaces" class="hidden">
         <!-- 1. WORKSPACES LIST VIEW -->
         <div id="wsListView">
           <div class="views-header" style="margin-bottom:16px">
@@ -1174,164 +1006,8 @@
             </div>
           </div>
         </div>
-      </section>
-
-      <section class="page" id="page-validation">
-        <div class="val-header-bar">
-          <div>
-            <span class="hero-kicker">SEMANTİK EŞİTLİK & REGRESYON KANITLAMA STÜDYOSU</span>
-            <h2>Tahmin yetmez; <em>kanıtla</em>.</h2>
-            <p>Refaktör adayı semantik eşitlik ve kontrollü IO benchmark testlerinden geçmeden asla güvenli kabul edilmez.</p>
-          </div>
-          <div style="display:flex;align-items:center;gap:12px">
-            <div class="val-verdict-card" id="valVerdictBadge">
-              <span class="val-verdict-kicker">DOĞRULAMA DURUMU</span>
-              <strong id="valVerdictText">DOĞRULANMADI</strong>
-              <small id="valVerdictSub">Doğrulama adımları bekleniyor</small>
-            </div>
-            <div class="val-quick-actions">
-              <button class="button ghost small" id="btnValLoadSample" title="Örnek SQL'leri Yükle">✦ Örnek Yükle</button>
-              <button class="button primary small" id="btnValRunBoth" title="İki sorguyu çalıştırıp kaynak tüketimini karşılaştırır; semantik eşitliği doğrulamaz">▶ Performansı Ölç</button>
-              <button class="button ghost small" id="btnValClear" title="Editörleri Temizle">Temizle</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="validation-context">
-          <label for="validationDatabaseSelect">Hedef veritabanı</label>
-          <select id="validationDatabaseSelect" class="select-styled" aria-label="Doğrulama veritabanı"></select>
-          <span>SQL veya veritabanı değiştiğinde önceki doğrulama geçersiz olur.</span>
-        </div>
-        <!-- Resizable Split-View Container -->
-        <div class="val-split-wrap" id="valSplitWrap">
-          <div class="val-editor-pane" id="valOrigPane">
-            <div class="val-pane-header">
-              <div class="val-pane-title">
-                <span class="panel-kicker">ORİJİNAL SORGU (V1)</span>
-                <span class="object-pill" id="valOrigPill">Mevcut SQL</span>
-              </div>
-              <div class="val-pane-actions">
-                <button class="button ghost mini" id="btnValCopyOrig" title="Panoya Kopyala">Kopyala</button>
-                <button class="button ghost mini" id="btnValSendOrigToWb" title="SQL Çalışma Alanında Aç">⚡ Workbench</button>
-              </div>
-            </div>
-            <textarea id="valOrigSql" class="code-editor" spellcheck="false" placeholder="-- Orijinal View veya Sorgu metnini buraya girin..."></textarea>
-          </div>
-
-          <div class="val-split-divider" id="valSplitDivider" title="Sürükleyerek genişliği ayarlayın (Çift tıklama: 50/50)">
-            <div class="val-divider-handle"></div>
-          </div>
-
-          <div class="val-editor-pane candidate" id="valCandPane">
-            <div class="val-pane-header">
-              <div class="val-pane-title">
-                <span class="panel-kicker" style="color:var(--purple)">ADAY REFAKTÖR SORGUSU (V2)</span>
-                <span class="object-pill" style="border-color:rgba(99,102,241,0.4);color:var(--purple)">Optimize Edilmiş Aday</span>
-              </div>
-              <div class="val-pane-actions">
-                <button class="button ghost mini" id="btnValCopyCand" title="Panoya Kopyala">Kopyala</button>
-                <button class="button ghost mini" id="btnValSendCandToWb" title="SQL Çalışma Alanında Aç">⚡ Workbench</button>
-              </div>
-            </div>
-            <textarea id="valCandSql" class="code-editor candidate" spellcheck="false" placeholder="-- AI veya optimize edilmiş aday sorgu metnini buraya girin..."></textarea>
-          </div>
-        </div>
-
-        <!-- Validation Details Grid -->
-        <div class="val-details-grid">
-          <!-- Left: 4-Tier Proof Pipeline -->
-          <section class="panel span-7">
-            <div class="panel-header">
-              <div>
-                <span class="panel-kicker">4 AŞAMALI DOĞRULAMA PİPELİNE'I</span>
-                <h3 id="valPipelineTitle">Doğrulama İncelemesi</h3>
-              </div>
-              <span class="status-pill" id="valPipelineStatus">HAZIR</span>
-            </div>
-            <div class="validation-steps" id="valStepList">
-              <div class="validation-step" id="valStep-schema">
-                <span>1</span>
-                <div>
-                  <strong>1. Metadata & Şema Testi (sp_describe_first_result_set)</strong>
-                  <p id="valStepDesc-schema">Kolon sayısı, adları, ordinal sıralama ve SQL veri tipleri denetimi.</p>
-                </div>
-                <b id="valStepStatus-schema">BEKLİYOR</b>
-              </div>
-              <div class="validation-step" id="valStep-rowCount">
-                <span>2</span>
-                <div>
-                  <strong>2. Satır Sayısı Eşleşmesi (Row Count Match)</strong>
-                  <p id="valStepDesc-rowCount">Belirlenen sınır altında toplam dönen satır adedi karşılaştırması.</p>
-                </div>
-                <b id="valStepStatus-rowCount">BEKLİYOR</b>
-              </div>
-              <div class="validation-step" id="valStep-setMatch">
-                <span>3</span>
-                <div>
-                  <strong>3. Çift Yönlü Küme Farkı (Bounded Dual EXCEPT)</strong>
-                  <p id="valStepDesc-setMatch">A EXCEPT B = 0 ve B EXCEPT A = 0 küme farkı denetimi.</p>
-                </div>
-                <b id="valStepStatus-setMatch">BEKLİYOR</b>
-              </div>
-              <div class="validation-step" id="valStep-multiplicity">
-                <span>4</span>
-                <div>
-                  <strong>4. Satır Çokluğu Güvencesi (Row Multiplicity Proof)</strong>
-                  <p id="valStepDesc-multiplicity">Duplicate satır sayısı ve frekanslarının korunumu kanıtı (GROUP BY + COUNT_BIG).</p>
-                </div>
-                <b id="valStepStatus-multiplicity">BEKLİYOR</b>
-              </div>
-            </div>
-            <div class="validation-actions">
-              <label class="ack"><input type="checkbox" id="validationAck"> İki sorgunun seçili veritabanında kontrollü olarak çalıştırılacağını anladım</label>
-              <button class="button primary" id="validateButton" disabled>✦ Semantik Karşılaştırmayı Başlat</button>
-            </div>
-          </section>
-
-          <!-- Right: Summary & Benchmark -->
-          <section class="panel span-5">
-            <div class="panel-header">
-              <div>
-                <span class="panel-kicker">DOĞRULAMA VE KIYASLAMA ÖZETİ</span>
-                <h3>Sonuç & Kıyaslama</h3>
-              </div>
-            </div>
-            <div class="val-summary-block" style="margin-bottom:14px">
-              <div class="val-summary-row"><span>Şema Eşleşmesi:</span><strong id="valSummarySchema">Bekliyor</strong></div>
-              <div class="val-summary-row"><span>Satır Sayısı Eşleşmesi:</span><strong id="valSummaryRowCount">Bekliyor</strong></div>
-              <div class="val-summary-row"><span>Küme Farkı (EXCEPT):</span><strong id="valSummarySetMatch">Bekliyor</strong></div>
-              <div class="val-summary-row"><span>Satır Çokluğu (Multiplicity):</span><strong id="valSummaryMultiplicity">Bekliyor</strong></div>
-              <div class="val-summary-row verdict-row"><span>Genel Karar:</span><strong id="valSummaryVerdict" class="warning-text">DOĞRULANMADI</strong></div>
-            </div>
-
-            <div class="panel-header" style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
-              <div><span class="panel-kicker">PERFORMANS KIYASLAMA (BENCHMARK)</span><h4 style="font-size:14px">Kaynak Tüketim Farkı</h4></div>
-            </div>
-            <div class="benchmark-compare">
-              <div>
-                <span>Mantıksal Okuma (Reads)</span>
-                <strong id="valReadsBefore">—</strong><i>→</i><b id="valReadsAfter">—</b>
-              </div>
-              <div>
-                <span>İşlemci Süresi (CPU)</span>
-                <strong id="valCpuBefore">—</strong><i>→</i><b id="valCpuAfter">—</b>
-              </div>
-              <div>
-                <span>Geçen Süre (Duration)</span>
-                <strong id="valTimeBefore">—</strong><i>→</i><b id="valTimeAfter">—</b>
-              </div>
-              <div>
-                <span>Satır Çokluğu</span>
-                <strong id="valMultBefore">—</strong><i>→</i><b id="valMultAfter">—</b>
-              </div>
-              <div>
-                <span>Tahmini Satır (CE)</span>
-                <strong id="valEstBefore">—</strong><i>→</i><b id="valEstAfter">—</b>
-              </div>
-            </div>
-          </section>
-        </div>
-      </section>
+      </div>
+    </section>
 
       <section class="page" id="page-workbench">
         <!-- Multi-Tab Bar (Sprint 7) -->
@@ -2013,149 +1689,42 @@ ORDER BY IslemAdedi DESC;"></textarea>
           </section>
       </section>
 
-      <!-- Live Activity & Blocking Monitor Page (Sprint 5) -->
-      <section class="page" id="page-activity">
+      <!-- DBA Araçları Konsolidasyonu (Sprint 9: Index Advisor + Statistics + Live Activity) -->
+      <section class="page" id="page-dba-tools">
         <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
           <div>
-            <span class="panel-kicker">SQL SERVER ÇALIŞMA ZAMANI DENETİMİ</span>
-            <h2 style="margin:0; font-size:18px;">Canlı Aktivite, Kilit (Blocking) & Beklemeler (Waits)</h2>
-          </div>
-          <div style="display:flex; align-items:center; gap:12px;">
-            <div style="display:flex; align-items:center; gap:6px;">
-              <label for="activityPollInterval" style="font-size:12px; color:var(--text-muted);">Otomatik Yenileme:</label>
-              <select id="activityPollInterval" class="setting-input select-styled" style="width:130px; height:30px; font-size:12px;">
-                <option value="0">Kapalı (Manuel)</option>
-                <option value="5000">5 Saniye</option>
-                <option value="10000" selected>10 Saniye</option>
-                <option value="30000">30 Saniye</option>
-              </select>
-            </div>
-            <button class="button primary small" id="btnRefreshActivity"><span>↻</span> Şimdi Yenile</button>
-          </div>
-        </div>
-
-        <div class="note-banner" style="margin-bottom:16px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
-          <span>⚡ <strong>Salt-Okunur Denetim:</strong> Canlı sorgular ve bekleme olayları izlenir. Bu ekrandan hiçbir işlem sonlandırılamaz (KILL vb. yoktur) veya veritabanı durumu değiştirilemez.</span>
-          <span class="badge ghost" id="activityLastRefreshBadge">Henüz yenilenmedi</span>
-        </div>
-
-        <!-- Permission Missing Banner (Hidden by default) -->
-        <div id="activityPermissionWarning" class="note-banner hidden" style="margin-bottom:16px; border-color:var(--danger); background:rgba(255, 93, 114, 0.1);">
-          <strong style="color:var(--danger);">Erişim Yetkisi Eksik:</strong>
-          <span id="activityPermissionText">Canlı aktivite ve wait DMV'lerini okumak için VIEW SERVER STATE izni gereklidir.</span>
-          <pre id="activityPermissionScript" style="margin-top:8px; font-size:11.5px; background:rgba(0,0,0,0.3); padding:8px; border-radius:6px; user-select:all;"></pre>
-        </div>
-
-        <div class="segmented" id="activitySegmented" style="margin-bottom:16px;">
-          <button class="active" data-tab="requests">Aktif İstekler & Oturumlar (<span id="actRequestCount">0</span>)</button>
-          <button data-tab="blocking">Kilit & Blocking Ağacı (<span id="actBlockCount">0</span>)</button>
-          <button data-tab="waits">Kümülatif Wait İstatistikleri</button>
-        </div>
-
-        <!-- Tab 1: Requests -->
-        <div id="tabContentRequests" class="activity-tab-pane">
-          <div class="panel">
-            <div class="table-wrap">
-              <table class="data-table" id="activityRequestsTable">
-                <thead>
-                  <tr>
-                    <th>SPID</th>
-                    <th>Durum</th>
-                    <th>Komut</th>
-                    <th>Wait Tipi & Kategori</th>
-                    <th>Wait (ms)</th>
-                    <th>CPU (ms)</th>
-                    <th>Elapsed (ms)</th>
-                    <th>Logical Reads</th>
-                    <th>Kullanıcı / Host</th>
-                    <th>Sorgu Metni</th>
-                  </tr>
-                </thead>
-                <tbody id="activityRequestsTbody">
-                  <tr><td colspan="10" class="empty-cell">Aktif çalışan kullanıcı isteği bulunmuyor.</td></tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 2: Blocking Tree -->
-        <div id="tabContentBlocking" class="activity-tab-pane hidden">
-          <div class="panel">
-            <div id="activityBlockingContainer">
-              <div class="empty-state" style="padding:28px 16px; text-align:center;">
-                <span style="font-size:24px;">✓</span>
-                <p style="margin-top:8px; color:var(--text-muted); font-size:13px;">Şu anda sistemde tespit edilen kilitlenme veya kuyruk (Blocking) bulunmuyor.</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tab 3: Cumulative Waits -->
-        <div id="tabContentWaits" class="activity-tab-pane hidden">
-          <div class="panel">
-            <div class="note-banner" style="font-size:12px; margin-bottom:14px; background:rgba(124,92,255,0.06); border-color:rgba(124,92,255,0.25);">
-              ⏱️ <strong>Kümülatif Sunucu Geçmişi (sys.dm_os_wait_stats):</strong> Bu veriler SQL Server servisi son yeniden başlatıldığından (veya DBCC SQLPERF ile sıfırlandığından) beri biriken sayaçlardır. Anlık bir sorunu değil, genel sunucu geçmişini yansıtır. Anlık darboğaz durumu için <em>"Aktif İstekler & Oturumlar"</em> sekmesini inceleyiniz.
-            </div>
-            <div style="display:grid; grid-template-columns: 1fr 2fr; gap:16px;">
-              <div id="activityWaitCategoryList">
-                <!-- Category aggregations -->
-              </div>
-              <div class="table-wrap">
-                <table class="data-table" id="activityWaitsTable">
-                  <thead>
-                    <tr>
-                      <th>Wait Tipi</th>
-                      <th>Kategori</th>
-                      <th>Toplam Bekleme (ms)</th>
-                      <th>% Pay</th>
-                      <th>Görev Sayısı</th>
-                      <th>Açıklama</th>
-                    </tr>
-                  </thead>
-                  <tbody id="activityWaitsTbody">
-                    <!-- Dynamic waits rows -->
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Index Advisor & Statistics Health Page (Sprint 5) -->
-      <section class="page" id="page-indexes">
-        <div class="panel-header" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-          <div>
-            <span class="panel-kicker">VERİTABANI TASARIM & METADATA DENETİMİ</span>
-            <h2 style="margin:0; font-size:18px;">Index Advisor & İstatistik Sağlığı</h2>
+            <span class="panel-kicker">VERİTABANI PERFORMANS &amp; ÇALIŞMA ZAMANI KONSOLU</span>
+            <h2 style="margin:0; font-size:18px;">DBA Araçları (DBA Tools)</h2>
           </div>
           <div style="display:flex; gap:8px;">
-            <button class="button primary small" id="btnRefreshIndexesPage"><span>↻</span> Verileri Tara</button>
+            <button class="button primary small" id="btnDbaRefresh"><span>↻</span> Verileri Tara &amp; Yenile</button>
+            <button class="button ghost small" id="btnRefreshIndexesPage" style="display:none"><span>↻</span> Verileri Tara</button>
+            <button class="button ghost small" id="btnRefreshActivity" style="display:none"><span>↻</span> Şimdi Yenile</button>
           </div>
         </div>
 
-        <div class="segmented" id="indexesSegmented" style="margin-bottom:16px;">
-          <button class="active" data-tab="missing-indexes">Eksik İndeks Tavsiyeleri (<span id="idxAdvCount">0</span>)</button>
-          <button data-tab="stats-health">İstatistik Sağlık Durumu (<span id="statsHealthCount">0</span>)</button>
+        <div class="dba-subtab-strip" style="margin-bottom:16px;">
+          <button class="dba-subtab-btn active" data-dba-tab="indexes">İndeks Önerileri (<span id="idxAdvCount">0</span>)</button>
+          <button class="dba-subtab-btn" data-dba-tab="stats">İstatistik Sağlığı (<span id="statsHealthCount">0</span>)</button>
+          <button class="dba-subtab-btn" data-dba-tab="activity">Canlı Aktivite &amp; Kilitlenme (<span id="actRequestCount">0</span>)</button>
         </div>
 
-        <!-- Tab 1: Index Advisor -->
-        <div id="tabContentMissingIndexes" class="indexes-tab-pane">
+        <!-- Subtab 1: Index Advisor -->
+        <div id="dbaPaneIndexes" class="dba-tab-pane">
           <div class="note-banner" style="margin-bottom:12px; font-size:12px;">
             ℹ <strong>DMV Ephemerality Uyarısı:</strong> sys.dm_db_missing_index_* verileri SQL Server servisi son yeniden başlatıldığından beri toplanan sayaçlardır. Canlı veritabanına otomatik DDL uygulanmaz; scriptler DBA incelemesi için üretilir.
           </div>
           <div class="panel" id="missingIndexesPanel">
             <div id="missingIndexesContainer">
               <div class="empty-state" style="padding:28px 16px; text-align:center;">
-                <p style="color:var(--text-muted); font-size:13px;">Eksik indeks önerilerini görmek için "Verileri Tara" butonuna tıklayınız.</p>
+                <p style="color:var(--text-muted); font-size:13px;">Eksik indeks önerilerini görmek için "Verileri Tara &amp; Yenile" butonuna tıklayınız.</p>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Tab 2: Statistics Health -->
-        <div id="tabContentStatsHealth" class="indexes-tab-pane hidden">
+        <!-- Subtab 2: Statistics Health -->
+        <div id="dbaPaneStats" class="dba-tab-pane hidden">
           <div class="note-banner" style="margin-bottom:12px; font-size:12px;">
             ℹ <strong>İstatistik Güncelliği:</strong> İstatistiklerin bayatlaması (Stale Stats) SQL Server sorgu iyileştiricisinin (Query Optimizer) yanlış satır sayısı tahmin etmesine ve kötü execution planları seçmesine yol açar.
           </div>
@@ -2177,9 +1746,101 @@ ORDER BY IslemAdedi DESC;"></textarea>
                   </tr>
                 </thead>
                 <tbody id="statsHealthTbody">
-                  <tr><td colspan="10" class="empty-cell">İstatistik verilerini listelemek için "Verileri Tara" butonuna tıklayınız.</td></tr>
+                  <tr><td colspan="10" class="empty-cell">İstatistik verilerini listelemek için "Verileri Tara &amp; Yenile" butonuna tıklayınız.</td></tr>
                 </tbody>
               </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 3: Live Activity & Blocking -->
+        <div id="dbaPaneActivity" class="dba-tab-pane hidden">
+          <div class="note-banner" style="margin-bottom:16px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+            <span>⚡ <strong>Salt-Okunur Denetim:</strong> Canlı sorgular ve bekleme olayları izlenir. Bu ekrandan hiçbir işlem sonlandırılamaz (KILL vb. yoktur) veya veritabanı durumu değiştirilemez.</span>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <label for="activityPollInterval" style="font-size:12px; color:var(--text-muted);">Otomatik Yenileme:</label>
+              <select id="activityPollInterval" class="setting-input select-styled" style="width:130px; height:28px; font-size:12px;">
+                <option value="0">Kapalı (Manuel)</option>
+                <option value="5000">5 Saniye</option>
+                <option value="10000" selected>10 Saniye</option>
+                <option value="30000">30 Saniye</option>
+              </select>
+              <span class="badge ghost" id="activityLastRefreshBadge">Henüz yenilenmedi</span>
+            </div>
+          </div>
+
+          <!-- Permission Missing Banner (Hidden by default) -->
+          <div id="activityPermissionWarning" class="note-banner hidden" style="margin-bottom:16px; border-color:var(--danger); background:rgba(255, 93, 114, 0.1);">
+            <strong style="color:var(--danger);">Erişim Yetkisi Eksik:</strong>
+            <span id="activityPermissionText">Canlı aktivite ve wait DMV'lerini okumak için VIEW SERVER STATE izni gereklidir.</span>
+            <pre id="activityPermissionScript" style="margin-top:8px; font-size:11.5px; background:rgba(0,0,0,0.3); padding:8px; border-radius:6px; user-select:all;"></pre>
+          </div>
+
+          <div class="segmented" id="activitySegmented" style="margin-bottom:16px;">
+            <button class="active" data-tab="requests">Aktif İstekler &amp; Oturumlar</button>
+            <button data-tab="blocking">Kilit &amp; Blocking Ağacı (<span id="actBlockCount">0</span>)</button>
+            <button data-tab="waits">Kümülatif Wait İstatistikleri</button>
+          </div>
+
+          <!-- Tab 1: Requests -->
+          <div id="tabContentRequests" class="activity-tab-pane">
+            <div class="panel">
+              <div class="table-wrap">
+                <table class="data-table" id="activityRequestsTable">
+                  <thead>
+                    <tr>
+                      <th>SPID</th>
+                      <th>Durum</th>
+                      <th>Komut</th>
+                      <th>Wait Tipi &amp; Kategori</th>
+                      <th>Wait (ms)</th>
+                      <th>CPU (ms)</th>
+                      <th>Elapsed (ms)</th>
+                      <th>Logical Reads</th>
+                      <th>Kullanıcı / Host</th>
+                      <th>Sorgu Metni</th>
+                    </tr>
+                  </thead>
+                  <tbody id="activityRequestsTbody">
+                    <tr><td colspan="10" class="empty-cell">Aktif çalışan kullanıcı isteği bulunmuyor.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Blocking Tree -->
+          <div id="tabContentBlocking" class="activity-tab-pane hidden">
+            <div class="panel" id="activityBlockingPanel">
+              <div id="activityBlockingTreeContainer">
+                <div class="empty-state" style="padding:28px 16px; text-align:center;">
+                  <p style="color:var(--green); font-size:13px;">✓ Aktif kilitlenme (blocking chain) tespit edilmedi. Tüm oturumlar normal çalışıyor.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 3: Waits -->
+          <div id="tabContentWaits" class="activity-tab-pane hidden">
+            <div class="panel">
+              <div class="table-wrap">
+                <table class="data-table" id="activityWaitsTable">
+                  <thead>
+                    <tr>
+                      <th>Bekleme Tipi (Wait Type)</th>
+                      <th>Kategori</th>
+                      <th>Bekleyen Görevler</th>
+                      <th>Toplam Bekleme Süresi</th>
+                      <th>Sinyal Bekleme Süresi</th>
+                      <th>Kaynak Oranı</th>
+                      <th>Önem</th>
+                    </tr>
+                  </thead>
+                  <tbody id="activityWaitsTbody">
+                    <!-- Dynamic waits rows -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -2580,6 +2241,31 @@ ORDER BY IslemAdedi DESC;"></textarea>
     </div>
   </div>
 
+  <!-- MODAL: SAFE DEPLOYMENT SCRIPT PACKAGE (Sprint 9) -->
+  <div class="modal-backdrop hidden" id="studioScriptModal" role="dialog" aria-modal="true" aria-labelledby="studioScriptHeading">
+    <div class="modal" style="width:720px;max-width:95vw">
+      <div class="modal-brand">
+        <div class="brand-mark"><span></span><span></span><span></span></div>
+        <div>
+          <span class="panel-kicker">GÜVENLİ DAĞITIM PAKETİ</span>
+          <h2 id="studioScriptHeading" style="margin:2px 0 0;font-size:18px">T-SQL Deployment Script (.sql)</h2>
+        </div>
+      </div>
+      <p style="font-size:12.5px;color:var(--text-muted);margin:8px 0 12px">
+        Aşağıdaki betik, ANSI ayarları, rollback yedeği ve doğrulama kanıtlarını içeren güvenli bir migration şablonudur.
+      </p>
+      <pre id="studioScriptText" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:14px;font-family:monospace;font-size:12px;max-height:360px;overflow-y:auto;white-space:pre-wrap;user-select:all"></pre>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+        <small style="color:var(--text-muted);font-size:11px">Zero Mutation Prensibi: Betik doğrudan SQL Server'a uygulanmaz.</small>
+        <div style="display:flex;gap:8px">
+          <button type="button" class="button ghost" id="btnCloseStudioScriptModal">Kapat</button>
+          <button type="button" class="button ghost" id="btnStudioCopyScript">Metni Kopyala</button>
+          <button type="button" class="button primary" id="btnStudioDownloadScript">📥 .sql Olarak İndir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-wrap" id="toastWrap"></div>
   <div class="modal-backdrop hidden" id="newWorkspaceModal" role="dialog" aria-modal="true" aria-labelledby="newWorkspaceHeading">
     <form class="modal workspace-create-modal" id="newWorkspaceForm">
@@ -2599,6 +2285,8 @@ ORDER BY IslemAdedi DESC;"></textarea>
   <script src="/assets/js/modules/virtualGrid.js"></script>
   <script src="/assets/js/modules/formatters.js"></script>
   <script src="/assets/js/modules/uiStates.js"></script>
+  <script src="/assets/js/modules/refactorStudioController.js"></script>
+  <script src="/assets/js/modules/dbaToolsController.js"></script>
   <script src="/assets/js/intellisense.js"></script>
   <!-- Local Offline Monaco AMD Loader (Sprint 7.1) -->
   <script src="/vendor/monaco/vs/loader.js" onerror="console.info('[Monaco] Local loader not found, using textarea fallback')"></script>

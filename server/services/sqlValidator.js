@@ -162,6 +162,22 @@ function stripCommentsAndLiterals(sql) {
  * Validates whether a SQL query is safe and strictly read-only.
  * Returns { valid: true } or { valid: false, reason: string, keyword?: string }
  */
+const SAFE_SET_STATEMENTS = [
+  /^SET\s+NOCOUNT\s+(ON|OFF)$/i,
+  /^SET\s+ARITHABORT\s+(ON|OFF)$/i,
+  /^SET\s+TRANSACTION\s+ISOLATION\s+LEVEL\s+READ\s+UNCOMMITTED$/i
+];
+
+function isWhitelistedSetStatement(stmtText) {
+  if (!stmtText || typeof stmtText !== 'string') return false;
+  const clean = stmtText.trim().replace(/;+$/, '').trim();
+  return SAFE_SET_STATEMENTS.some(regex => regex.test(clean));
+}
+
+/**
+ * Validates whether a SQL query is safe and strictly read-only.
+ * Returns { valid: true } or { valid: false, reason: string, keyword?: string }
+ */
 function validateReadOnly(rawSql) {
   if (!rawSql || typeof rawSql !== 'string') {
     return { valid: false, reason: 'Sorgu metni boş olamaz.' };
@@ -175,28 +191,19 @@ function validateReadOnly(rawSql) {
   // Strip comments and string literals
   const stripped = stripCommentsAndLiterals(trimmed);
 
-  // Tokenize the stripped SQL
-  const tokens = stripped
+  // Tokenize the entire stripped SQL to inspect keywords
+  const allTokens = stripped
     .replace(/[;,()=<>+*\/\n\r\t]/g, ' ')
     .split(/\s+/)
     .filter(t => t.length > 0)
     .map(t => t.toUpperCase());
 
-  if (tokens.length === 0) {
+  if (allTokens.length === 0) {
     return { valid: false, reason: 'Çalıştırılabilir SQL ifadesi bulunamadı.' };
   }
 
-  // The first significant token must be SELECT or WITH
-  const firstToken = tokens[0];
-  if (firstToken !== 'SELECT' && firstToken !== 'WITH') {
-    return {
-      valid: false,
-      reason: `Yalnızca salt-okunur SELECT veya WITH ... SELECT sorgularına izin verilir. Tespit edilen başlangıç: "${firstToken}".`
-    };
-  }
-
-  // Check for any prohibited keywords anywhere in the statement tokens
-  for (const token of tokens) {
+  // Check for any prohibited keywords anywhere in the statement tokens FIRST
+  for (const token of allTokens) {
     for (const forbidden of PROHIBITED_KEYWORDS) {
       const isMatch = forbidden === 'XP_' 
         ? token.startsWith('XP_')
@@ -221,9 +228,55 @@ function validateReadOnly(rawSql) {
     }
   }
 
+  // Process leading statements (support explicit safe SET session options)
+  let remainingSql = stripped.trim();
+  while (/^SET\b/i.test(remainingSql)) {
+    // Match SET statement up to semicolon or newline or start of next statement
+    const match = /^SET\b[^;\r\n]*(?:;|\r?\n|\s+(?=SELECT\b|WITH\b|SET\b))/i.exec(remainingSql);
+    let matchedStmt = '';
+    if (match) {
+      matchedStmt = match[0];
+    } else {
+      matchedStmt = remainingSql;
+    }
+
+    const candidateSet = matchedStmt.replace(/;+$/, '').trim();
+    if (!isWhitelistedSetStatement(candidateSet)) {
+      return {
+        valid: false,
+        reason: `Güvenlik politikası izin verilmeyen oturum komutunu engelledi: "${candidateSet}". Yalnızca güvenli oturum ayarlarına (SET NOCOUNT, SET ARITHABORT, SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED) izin verilir.`
+      };
+    }
+
+    remainingSql = remainingSql.slice(matchedStmt.length).trim();
+  }
+
+  // Re-tokenize the remaining executable statement
+  const remainingTokens = remainingSql
+    .replace(/[;,()=<>+*\/\n\r\t]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 0)
+    .map(t => t.toUpperCase());
+
+  if (remainingTokens.length === 0) {
+    return {
+      valid: false,
+      reason: 'SET komutlarından sonra çalıştırılabilir bir SELECT veya WITH ... SELECT sorgusu bulunamadı.'
+    };
+  }
+
+  // The first significant token must be SELECT or WITH
+  const firstToken = remainingTokens[0];
+  if (firstToken !== 'SELECT' && firstToken !== 'WITH') {
+    return {
+      valid: false,
+      reason: `Yalnızca salt-okunur SELECT veya WITH ... SELECT sorgularına izin verilir. Tespit edilen başlangıç: "${firstToken}".`
+    };
+  }
+
   // If starts with WITH, verify that a SELECT is present
   if (firstToken === 'WITH') {
-    if (!tokens.includes('SELECT')) {
+    if (!remainingTokens.includes('SELECT')) {
       return {
         valid: false,
         reason: 'WITH CTE ifadesi bir SELECT sorgusuyla sonlanmalıdır.'
@@ -237,5 +290,7 @@ function validateReadOnly(rawSql) {
 module.exports = {
   validateReadOnly,
   stripCommentsAndLiterals,
-  PROHIBITED_KEYWORDS
+  PROHIBITED_KEYWORDS,
+  SAFE_SET_STATEMENTS,
+  isWhitelistedSetStatement
 };
