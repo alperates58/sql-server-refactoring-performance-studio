@@ -52,6 +52,25 @@
       .replace(/"/g, '&quot;');
   }
 
+  function extractQueryFromView(rawSql) {
+    if (!rawSql || typeof rawSql !== 'string') return '';
+    let sql = rawSql.trim();
+    sql = sql.replace(/^```(?:sql)?\s*[\r\n]+/i, '').replace(/[\r\n]+```\s*$/i, '').trim();
+    sql = sql.replace(/[\r\n]+\s*GO\s*;?\s*$/i, '').trim();
+    const viewRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE\s+OR\s+ALTER\s+VIEW|CREATE\s+VIEW|ALTER\s+VIEW)\s+(?:\[?[a-zA-Z0-9_@#$]+\]?\.)?\[?[a-zA-Z0-9_@#$]+\]?\s*(?:\([^\)]*\))?\s*(?:WITH\s+[^\r\n]+?\s+)?AS\s+(?=(?:SELECT|WITH)\b)/i;
+    const match = viewRegex.exec(sql);
+    if (match) {
+      sql = sql.slice(match[0].length).trim();
+    } else {
+      const fallbackRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE|ALTER)\s+VIEW\b[\s\S]*?\bAS\s+(?=(?:SELECT|WITH)\b)/i;
+      const match2 = fallbackRegex.exec(sql);
+      if (match2) {
+        sql = sql.slice(match2[0].length).trim();
+      }
+    }
+    return sql.replace(/;+\s*$/, '').trim();
+  }
+
   function initRefactorStudio(containerEl, globalState, globalHelpers) {
     appStateRef = globalState;
     helpers = globalHelpers || {};
@@ -221,7 +240,9 @@
     if (!sql && typeof helpers.getViewDefinition === 'function') {
       sql = await helpers.getViewDefinition(v.canonicalId || v.name);
     }
-    studioState.originalSql = sql || `-- [${v.name}] için tanım bulunamadı.`;
+    studioState.fullOriginalDefinition = sql;
+    const cleanSql = extractQueryFromView(sql);
+    studioState.originalSql = cleanSql || sql || `-- [${v.name}] için tanım bulunamadı.`;
 
     const origSqlView = document.getElementById('studioOriginalSqlStep1');
     if (origSqlView) origSqlView.textContent = studioState.originalSql;
@@ -334,7 +355,8 @@
         throw new Error(data.error || 'AI optimizasyon yanıtı alınamadı.');
       }
 
-      studioState.candidateSql = data.data?.candidateSql || data.candidateSql || studioState.originalSql;
+      const rawCandidate = data.data?.candidateSql || data.candidateSql || studioState.originalSql;
+      studioState.candidateSql = extractQueryFromView(rawCandidate);
       studioState.aiSummary = data.data?.bulletPoints || data.bulletPoints || [
         'Tekrar eden alt sorgu taramaları küme bazlı CTE veya inline join haline getirildi.',
         'SARGable olmayan filtre koşulları düzeltildi.',
@@ -376,25 +398,6 @@
       if (btnOptimize) btnOptimize.disabled = false;
       if (progressEl) progressEl.classList.add('hidden');
     }
-  }
-
-  function extractQueryFromView(rawSql) {
-    if (!rawSql || typeof rawSql !== 'string') return '';
-    let sql = rawSql.trim();
-    sql = sql.replace(/^```(?:sql)?\s*[\r\n]+/i, '').replace(/[\r\n]+```\s*$/i, '').trim();
-    sql = sql.replace(/[\r\n]+\s*GO\s*;?\s*$/i, '').trim();
-    const viewRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE\s+OR\s+ALTER\s+VIEW|CREATE\s+VIEW|ALTER\s+VIEW)\s+(?:\[?[a-zA-Z0-9_@#$]+\]?\.)?\[?[a-zA-Z0-9_@#$]+\]?\s*(?:\([^\)]*\))?\s*(?:WITH\s+[^\r\n]+?\s+)?AS\s+(?=(?:SELECT|WITH)\b)/i;
-    const match = viewRegex.exec(sql);
-    if (match) {
-      sql = sql.slice(match[0].length).trim();
-    } else {
-      const fallbackRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE|ALTER)\s+VIEW\b[\s\S]*?\bAS\s+(?=(?:SELECT|WITH)\b)/i;
-      const match2 = fallbackRegex.exec(sql);
-      if (match2) {
-        sql = sql.slice(match2[0].length).trim();
-      }
-    }
-    return sql.replace(/;+\s*$/, '').trim();
   }
 
   async function runValidateAndBenchmark() {
@@ -653,7 +656,7 @@ GO
 
 -- 1. ROLLBACK YEDEĞİ (Önceki Orijinal Tanım)
 /*
-${studioState.originalSql}
+${studioState.fullOriginalDefinition || studioState.originalSql}
 */
 GO
 
