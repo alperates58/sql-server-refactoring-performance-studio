@@ -7,11 +7,15 @@ const fs = require('fs');
 const path = require('path');
 const { run } = require('node:test');
 
-async function runAllSuites() {
+async function runAllSuites(suiteFilter = null) {
   const testDir = __dirname;
-  const files = fs.readdirSync(testDir)
+  let files = fs.readdirSync(testDir)
     .filter(f => f.endsWith('.test.js'))
     .map(f => path.join(testDir, f));
+
+  if (suiteFilter) {
+    files = files.filter(f => path.basename(f).toLowerCase().includes(suiteFilter.toLowerCase()));
+  }
 
   console.log(`[TestRunner] Running ${files.length} test suites...`);
 

@@ -25,6 +25,7 @@ const { defaultStorage } = require('../services/workspaceStorage');
 const { defaultQueryHistoryService } = require('../services/queryHistoryService');
 const iterativeOptimizer = require('../services/aiOptimizer/iterativeOptimizer');
 const sqlFormatter = require('../services/sqlFormatter');
+const workbenchPlanAnalyst = require('../services/workbenchPlanAnalyst');
 const sql = require('mssql');
 const pkg = require('../../package.json');
 
@@ -500,6 +501,43 @@ router.post('/workbench/plan', async (req, res) => {
     });
   } catch (error) {
     handleSafeError(res, error, 'Execution plan alınamadı.');
+  }
+});
+
+// AI Execution Plan Analyst (Feature - SQL Workbench AI Plan Analyst)
+router.post('/workbench/analyze-plan', async (req, res) => {
+  try {
+    const {
+      sql,
+      database,
+      mode = 'actual',
+      parsedPlan,
+      rawXml,
+      metrics = {},
+      statistics = {},
+      benchmark = null,
+      options = {}
+    } = req.body;
+
+    if (!sql || typeof sql !== 'string') {
+      return res.status(400).json({ ok: false, error: 'sql parametresi zorunludur.' });
+    }
+
+    const result = await workbenchPlanAnalyst.analyzeWorkbenchPlan({
+      sql,
+      database: database || db.status().primaryDatabase,
+      mode,
+      parsedPlan,
+      rawXml,
+      metrics,
+      statistics,
+      benchmark,
+      options
+    });
+
+    res.json(result);
+  } catch (error) {
+    handleSafeError(res, error, 'AI Plan analizi yapılamadı.');
   }
 });
 
@@ -1134,10 +1172,71 @@ router.delete('/saved-queries/:id', (req, res) => {
 router.get('/dev/tests', async (_req, res) => {
   try {
     const { runAllSuites } = require('../../test/runAllTests');
-    const result = await runAllSuites();
+    const filter = _req.query.suite || _req.query.filter || null;
+    const result = await runAllSuites(filter);
     res.json(result);
   } catch (error) {
     handleSafeError(res, error, 'Testler çalıştırılamadı.');
+  }
+});
+
+router.get('/dev/test-analyst', async (_req, res) => {
+  try {
+    const { run } = require('node:test');
+    const path = require('path');
+    const testFile = path.join(__dirname, '../../test/workbenchPlanAnalyst.test.js');
+
+    let totalTests = 0;
+    let passedTests = 0;
+    let failedTests = 0;
+    const failures = [];
+
+    const stream = run({ files: [testFile], concurrency: false });
+    stream.on('test:pass', (t) => {
+      if (!t.name.includes('Tests')) {
+        totalTests++;
+        passedTests++;
+      }
+    });
+    stream.on('test:fail', (t) => {
+      totalTests++;
+      failedTests++;
+      failures.push({ name: t.name, error: t.details?.error?.message || 'Error' });
+    });
+    stream.on('end', () => {
+      res.json({
+        ok: failedTests === 0,
+        total: totalTests,
+        passed: passedTests,
+        failed: failedTests,
+        failures
+      });
+    });
+  } catch (error) {
+    handleSafeError(res, error, 'Analyst testleri çalıştırılamadı.');
+  }
+});
+
+// ==========================================
+// 22. Workbench AI Plan Analyst
+// ==========================================
+router.post('/workbench/analyze-plan', async (req, res) => {
+  try {
+    const { sql: sqlText, database, plan, metrics, statistics, forceRefresh } = req.body;
+    if (!sqlText || typeof sqlText !== 'string') {
+      return res.status(400).json({ ok: false, error: 'sql alanı zorunludur.' });
+    }
+    const result = await workbenchPlanAnalyst.analyzeWorkbenchPlan({
+      sql: sqlText,
+      database: database || '',
+      parsedPlan: plan || null,
+      metrics: metrics || {},
+      statistics: statistics || {},
+      options: { forceRefresh: Boolean(forceRefresh) }
+    });
+    res.json(result);
+  } catch (error) {
+    handleSafeError(res, error, 'AI plan analizi gerçekleştirilemedi.');
   }
 });
 

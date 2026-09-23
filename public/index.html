@@ -1323,6 +1323,7 @@ ORDER BY IslemAdedi DESC;"></textarea>
               <button class="wb-tab-btn" data-wb-tab="messages">Mesajlar <span class="tab-badge" id="wbMessageBadge">0</span></button>
               <button class="wb-tab-btn" data-wb-tab="statistics">Statistics IO / Time</button>
               <button class="wb-tab-btn" data-wb-tab="plan">Çalıştırma Planı <span class="tab-badge" id="wbPlanBadge" style="display:none">●</span></button>
+              <button class="wb-tab-btn" data-wb-tab="ai-plan" id="wbTabBtnAiPlan">✦ AI Analizi <span class="tab-badge" id="wbAiPlanBadge" style="display:none">✦</span></button>
               <button class="wb-tab-btn" data-wb-tab="history">Geçmiş</button>
             </div>
 
@@ -1371,6 +1372,29 @@ ORDER BY IslemAdedi DESC;"></textarea>
             <div class="wb-tab-pane" id="wbPane-plan">
               <div id="wbPlanContent">
                 <div class="empty-state" style="padding:40px 10px"><p>Plan analizi için <b>Estimated Plan</b> veya <b>Actual Plan</b> butonunu kullanın.</p></div>
+              </div>
+            </div>
+
+            <div class="wb-tab-pane" id="wbPane-ai-plan">
+              <div class="wb-ai-plan-toolbar">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span class="panel-kicker" style="margin:0">AI PLAN ANALYST</span>
+                  <span class="status-pill status-ready" id="wbAiConfidenceBadge" style="display:none">CONFIDENCE: HIGH</span>
+                  <span class="status-pill" id="wbAiModeBadge" style="display:none">ACTUAL PLAN</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <button type="button" class="button primary small" id="btnWbRunAiPlan">
+                    <span>✦</span> AI ile Planı Analiz Et
+                  </button>
+                  <button type="button" class="button ghost small" id="btnWbReanalyzeAiPlan" style="display:none">
+                    <span>↻</span> Yeniden Analiz Et
+                  </button>
+                </div>
+              </div>
+              <div id="wbAiPlanContent">
+                <div class="empty-state" style="padding:40px 10px">
+                  <p>AI plan analizi için önce <b>Actual Plan</b> veya <b>Estimated Plan</b> çalıştırın, ardından <b>[AI ile Planı Analiz Et]</b> butonuna tıklayın.</p>
+                </div>
               </div>
             </div>
 

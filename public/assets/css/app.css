@@ -8294,3 +8294,227 @@ body.density-compact .view-row {
   text-overflow: ellipsis;
 }
 
+/* ============================================================ */
+/* SQL WORKBENCH AI PLAN ANALYST STYLES                         */
+/* ============================================================ */
+
+.wb-ai-plan-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.wb-ai-plan-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 2px 0 16px;
+}
+
+.wb-ai-summary-card {
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(124, 92, 255, 0.08) 0%, rgba(15, 18, 25, 0.95) 100%);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.wb-ai-summary-card.healthy {
+  border-color: rgba(67, 217, 156, 0.35);
+  background: linear-gradient(180deg, rgba(67, 217, 156, 0.08) 0%, rgba(15, 18, 25, 0.95) 100%);
+}
+
+.wb-ai-summary-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.wb-ai-summary-text {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.wb-ai-bottleneck-card {
+  border: 1px solid rgba(255, 93, 114, 0.35);
+  background: linear-gradient(180deg, rgba(255, 93, 114, 0.09) 0%, rgba(15, 18, 25, 0.95) 100%);
+  border-left: 4px solid var(--red);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+}
+
+.wb-ai-bottleneck-card.healthy {
+  border-color: rgba(67, 217, 156, 0.3);
+  background: rgba(67, 217, 156, 0.05);
+  border-left: 4px solid var(--green);
+}
+
+.wb-ai-bottleneck-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-bright);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.wb-ai-evidence-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  font-family: var(--font-family-mono, monospace);
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(124, 92, 255, 0.15);
+  color: var(--purple2, #c4b5fd);
+  border: 1px solid rgba(124, 92, 255, 0.35);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.wb-ai-evidence-pill:hover {
+  background: var(--purple, #7c5cff);
+  color: #fff;
+}
+
+.wb-ai-evidence-pill.io {
+  background: rgba(255, 146, 93, 0.15);
+  color: #ffa87d;
+  border-color: rgba(255, 146, 93, 0.35);
+}
+
+.wb-ai-evidence-pill.card {
+  background: rgba(255, 93, 114, 0.15);
+  color: #ff8b9a;
+  border-color: rgba(255, 93, 114, 0.35);
+}
+
+.wb-ai-evidence-pill.idx {
+  background: rgba(67, 217, 156, 0.15);
+  color: #62e5af;
+  border-color: rgba(67, 217, 156, 0.35);
+}
+
+.wb-ai-priority-card {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  transition: border-color 0.15s ease;
+}
+
+.wb-ai-priority-card:hover {
+  border-color: rgba(124, 92, 255, 0.4);
+}
+
+.wb-ai-priority-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.wb-ai-priority-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--purple, #7c5cff);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.wb-ai-priority-step-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.wb-ai-step-block {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 4px;
+  border-left: 3px solid var(--line);
+}
+
+.wb-ai-step-block.problem {
+  border-left-color: var(--red);
+}
+
+.wb-ai-step-block.why {
+  border-left-color: var(--yellow);
+}
+
+.wb-ai-step-block.action {
+  border-left-color: var(--purple, #7c5cff);
+  background: rgba(124, 92, 255, 0.05);
+}
+
+.wb-ai-step-block.validate {
+  border-left-color: var(--green);
+}
+
+.wb-ai-step-label {
+  display: block;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.wb-ai-risk-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .wb-ai-risk-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.wb-ai-evidence-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.wb-ai-evidence-table th,
+.wb-ai-evidence-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.wb-ai-evidence-table th {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+

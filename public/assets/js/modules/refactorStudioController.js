@@ -350,6 +350,74 @@
     setStudioStep(1);
   }
 
+  function loadCustomQuery({ name = 'Workbench_Query', database = null, sql = '', bottleneck = null, findings = [] } = {}) {
+    const customView = {
+      name: name.replace(/[\[\]]/g, ''),
+      canonicalId: `[dbo].[${name.replace(/[\[\]]/g, '')}]`,
+      database: database || appStateRef?.primaryDatabase || 'SQL DB',
+      risk: 'high',
+      riskScore: 82,
+      definition: sql,
+      problems: (findings && findings.length > 0) ? findings : [bottleneck?.title || 'Workbench plan analizi optimizasyon adayı'],
+      runtime: {
+        evidenceGrade: 'A',
+        attributionMethod: 'WORKBENCH_ACTUAL_PLAN'
+      }
+    };
+
+    studioState.activeView = customView;
+    studioState.step = 1;
+    studioState.maxUnlockedStep = 1;
+    studioState.candidateSql = '';
+    studioState.aiSummary = [];
+    studioState.aiRisks = [];
+    studioState.validationResult = null;
+    studioState.benchmarkResult = null;
+    studioState.planComparison = null;
+    studioState.decision = null;
+
+    populateStudioViewSelect(customView.name);
+
+    const viewNameEl = document.getElementById('studioHeaderViewName');
+    const dbBadgeEl = document.getElementById('studioHeaderDbBadge');
+    const riskBadgeEl = document.getElementById('studioHeaderRiskBadge');
+    const evidencePillEl = document.getElementById('studioHeaderEvidencePill');
+
+    if (viewNameEl) viewNameEl.textContent = customView.name;
+    if (dbBadgeEl) dbBadgeEl.textContent = customView.database;
+    if (riskBadgeEl) {
+      riskBadgeEl.textContent = 'WORKBENCH PLAN EVIDENCE';
+      riskBadgeEl.className = 'severity-pill severity-high';
+    }
+    if (evidencePillEl) {
+      evidencePillEl.textContent = 'Actual Plan & I/O Kanıtı';
+    }
+
+    renderStep1Diagnosis(customView);
+
+    studioState.fullOriginalDefinition = sql;
+    const cleanSql = extractQueryFromView(sql);
+    studioState.originalSql = cleanSql || sql;
+
+    const origSqlView = document.getElementById('studioOriginalSqlStep1');
+    if (origSqlView) origSqlView.textContent = studioState.originalSql;
+
+    const origSqlDiff = document.getElementById('studioOriginalSqlDiff');
+    if (origSqlDiff) origSqlDiff.textContent = studioState.originalSql;
+
+    const candidateInput = document.getElementById('studioCandidateSql');
+    if (candidateInput) {
+      candidateInput.value = '';
+      candidateInput.classList.remove('hidden');
+    }
+    const candidateEmptyState = document.getElementById('studioCandidateEmptyState');
+    if (candidateEmptyState) candidateEmptyState.classList.add('hidden');
+    const candidateCombinedNotice = document.getElementById('studioCandidateCombinedNotice');
+    if (candidateCombinedNotice) candidateCombinedNotice.classList.add('hidden');
+
+    setStudioStep(1);
+  }
+
   function populateStudioViewSelect(selectedVal) {
     const sel = document.getElementById('studioViewSelect');
     if (!sel) return;
@@ -1420,6 +1488,7 @@ GO
     initRefactorStudio,
     loadView: loadViewIntoStudio,
     loadViewIntoStudio,
+    loadCustomQuery,
     switchSubTab: switchStudioSubTab,
     runOptimize,
     runValidateAndBenchmark,

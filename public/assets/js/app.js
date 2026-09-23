@@ -6998,6 +6998,20 @@ ORDER BY IslemAdedi DESC;`;
 
       if (nextTab.lastPlan) {
         renderWbPlan(nextTab.lastPlan.planType, nextTab.lastPlan.parsed);
+        if ($('#wbPlanBadge')) $('#wbPlanBadge').style.display = 'inline-block';
+        if ($('#wbAiPlanBadge')) $('#wbAiPlanBadge').style.display = 'inline-block';
+      } else {
+        if ($('#wbPlanBadge')) $('#wbPlanBadge').style.display = 'none';
+        if ($('#wbAiPlanBadge')) $('#wbAiPlanBadge').style.display = 'none';
+      }
+
+      // Restore AI Plan Analysis
+      if (nextTab.lastAiAnalysis) {
+        renderWorkbenchAiPlan(nextTab.lastAiAnalysis, nextTab.lastAiAnalysisEvidenceMap, nextTab.lastAiAnalysisEvidenceList);
+      } else if (nextTab.lastPlan) {
+        renderWorkbenchAiPlanEmptyState('plan_ready');
+      } else {
+        renderWorkbenchAiPlanEmptyState('no_plan');
       }
 
       debouncedSaveSessions();
@@ -8300,6 +8314,16 @@ ORDER BY IslemAdedi DESC;`;
       const planTitle = isActual ? 'GERÇEK ÇALIŞTIRMA PLANI (ACTUAL PLAN)' : 'TAHMİNİ ÇALIŞTIRMA PLANI (ESTIMATED PLAN)';
 
       let html = `
+        <div class="wb-plan-header" style="margin-bottom:12px;background:var(--bg-lighter);border:1px solid var(--purple-transparent);border-radius:6px;padding:12px;display:flex;align-items:center;justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:12px">
+            <div style="width:36px;height:36px;border-radius:18px;background:var(--purple-transparent);display:flex;align-items:center;justify-content:center;font-size:16px;">✦</div>
+            <div>
+              <h4 style="margin:0;font-size:14px;color:var(--text-bright)">AI Plan Analisti (Beta)</h4>
+              <p style="margin:4px 0 0;font-size:12px;color:var(--text-muted)">Planı, istatistikleri ve AST'yi kullanarak darboğazları ve eyleme dönüştürülebilir adımları tespit et.</p>
+            </div>
+          </div>
+          <button type="button" class="button primary" id="btnWbRunAiPlanInline" style="background:var(--purple);border-color:var(--purple)">✦ AI ile Analiz Et</button>
+        </div>
         <div class="wb-plan-header">
           <div>
             <span class="${badgeClass}">${planTitle}</span>
@@ -8309,6 +8333,8 @@ ORDER BY IslemAdedi DESC;`;
           <span>${parsed.operatorCount || 0} operatör</span>
         </div>
       `;
+
+      // Bind inline button later below html rendering
 
       // Warnings
       if (parsed.warnings?.length > 0) {
@@ -8409,6 +8435,14 @@ ORDER BY IslemAdedi DESC;`;
           }
         };
       });
+
+      const btnInlineAi = $('#btnWbRunAiPlanInline');
+      if (btnInlineAi) {
+        btnInlineAi.addEventListener('click', () => {
+          switchWbTab('ai-plan');
+          runWorkbenchAiPlanAnalysis();
+        });
+      }
     }
 
     function renderWbBenchmark(data) {
@@ -8501,6 +8535,8 @@ ORDER BY IslemAdedi DESC;`;
 
           renderWbPlan(json.planType, json.parsed);
           switchWbTab('plan');
+          if ($('#wbAiPlanBadge')) $('#wbAiPlanBadge').style.display = 'inline-block';
+          if (typeof renderWorkbenchAiPlanEmptyState === 'function') renderWorkbenchAiPlanEmptyState('plan_ready');
           toast('Plan Hazır', `${json.planType} execution plan [${dbTarget}] başarıyla analiz edildi.`, 'success');
         } else {
           // Demo Mode Plan
@@ -8520,6 +8556,8 @@ ORDER BY IslemAdedi DESC;`;
           };
           renderWbPlan(isActual ? 'ACTUAL' : 'ESTIMATED', mockPlan);
           switchWbTab('plan');
+          if ($('#wbAiPlanBadge')) $('#wbAiPlanBadge').style.display = 'inline-block';
+          if (typeof renderWorkbenchAiPlanEmptyState === 'function') renderWorkbenchAiPlanEmptyState('plan_ready');
           toast('Demo Plan Hazır', `[${dbTarget}] ${isActual ? 'Actual' : 'Estimated'} plan hazırlandı.`, 'success');
         }
       } catch (err) {
@@ -8833,8 +8871,353 @@ ORDER BY IslemAdedi DESC;`;
       } catch (_) {}
     }
 
-    $('#inputFilterSavedQueries')?.addEventListener('input', loadSavedQueriesList);
-    $('#checkFilterSavedFavoriteOnly')?.addEventListener('change', loadSavedQueriesList);
+    // --------------------------------------------------------
+    // AI Execution Plan Analyst Implementation
+    // --------------------------------------------------------
+    $('#btnWbRunAiPlan')?.addEventListener('click', () => runWorkbenchAiPlanAnalysis(false));
+    $('#btnWbReanalyzeAiPlan')?.addEventListener('click', () => runWorkbenchAiPlanAnalysis(true));
+
+    async function runWorkbenchAiPlanAnalysis(forceRefresh = false) {
+      const curTab = getActiveTab();
+      if (!curTab) return;
+
+      if (!forceRefresh && curTab.lastAiAnalysis && curTab.lastAiAnalysisEvidenceMap) {
+        renderWorkbenchAiPlan(curTab.lastAiAnalysis, curTab.lastAiAnalysisEvidenceMap, curTab.lastAiAnalysisEvidenceList);
+        return;
+      }
+
+      const sql = getEditorSql().trim();
+      if (!sql) {
+        toast('Sorgu Boş', 'Lütfen AI analizi için bir T-SQL sorgusu girin.', 'error');
+        renderWorkbenchAiPlanEmptyState('no_plan');
+        return;
+      }
+
+      const dbTarget = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+      const planData = curTab.lastPlan ? curTab.lastPlan.parsed : null;
+      const metricsData = curTab.lastResult ? curTab.lastResult.metrics : null;
+      const statsData = curTab.lastResult ? curTab.lastResult.statistics : null;
+
+      const aiContent = $('#wbAiPlanContent');
+      if (aiContent) {
+        aiContent.innerHTML = `
+          <div class="empty-state" style="padding:60px 20px">
+            <div class="wb-loading-spinner" style="width:32px;height:32px;margin:0 auto 16px;border:3px solid var(--purple-transparent);border-top-color:var(--purple);border-radius:50%;animation:spin 1s linear infinite;"></div>
+            <h4 style="margin:0 0 6px 0;color:var(--text-bright)">✦ Execution Plan ve Runtime Evidence Analiz Ediliyor...</h4>
+            <p style="color:var(--text-muted);font-size:13px;max-width:500px;margin:0 auto">Optimizatör kararları, kardinalite tahminleri, I/O yük dağılımı ve AST yapısı inceleniyor.</p>
+          </div>
+        `;
+      }
+
+      try {
+        const res = await fetch('/api/workbench/analyze-plan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sql,
+            database: dbTarget,
+            plan: planData,
+            metrics: metricsData,
+            statistics: statsData,
+            forceRefresh
+          })
+        });
+
+        let json;
+        const resText = await res.text();
+        try {
+          json = JSON.parse(resText);
+        } catch (_) {
+          throw new Error(res.status === 404
+            ? 'API uç noktası bulunamadı (/api/workbench/analyze-plan). Lütfen sunucuyu yeniden başlatın.'
+            : `Sunucu geçersiz yanıt döndürdü (HTTP ${res.status}): ${resText.slice(0, 100)}`);
+        }
+
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || 'AI plan analizi gerçekleştirilemedi.');
+        }
+
+        const data = json.data;
+        const evidenceMap = json.evidenceMap || {};
+        const evidenceList = json.evidenceList || [];
+
+        curTab.lastAiAnalysis = data;
+        curTab.lastAiAnalysisEvidenceMap = evidenceMap;
+        curTab.lastAiAnalysisEvidenceList = evidenceList;
+
+        if ($('#wbAiPlanBadge')) $('#wbAiPlanBadge').style.display = 'inline-block';
+
+        renderWorkbenchAiPlan(data, evidenceMap, evidenceList);
+        toast('AI Analizi Tamamlandı', 'Plan ve çalışma kanıtları başarıyla analiz edildi.', 'success');
+      } catch (err) {
+        toast('AI Analiz Hatası', err.message, 'error');
+        if (aiContent) {
+          aiContent.innerHTML = `
+            <div class="permission-box" style="border-color:rgba(255,93,114,0.3);background:rgba(255,93,114,0.06);padding:20px;margin:20px 0">
+              <strong style="color:var(--red);font-size:14px">✕ AI Plan Analizi Başarısız Oldu</strong>
+              <p style="margin-top:6px;font-size:13px">${escapeHtml(err.message)}</p>
+              <button type="button" class="button primary mini" id="btnWbRetryAiPlan" style="margin-top:12px;background:var(--purple)">Tekrar Dene</button>
+            </div>
+          `;
+          $('#btnWbRetryAiPlan')?.addEventListener('click', () => runWorkbenchAiPlanAnalysis(true));
+        }
+      }
+    }
+
+    function renderWorkbenchAiPlanEmptyState(stateType = 'no_plan') {
+      const wrap = $('#wbAiPlanContent');
+      if (!wrap) return;
+
+      if (stateType === 'no_plan') {
+        wrap.innerHTML = `
+          <div class="empty-state" style="padding:60px 20px">
+            <div style="font-size:36px;margin-bottom:12px">✦</div>
+            <h4 style="margin:0 0 8px 0;color:var(--text-bright)">Henüz Bir Execution Plan Analiz Edilmedi</h4>
+            <p style="color:var(--text-muted);font-size:13px;max-width:520px;margin:0 auto 20px">
+              Sorgunuzun <b>Actual Plan</b> veya <b>Estimated Plan</b> çıktılarını uzlaşmacı AI motoruna sunarak performans optimizasyon önerileri almak için yukarıdaki butona tıklayın.
+            </p>
+            <button type="button" class="button primary" id="btnWbRunAiPlanEmpty" style="background:var(--purple);border-color:var(--purple)">✦ AI ile Planı Analiz Et</button>
+          </div>
+        `;
+        $('#btnWbRunAiPlanEmpty')?.addEventListener('click', () => runWorkbenchAiPlanAnalysis(false));
+      } else if (stateType === 'plan_ready') {
+        wrap.innerHTML = `
+          <div class="empty-state" style="padding:60px 20px">
+            <div style="font-size:36px;margin-bottom:12px">📊</div>
+            <h4 style="margin:0 0 8px 0;color:var(--text-bright)">Execution Plan Hazır — Analize Başlayın</h4>
+            <p style="color:var(--text-muted);font-size:13px;max-width:520px;margin:0 auto 20px">
+              Plan ve çalışma zamanı metrikleriniz hazır. Darboğazları, riskli operatörleri ve adım adım çözüm rehberini üretmek için AI analizini başlatın.
+            </p>
+            <button type="button" class="button primary" id="btnWbRunAiPlanReady" style="background:var(--purple);border-color:var(--purple)">✦ AI Analizini Başlat</button>
+          </div>
+        `;
+        $('#btnWbRunAiPlanReady')?.addEventListener('click', () => runWorkbenchAiPlanAnalysis(false));
+      }
+    }
+
+    function renderWorkbenchAiPlan(data, evidenceMap = {}, evidenceList = []) {
+      const wrap = $('#wbAiPlanContent');
+      if (!wrap || !data) return;
+
+      const conf = (data.confidence || 'HIGH').toUpperCase();
+      const confBadgeClass = conf === 'HIGH' ? 'status-ready' : conf === 'MEDIUM' ? 'status-warning' : 'status-danger';
+      const confPill = $('#wbAiConfidencePill');
+      if (confPill) {
+        confPill.className = `status-pill ${confBadgeClass}`;
+        confPill.textContent = `Güven: ${conf}`;
+      }
+
+      let html = `
+        <div class="wb-ai-plan-container" style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
+          
+          <!-- Healthy Query Banner (If Healthy) -->
+          ${data.healthyQuery ? `
+            <div class="wb-ai-summary-card" style="border-left:4px solid var(--green);background:rgba(16,185,129,0.06)">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+                <span style="font-size:20px">✅</span>
+                <h4 style="margin:0;font-size:15px;color:var(--green)">Belirgin Bir Performans Darboğazı Tespit Edilmedi</h4>
+              </div>
+              <p style="margin:0;font-size:13px;color:var(--text-bright)">Sorgunuzun yürütme planı ve kaynak tüketimi mevcut veri kümesi ve dizinler üzerinde optimal görünmektedir.</p>
+            </div>
+          ` : ''}
+
+          <!-- Summary Card -->
+          <div class="wb-ai-summary-card">
+            <h4 style="margin:0 0 8px 0;font-size:14px;color:var(--text-bright);display:flex;align-items:center;gap:6px">
+              <span>📋</span> Yönetici ve Performans Özeti
+            </h4>
+            <p style="margin:0;font-size:13px;line-height:1.5;color:var(--text-bright)">${escapeHtml(data.summary || '')}</p>
+          </div>
+
+          <!-- Primary Bottleneck Card -->
+          ${data.primaryBottleneck ? `
+            <div class="wb-ai-bottleneck-card">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+                <div>
+                  <small style="text-transform:uppercase;letter-spacing:0.5px;color:var(--red);font-weight:700;font-size:11px">Ana Darboğaz (Primary Bottleneck)</small>
+                  <h4 style="margin:2px 0 0 0;font-size:15px;color:var(--text-bright)">${escapeHtml(data.primaryBottleneck.title || '')}</h4>
+                </div>
+                <span class="severity-pill critical" style="font-size:11px">${escapeHtml(data.primaryBottleneck.severity || 'CRITICAL')}</span>
+              </div>
+              <p style="margin:0 0 10px 0;font-size:13px;color:var(--text-bright);line-height:1.4">${escapeHtml(data.primaryBottleneck.description || data.primaryBottleneck.whyItMatters || '')}</p>
+              
+              <div style="display:flex;gap:12px;font-size:12px;color:var(--text-muted);background:rgba(0,0,0,0.2);padding:8px 12px;border-radius:4px">
+                <div>Fiziksel Etki: <b style="color:var(--text-bright)">${escapeHtml(data.primaryBottleneck.impact || 'Yüksek CPU / IO')}</b></div>
+                ${data.primaryBottleneck.targetObject ? `<div>Hedef Nesne: <b style="color:var(--purple-light,#c084fc)">${escapeHtml(data.primaryBottleneck.targetObject)}</b></div>` : ''}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Priorities List -->
+          ${(data.priorities || []).length > 0 ? `
+            <div>
+              <h4 style="margin:0 0 12px 0;font-size:14px;color:var(--text-bright)">⚡ Öncelikli İyileştirme Adımları (${data.priorities.length})</h4>
+              <div style="display:flex;flex-direction:column;gap:12px">
+                ${data.priorities.map((p, idx) => {
+                  const evCode = p.evidenceRef || (Array.isArray(p.evidence) ? p.evidence[0] : p.evidence);
+                  const evItem = evidenceMap[evCode];
+                  const routeTool = p.actionTool || (
+                    p.nextTool === 'INDEX_ADVISOR' ? 'OPEN_INDEX_ADVISOR' :
+                    p.nextTool === 'STATISTICS' ? 'OPEN_STATS_HEALTH' :
+                    p.nextTool === 'REFACTOR' ? 'SEND_TO_REFACTOR_STUDIO' :
+                    p.nextTool === 'WORKBENCH' ? 'RUN_BENCHMARK' : null
+                  );
+                  const toolLabel = routeTool === 'OPEN_INDEX_ADVISOR' ? 'İndeks Danışmanını Aç' :
+                    routeTool === 'OPEN_STATS_HEALTH' ? 'İstatistik Sağlığını Aç' :
+                    routeTool === 'SEND_TO_REFACTOR_STUDIO' ? 'Refaktör Stüdyosuna Gönder' :
+                    routeTool === 'RUN_BENCHMARK' ? 'Workbench\'te Karşılaştır' : '';
+
+                  return `
+                    <div class="wb-ai-priority-card" style="border-left:3px solid var(--accent)">
+                      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <div style="display:flex;align-items:center;gap:8px">
+                          <span class="wb-ai-priority-badge">#${p.priority || idx + 1}</span>
+                          <strong style="font-size:13.5px;color:var(--text-bright)">${escapeHtml(p.title || '')}</strong>
+                        </div>
+                        ${evCode ? `<span class="wb-ai-evidence-pill" title="${escapeHtml(evItem?.detail || evItem?.description || '')}">${escapeHtml(evCode)}</span>` : ''}
+                      </div>
+
+                      <div class="wb-ai-step-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;font-size:12.5px">
+                        <div style="background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:4px">
+                          <b style="color:var(--yellow);display:block;margin-bottom:2px">🔴 SORUN:</b>
+                          <span style="color:var(--text-bright)">${escapeHtml(p.problem || '')}</span>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:4px">
+                          <b style="color:var(--accent);display:block;margin-bottom:2px">📊 KANIT:</b>
+                          <span style="color:var(--text-bright)">${escapeHtml(p.evidence ? (Array.isArray(p.evidence) ? p.evidence.join(', ') : p.evidence) : '')}</span>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:4px">
+                          <b style="color:var(--purple-light,#c084fc);display:block;margin-bottom:2px">💡 NEDEN ÖNEMLİ:</b>
+                          <span style="color:var(--text-bright)">${escapeHtml(p.whyItMatters || '')}</span>
+                        </div>
+                        <div style="background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:4px">
+                          <b style="color:var(--green);display:block;margin-bottom:2px">🛠️ NE YAP:</b>
+                          <span style="color:var(--text-bright)">${escapeHtml(p.action || '')}</span>
+                        </div>
+                      </div>
+
+                      <div style="margin-top:8px;font-size:12px;color:var(--text-muted);border-top:1px dashed var(--line);padding-top:6px;display:flex;justify-content:space-between;align-items:center">
+                        <span><b>Sonra Nasıl Doğrula:</b> ${escapeHtml(p.howToVerify || p.howToValidate || '')}</span>
+                        ${routeTool ? `
+                          <button type="button" class="button ghost mini btn-ai-route-tool" data-tool="${routeTool}" data-target="${escapeHtml(p.targetObject || '')}" style="color:var(--purple-light,#c084fc);border-color:var(--purple-transparent)">
+                            ➔ ${toolLabel}
+                          </button>
+                        ` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+          ` : ''}
+
+          <!-- Action Tools & What NOT To Do Grid -->
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+            
+            <!-- What NOT To Do -->
+            <div class="setting-card" style="border-left:3px solid var(--red);margin:0">
+              <div>
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--red);display:flex;align-items:center;gap:6px">
+                  <span>🚫</span> Ne Yapılmamalı? (What NOT To Do)
+                </h4>
+                <ul style="margin:0;padding-left:16px;font-size:12.5px;color:var(--text-bright);line-height:1.5">
+                  ${(data.whatNotToDo || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+
+            <!-- Risks & Trade-offs -->
+            <div class="setting-card" style="border-left:3px solid var(--yellow);margin:0">
+              <div>
+                <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--yellow);display:flex;align-items:center;gap:6px">
+                  <span>⚠️</span> Riskler ve Yan Etkiler
+                </h4>
+                <ul style="margin:0;padding-left:16px;font-size:12.5px;color:var(--text-bright);line-height:1.5">
+                  ${(data.risks || []).map(r => `<li>${escapeHtml(r)}</li>`).join('')}
+                </ul>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Traceable Evidence Ledger Table -->
+          ${evidenceList.length > 0 ? `
+            <div style="margin-top:8px">
+              <h4 style="margin:0 0 8px 0;font-size:13px;color:var(--text-bright)">📌 İzlenebilir Kanıt Listesi (Traceable Evidence Ledger)</h4>
+              <table class="wb-table wb-ai-evidence-table" style="font-size:11.5px">
+                <thead>
+                  <tr>
+                    <th>Kod</th>
+                    <th>Kategori</th>
+                    <th>Kaynak</th>
+                    <th>Açıklama</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${evidenceList.map(ev => `
+                    <tr>
+                      <td><b class="wb-ai-evidence-pill">${escapeHtml(ev.code)}</b></td>
+                      <td>${escapeHtml(ev.category)}</td>
+                      <td><small style="color:var(--text-muted)">${escapeHtml(ev.source)}</small></td>
+                      <td>${escapeHtml(ev.description)}</td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          ` : ''}
+
+        </div>
+      `;
+
+      wrap.innerHTML = html;
+
+      // Bind tool routing buttons inside priorities
+      wrap.querySelectorAll('.btn-ai-route-tool').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tool = btn.dataset.tool;
+          const targetObj = btn.dataset.target;
+          handleAiPlanToolRouting(tool, targetObj, data);
+        });
+      });
+    }
+
+    function handleAiPlanToolRouting(tool, targetObj, analysisData) {
+      if (tool === 'OPEN_INDEX_ADVISOR') {
+        const dbaNav = document.querySelector('.nav-item[data-page="dba-tools"]') || document.querySelector('.nav-item[data-page="indexes"]');
+        if (dbaNav) dbaNav.click();
+        if (window.STUDIO_MODULES?.dbaTools) {
+          window.STUDIO_MODULES.dbaTools.switchTab('indexes');
+        }
+        toast('İndeks Danışmanı', 'İndeks analizi sayfasına yönlendirildiniz.', 'info');
+      } else if (tool === 'OPEN_STATS_HEALTH') {
+        const dbaNav = document.querySelector('.nav-item[data-page="dba-tools"]') || document.querySelector('.nav-item[data-page="statistics"]');
+        if (dbaNav) dbaNav.click();
+        if (window.STUDIO_MODULES?.dbaTools) {
+          window.STUDIO_MODULES.dbaTools.switchTab('statistics');
+        }
+        toast('İstatistik Sağlığı', 'İstatistik analizi sayfasına yönlendirildiniz.', 'info');
+      } else if (tool === 'SEND_TO_REFACTOR_STUDIO') {
+        const sql = getEditorSql().trim();
+        const db = $('#wbDatabaseSelect')?.value || state.activeDatabase || state.primaryDatabase;
+        const refNav = document.querySelector('.nav-item[data-page="refactor"]') || document.querySelector('.nav-item[data-page="studio"]');
+        if (refNav) refNav.click();
+        if (window.STUDIO_MODULES?.refactorStudio) {
+          window.STUDIO_MODULES.refactorStudio.loadCustomQuery({
+            name: targetObj ? `Refactor: ${targetObj}` : 'Workbench SQL Refactor',
+            database: db,
+            sql,
+            bottleneck: analysisData.primaryBottleneck?.title || 'Execution Plan Bottleneck',
+            findings: (analysisData.priorities || []).map(p => p.title)
+          });
+        }
+        toast('Refaktör Stüdyosu', 'Sorgu Refaktör Stüdyosu laboratuvarına aktarıldı.', 'success');
+      } else if (tool === 'RUN_BENCHMARK') {
+        switchWbTab('statistics');
+        btnBenchmark?.click();
+        toast('Workbench Karşılaştırma', 'Benchmark testi başlatıldı.', 'info');
+      }
+    }
 
     // Initial boot
     initEditorSystem();
