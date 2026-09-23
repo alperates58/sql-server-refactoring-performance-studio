@@ -7013,6 +7013,28 @@ kbd {
   }
 }
 
+/* Studio Side-by-Side Diff Editors Typography & Geometry Synchronization */
+.studio-diff-grid pre.code-editor,
+.studio-diff-grid textarea.code-editor {
+  font-family: "Cascadia Code", Consolas, Menlo, Monaco, monospace !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  letter-spacing: normal !important;
+  padding: 14px 16px !important;
+  tab-size: 4 !important;
+  height: 380px !important;
+  box-sizing: border-box !important;
+  white-space: pre !important;
+  margin: 0 !important;
+}
+
+.studio-diff-grid pre.code-editor code {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
+}
+
 .studio-diff-col {
   display: flex;
   flex-direction: column;
