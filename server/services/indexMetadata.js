@@ -348,9 +348,59 @@ function analyzeOverlappingIndexes(tableIndexes = {}) {
   return findings;
 }
 
+/**
+ * Filters existing indexes to only those relevant to query predicates, joins, group/order by, or clustered keys.
+ * Replaces indiscriminate "Top 5" truncation to conserve token budget for critical evidence.
+ */
+function filterQueryRelevantIndexes(indexesByTable = {}, ast = null) {
+  if (!indexesByTable || typeof indexesByTable !== 'object') return {};
+  if (!ast) return indexesByTable;
+
+  // Collect relevant query column names (lowercase)
+  const queryCols = new Set();
+
+  for (const p of ast.predicates || []) {
+    for (const c of p.columns || []) queryCols.add(c.toLowerCase());
+  }
+  for (const j of ast.joins || []) {
+    for (const c of j.involvedColumns || []) queryCols.add(c.toLowerCase());
+    for (const jp of j.predicates || []) {
+      for (const c of jp.columns || []) queryCols.add(c.toLowerCase());
+    }
+  }
+  for (const g of ast.groupBy || []) queryCols.add(String(g).toLowerCase());
+  for (const o of ast.orderBy || []) queryCols.add(String(o.column || o).toLowerCase());
+
+  const filtered = {};
+
+  for (const [tblKey, idxList] of Object.entries(indexesByTable)) {
+    if (!Array.isArray(idxList)) continue;
+
+    const relevant = idxList.filter(idx => {
+      // Always include clustered / primary key index
+      if (idx.isPrimaryKey || (idx.type && idx.type.toUpperCase().includes('CLUSTERED') && !idx.type.toUpperCase().includes('NONCLUSTERED'))) {
+        return true;
+      }
+      // Include if any key column is referenced in predicates / joins / group / order
+      const keys = (idx.keyColumns || []).map(k => String(k).toLowerCase());
+      if (keys.some(k => queryCols.has(k))) {
+        return true;
+      }
+      return false;
+    });
+
+    // If no specific index matched, retain clustered index or at most 2 candidate indexes
+    filtered[tblKey] = relevant.length > 0 ? relevant : idxList.slice(0, 2);
+  }
+
+  return filtered;
+}
+
 module.exports = {
   batchGetIndexes,
+  filterQueryRelevantIndexes,
   analyzeIndexCoverage,
   analyzeOverlappingIndexes,
   clearIndexCache
 };
+

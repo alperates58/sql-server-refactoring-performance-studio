@@ -82,7 +82,7 @@
               <span class="status-pill status-ready" id="globalConnectionBadge">○ DEMO MODU</span>
               <span class="status-pill status-readonly" id="globalReadOnlyBadge" title="Studio canlı SQL Server üzerinde veri veya şema değiştiren komutları çalıştırmaz. Deployment script üretimi yalnızca betik oluşturur, veritabanına doğrudan uygulamaz.">🛡️ READ ONLY</span>
             </div>
-            <p class="page-subtitle" id="pageSubtitle">SQL Server view envanteri, bağımlılık haritası ve regresyon analizleri.</p>
+            <p class="page-subtitle" id="pageSubtitle">SQL Server view envanteri, özet metrikler ve çalışma zamanı bulguları.</p>
           </div>
         </div>
         <div class="topbar-actions">
@@ -95,89 +95,119 @@
       </header>
 
       <section class="page active" id="page-overview">
-        <div class="hero-grid">
-          <div class="hero-copy">
-            <div class="hero-kicker"><span class="pulse" id="heroPulse"></span> <span id="heroKickerText">Veritabanı canlı · Read-only denetim modu</span></div>
-            <h2 id="heroHeadline"><span id="heroViewCount">600</span> view içinden <em>gerçek darboğazı</em> bul.</h2>
-            <p>Statik SQL analizi, dependency graph, Query Store ve plan regresyonlarını tek ekranda birleştir. AI sadece aday üretir; değişiklik validation geçmeden hiçbir şey deploy edilmez.</p>
-            <div class="hero-actions">
-              <button class="button primary large" data-goto="views" data-risk-filter="critical">Kritik View'ları İncele <span>→</span></button>
-              <button class="button ghost large" data-goto="graph">Haritayı Aç</button>
-            </div>
+        <!-- 1. Horizontal Status Strip (56-62px height) -->
+        <div class="overview-status-strip">
+          <div class="status-strip-item" data-goto="views" title="Tüm View Envanterini Gör">
+            <span class="status-strip-label">TOPLAM VIEW</span>
+            <strong class="status-strip-val" id="stripTotalViews">593</strong>
           </div>
-          <div class="health-orbit" aria-label="Genel sağlık puanı">
-            <svg viewBox="0 0 180 180" role="img">
-              <circle cx="90" cy="90" r="72" class="orbit-track"></circle>
-              <circle cx="90" cy="90" r="72" class="orbit-value" id="orbitTrackValue" stroke-dasharray="452" stroke-dashoffset="126"></circle>
-            </svg>
-            <div class="orbit-copy"><span>DB Health</span><strong id="overviewDbHealth">72</strong><small>/ 100</small></div>
-            <div class="orbit-chip chip-danger" id="overviewHealthChip">↓ 8 pts</div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item" id="kpiCardCritical" data-goto="views" data-risk-filter="critical" title="Kritik Riskli View'ları Filtrele">
+            <span class="status-strip-label">KRİTİK VIEW</span>
+            <strong class="status-strip-val danger-text" id="metricCritical">0</strong>
+          </div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item" id="kpiCardRegressions" data-goto="views" data-sort-filter="regression" title="Aktif Regresyonları Gör">
+            <span class="status-strip-label">AKTİF REGRESYON</span>
+            <strong class="status-strip-val warning-text" id="metricRegressions">0</strong>
+          </div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item" id="kpiCardIndexes" data-goto="dba-tools" data-dba-tab="indexes" title="Eksik İndeks Tavsiyelerini Aç">
+            <span class="status-strip-label">EKSİK İNDEKS</span>
+            <strong class="status-strip-val" id="metricIndexAdvisorCount">—</strong>
+          </div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item" id="kpiCardStats" data-goto="dba-tools" data-dba-tab="stats" title="Bayat İstatistik Raporunu Aç">
+            <span class="status-strip-label">BAYAT İSTATİSTİK</span>
+            <strong class="status-strip-val" id="metricStatsHealthCount">—</strong>
+          </div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item" id="kpiCardDuplicates" data-goto="views" data-view-filter="duplicates" title="Mükerrer SQL Mantığı Adaylarını Aç">
+            <span class="status-strip-label">DUPLICATE ADAYI</span>
+            <strong class="status-strip-val" id="metricDuplicates">0</strong>
+          </div>
+          <div class="status-strip-divider"></div>
+          <div class="status-strip-item health-strip-item" title="Genel Veritabanı Sağlık Skoru">
+            <span class="status-strip-label">DB HEALTH</span>
+            <div class="status-strip-health-wrap">
+              <strong class="status-strip-val positive-text" id="overviewDbHealth">91</strong>
+              <small class="status-strip-health-text" id="overviewHealthStatus">Sağlıklı</small>
+            </div>
           </div>
         </div>
 
-        <div class="metric-grid">
-          <article class="metric-card danger-card">
-            <div class="metric-top"><span class="metric-icon">!</span><span class="trend danger-text" id="metricCriticalTrend">+4 bugün</span></div>
-            <strong id="metricCritical">37</strong><span>Kritik View</span><small>Health &lt; 45 veya aktif regresyon</small>
-          </article>
-          <article class="metric-card">
-            <div class="metric-top"><span class="metric-icon">⌁</span><span class="trend warning-text" id="metricMaxDepth">Derinlik 11</span></div>
-            <strong id="metricEdges">1,842</strong><span>Dependency Edge</span><small>View → View → Table bağlantısı</small>
-          </article>
-          <article class="metric-card">
-            <div class="metric-top"><span class="metric-icon">⇄</span><span class="trend danger-text" id="metricRepeatedTrend">94 pattern</span></div>
-            <strong id="metricRepeated">312</strong><span>Mükerrer Table Access</span><small>Aynı base table'a çoklu yol</small>
-          </article>
-          <article class="metric-card">
-            <div class="metric-top"><span class="metric-icon">∿</span><span class="trend positive-text" id="metricQsStatus">Query Store açık</span></div>
-            <strong id="metricRegressions">14</strong><span>Aktif Regresyon</span><small>Son 24 saat anomalileri</small>
-          </article>
-          <article class="metric-card">
-            <div class="metric-top"><span class="metric-icon">≋</span><span class="trend warning-text" id="metricDuplicateTrend">%92 max</span></div>
-            <strong id="metricDuplicates">48</strong><span>Duplicate Adayı</span><small>Normalize SQL benzerlik kümeleri</small>
-          </article>
-          <article class="metric-card" style="cursor:pointer" data-goto="dba-tools">
-            <div class="metric-top"><span class="metric-icon">⚲</span><span class="trend purple-text" id="metricIndexAdvisorTrend">Tavsiyeler</span></div>
-            <strong id="metricIndexAdvisorCount">—</strong><span>Eksik İndeks</span><small>DMV &amp; Plan tespitleri</small>
-          </article>
-          <article class="metric-card" style="cursor:pointer" data-goto="dba-tools">
-            <div class="metric-top"><span class="metric-icon">📊</span><span class="trend warning-text" id="metricStatsHealthTrend">Sağlık</span></div>
-            <strong id="metricStatsHealthCount">—</strong><span>Bayat İstatistik</span><small>Güncelliğini yitirmiş (Stale)</small>
-          </article>
-        </div>
-
-        <div class="dashboard-grid">
-          <section class="panel span-8">
-            <div class="panel-header">
-              <div><span class="panel-kicker">ÖNCELİK SIRASI</span><h3>Bugün Müdahale Edilecekler</h3></div>
-              <div class="segmented" id="overviewSortSegmented"><button class="active" data-sort="risk">Risk</button><button data-sort="reads">Reads</button><button data-sort="regression">Regresyon</button></div>
-            </div>
-            <div class="risk-list" id="overviewRiskList"></div>
-          </section>
-
-          <section class="panel span-4">
-            <div class="panel-header"><div><span class="panel-kicker">TABLO BASKISI</span><h3>En Çok Baskı Alan Tablolar</h3></div><button class="link-button" data-goto="tables">Tümü →</button></div>
-            <div class="pressure-list" id="pressureList"></div>
-          </section>
-
-          <section class="panel span-7">
-            <div class="panel-header"><div><span class="panel-kicker">PERFORMANS REGRESYONU</span><h3>Zaman Serisi Analizi</h3></div><span class="live-pill" id="overviewRegressionPill"><span></span> Query Store</span></div>
-            <div class="chart-wrap" id="overviewChartWrap">
-              <div class="empty-state" style="padding:48px 16px">
-                <div class="empty-icon">📈</div>
-                <h3>Zaman Serisi Yükleniyor</h3>
-                <p>Query Store çalışma zamanı trendi taranıyor veya bu veritabanında Query Store etkinleştirilmemiş.</p>
+        <!-- 2. Main Content Grid (Prioritized Views Dense Table + Table Pressure) -->
+        <div class="overview-main-grid">
+          <section class="overview-section priority-section">
+            <div class="section-toolbar">
+              <div class="section-title-group">
+                <h3>Öncelikli İnceleme</h3>
+                <span class="section-subtitle">Risk ve çalışma zamanı kanıtına göre sıralı view'lar</span>
+              </div>
+              <div class="section-actions">
+                <div class="segmented" id="overviewSortSegmented">
+                  <button class="active" data-sort="risk" title="Risk Skoruna Göre Sırala">Risk</button>
+                  <button data-sort="reads" title="Mantıksal Okuma Hacmine Göre Sırala">Okuma</button>
+                  <button data-sort="regression" title="Çalışma Zamanı Regresyonuna Göre Sırala">Regresyon</button>
+                </div>
               </div>
             </div>
+            <div class="dense-table-container">
+              <table class="dense-db-table" id="overviewTable">
+                <thead>
+                  <tr>
+                    <th style="width:34%">View</th>
+                    <th style="width:30%">Ana Problem / Neden</th>
+                    <th style="width:10%;text-align:right">Risk</th>
+                    <th style="width:14%;text-align:right" title="Son 24 saatte Query Store / runtime evidence üzerinden ölçülen mantıksal okumalar.">Mantıksal Okuma</th>
+                    <th style="width:12%;text-align:right">Regresyon</th>
+                    <th style="width:75px;text-align:center">Aksiyon</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewRiskTableBody">
+                  <!-- Populated dynamically via JS -->
+                </tbody>
+              </table>
+              <div id="overviewRiskList" class="hidden"></div>
+            </div>
           </section>
 
-          <section class="panel span-5">
-            <div class="panel-header"><div><span class="panel-kicker">ANALİZ TESPİTLERİ</span><h3>Önemli Bulgular</h3></div><button class="icon-button" id="refreshFeedBtn" title="Bulguları Yenile">↻</button></div>
-            <div class="feed" id="overviewFeed">
-              <div class="feed-item"><span class="feed-icon danger">!</span><div><strong>Kardinalite Sapması</strong><p>Tahmin ile gerçek satır sayısı arasında ciddi fark</p><small id="feedItemView1">Kritik Tüketici View</small></div></div>
-              <div class="feed-item"><span class="feed-icon warning">⇄</span><div><strong>Mükerrer Tablo Erişimi</strong><p>Aynı temel tabloya çoklu mantıksal yol</p><small id="feedItemView2">Yüksek I/O Baskısı</small></div></div>
-              <div class="feed-item"><span class="feed-icon info">ƒ</span><div><strong>SARGable Olmayan Koşul</strong><p>CONVERT / CAST fonksiyonuyla sarılı indeks</p><small id="feedItemView3">Taranan Nesneler</small></div></div>
+          <section class="overview-section pressure-section">
+            <div class="section-toolbar">
+              <div class="section-title-group">
+                <h3>Tablo Baskısı</h3>
+                <span class="section-subtitle">En çok view referansı alan tablolar</span>
+              </div>
+              <button class="link-button" id="btnViewAllPressures" data-goto="views" data-view-filter="tables" title="Tablo baskısı alan view'ları filtrele">Tümü →</button>
             </div>
+            <div class="pressure-list-dense" id="pressureList"></div>
+          </section>
+        </div>
+
+        <!-- 3. Bottom Row: Compact Query Store Info & Important Findings -->
+        <div class="overview-bottom-grid">
+          <section class="overview-section qs-bottom-section">
+            <div class="qs-compact-strip" id="overviewChartWrap">
+              <div class="qs-compact-content">
+                <div class="qs-badge-title">
+                  <span class="status-pill status-readonly" id="overviewRegressionPill" style="font-size:10.5px">Plan Cache Fallback</span>
+                  <strong style="font-size:12.5px">Zaman Serisi Analizi</strong>
+                </div>
+                <p class="qs-desc">Plan Cache fallback modunda zaman serisi saklanmıyor veya Query Store kapalı.</p>
+              </div>
+              <button class="button ghost small" data-goto="settings" style="font-size:11.5px;padding:4px 10px">Ayarları Aç →</button>
+            </div>
+          </section>
+
+          <section class="overview-section findings-bottom-section">
+            <div class="section-toolbar">
+              <div class="section-title-group">
+                <h3>Önemli Bulgular</h3>
+                <span class="section-subtitle">Statik kural seti ve plan tespitleri</span>
+              </div>
+              <button class="icon-button" id="refreshFeedBtn" title="Bulguları Yenile" aria-label="Bulguları Yenile">↻</button>
+            </div>
+            <div class="findings-dense-list" id="overviewFeed"></div>
           </section>
         </div>
       </section>
@@ -185,26 +215,56 @@
       <section class="page" id="page-views">
         <div class="workspace views-workspace">
           <section class="view-list-pane">
-            <div class="pane-head"><div><span class="panel-kicker">AA_% ENVANTER</span><h3 id="inventoryTitle">600 View</h3></div><button class="icon-button" id="refreshInventoryBtn" title="Yenile">↻</button></div>
+            <div class="pane-head">
+              <div>
+                <span class="panel-kicker">AA_% ENVANTER</span>
+                <h3 id="inventoryTitle">600 View</h3>
+              </div>
+              <button class="icon-button" id="refreshInventoryBtn" title="Yenile">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2v4h-4M2 14v-4h4M13.5 10a5.5 5.5 0 1 1-1.3-5.7L14 6"/></svg>
+              </button>
+            </div>
             <div class="db-filter-row" style="margin-bottom:8px">
               <select id="viewDbFilter" class="setting-input select-styled" style="width:100%;height:32px;font-size:12.5px" title="Veritabanına Göre Filtrele">
                 <option value="all">Tüm Veritabanları (All Databases)</option>
               </select>
             </div>
-            <div class="search-box"><span>⌕</span><input id="viewSearch" placeholder="View ara..."/><kbd>⌘ K</kbd></div>
+            <div class="search-box">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="5"></circle><line x1="11" y1="11" x2="15" y2="15"></line></svg>
+              <input id="viewSearch" placeholder="View ara..." autocomplete="off"/>
+              <kbd>⌘ K</kbd>
+            </div>
             <div class="filter-row">
               <button class="filter-chip active" data-risk="all">Tümü <b id="countAll">600</b></button>
               <button class="filter-chip" data-risk="critical">Kritik <b id="countCritical">37</b></button>
-              <button class="filter-chip" data-risk="high">Yüksek <b id="countHigh">84</b></button>
-              <button class="filter-chip" data-view-filter="tables" title="Çoklu tablo baskısı alan viewlar">Tablo Baskısı</button>
-              <button class="filter-chip" data-view-filter="duplicates" title="Mükerrer SQL mantığı içeren viewlar">Mükerrer Mantık</button>
+              <button class="filter-chip" data-risk="regressed">Regresyonlu <b id="countRegressed">0</b></button>
+              <div class="popover-wrapper" style="position:relative">
+                <button class="filter-chip filter-more-btn" id="btnViewFilterMore" title="Diğer Filtreler" aria-haspopup="true" aria-expanded="false">Filtreler ▾</button>
+                <div class="view-filter-popover hidden" id="viewFilterPopover">
+                  <button class="popover-item" data-view-filter="tables">Tablo Baskısı (&gt;3 Tablo)</button>
+                  <button class="popover-item" data-view-filter="duplicates">Mükerrer Mantık</button>
+                  <button class="popover-item" data-risk="high">Yüksek Risk (<b id="countHigh">84</b>)</button>
+                  <div class="popover-divider"></div>
+                  <button class="popover-item reset" id="btnResetViewFilters">Filtreleri Temizle</button>
+                </div>
+              </div>
             </div>
-            <div class="view-list" id="viewList"></div>
+            <div class="view-list" id="viewList" role="listbox" aria-label="View Envanter Listesi"></div>
           </section>
           <section class="view-detail-pane">
             <div class="detail-hero">
-              <div><span class="object-type">VIEW</span><h2 id="detailViewName">View Seçiniz</h2><p id="detailViewMeta">Sol listeden bir view seçerek detayları inceleyin</p></div>
-              <div class="detail-score"><div class="score-ring"><strong id="detailHealth">--</strong><span>Health</span></div><div><span class="risk-label">RISK</span><strong class="danger-text" id="detailRisk">--</strong></div></div>
+              <div class="detail-hero-info">
+                <span class="object-type">VIEW</span>
+                <h2 id="detailViewName">View Seçiniz</h2>
+                <p id="detailViewMeta">Sol listeden bir view seçerek detayları inceleyin</p>
+              </div>
+              <div class="detail-risk-badge" id="detailRiskBadge">
+                <div class="risk-meta-col">
+                  <span class="risk-label">RISK</span>
+                  <strong class="risk-score-val" id="detailRisk">--</strong>
+                </div>
+                <span class="severity-pill low" id="detailRiskPill">DÜŞÜK</span>
+              </div>
             </div>
             <div class="detail-tabs">
               <button class="active" data-detail-tab="diagnosis">Teşhis</button>
@@ -215,22 +275,99 @@
 
             <!-- Tab 1: Teşhis (Diagnosis) -->
             <div class="detail-tab active" id="detail-tab-diagnosis">
-              <div class="stat-strip">
-                <div><span>Derinlik</span><strong id="statDepth">--</strong><small id="statDepthWarn">--</small></div><div><span>Temel Tablolar</span><strong id="statTables">--</strong><small id="statTablesWarn">--</small></div><div><span>Bağımlılar</span><strong id="statDependents">--</strong><small>Etki alanı</small></div><div><span>24s Okuma</span><strong id="statReads">--</strong><small id="statReadsDelta">--</small></div><div><span>Medyan</span><strong id="statMedian">--</strong><small id="statMedianDelta">--</small></div>
+              <!-- Single Horizontal Metric Strip -->
+              <div class="stat-strip" id="viewStatStrip">
+                <div class="stat-strip-col" title="Bağımlılık Derinliği">
+                  <span class="stat-label">Derinlik</span>
+                  <div class="stat-val-group">
+                    <strong id="statDepth">--</strong>
+                    <small id="statDepthWarn">--</small>
+                  </div>
+                </div>
+                <div class="stat-strip-col" title="Erişilen Temel Tablo Sayısı">
+                  <span class="stat-label">Temel Tablolar</span>
+                  <div class="stat-val-group">
+                    <strong id="statTables">--</strong>
+                    <small id="statTablesWarn">--</small>
+                  </div>
+                </div>
+                <div class="stat-strip-col" title="Bu View'i Kullanan Üst Nesneler">
+                  <span class="stat-label">Bağımlılar</span>
+                  <div class="stat-val-group">
+                    <strong id="statDependents">--</strong>
+                    <small>Etki alanı</small>
+                  </div>
+                </div>
+                <div class="stat-strip-col" id="statReadsCol" title="Son 24 saatteki toplam mantıksal okuma hacmi">
+                  <span class="stat-label">Mantıksal Okuma (24 Saat)</span>
+                  <div class="stat-val-group">
+                    <strong id="statReads">--</strong>
+                    <small id="statReadsDelta"></small>
+                  </div>
+                </div>
+                <div class="stat-strip-col" id="statMedianCol" title="Sorgu çalıştırma medyan süresi">
+                  <span class="stat-label">Medyan Süre</span>
+                  <div class="stat-val-group">
+                    <strong id="statMedian">--</strong>
+                    <small id="statMedianDelta"></small>
+                  </div>
+                </div>
               </div>
-              <div class="detail-grid">
-                <section class="inner-panel">
-                  <div class="inner-head"><h4>Risk Dağılımı</h4><span>Sağlık cezaları</span></div>
-                  <div class="risk-bars" id="riskBars"></div>
-                </section>
-                <section class="inner-panel">
-                  <div class="inner-head"><h4>Önemli Bulgular</h4><span id="topProblemCountText">0 bulgu</span></div>
-                  <div class="problem-list" id="topProblems"></div>
-                </section>
-              </div>
-              <div style="margin-top:16px">
-                <h4 style="font-size:13.5px;font-weight:600;margin-bottom:10px;color:var(--text-secondary)">Tüm Teşhis &amp; Bulgu Kayıtları (<span id="tabProblemCount">0</span>)</h4>
-                <div class="full-problem-list" id="fullProblemList"></div>
+
+              <!-- 65% / 35% Diagnosis Workspace Grid -->
+              <div class="diagnosis-grid">
+                <!-- Left 65%: Ana Teşhis + Tüm Bulgular Accordion -->
+                <div class="diagnosis-main-col">
+                  <!-- Ana Teşhis (Primary Diagnosis Highlight) -->
+                  <section class="primary-diagnosis-box" id="primaryDiagnosisBox">
+                    <div class="primary-diag-head">
+                      <div class="primary-diag-badge-wrap">
+                        <span class="severity-pill critical" id="primaryDiagSeverity">KRİTİK</span>
+                        <span class="primary-diag-kicker">ANA TEŞHİS</span>
+                      </div>
+                      <span class="primary-diag-grade" id="primaryDiagGrade" title="Kanıt Kaynağı ve Gücü">Kanıt Gücü: Düşük</span>
+                    </div>
+                    <h3 class="primary-diag-title" id="primaryDiagTitle">Mükerrer Temel Tablo Erişimi</h3>
+                    <p class="primary-diag-desc" id="primaryDiagDesc">Temel tabloya veritabanları arası 4 farklı yoldan erişiliyor.</p>
+                    
+                    <div class="primary-diag-meta-grid">
+                      <div class="primary-diag-meta-item">
+                        <span class="meta-item-label">Etki:</span>
+                        <span class="meta-item-val" id="primaryDiagImpact">Gereksiz mantıksal okuma (I/O) ve CPU tüketimi riski.</span>
+                      </div>
+                      <div class="primary-diag-meta-item">
+                        <span class="meta-item-label">Kanıt:</span>
+                        <span class="meta-item-val" id="primaryDiagEvidence">Statik Bağımlılık Grafiği</span>
+                      </div>
+                    </div>
+
+                    <div class="primary-diag-actions">
+                      <button class="button primary small" id="btnPrimaryRefactor">✦ Refaktör Et</button>
+                      <button class="button ghost small" id="btnPrimarySql">SQL'i İncele</button>
+                      <button class="button ghost small" id="btnPrimaryDeps">Bağımlılıkları Gör</button>
+                    </div>
+                  </section>
+
+                  <!-- Tüm Bulgular (Accordion) -->
+                  <section class="findings-section" style="margin-top:16px">
+                    <div class="findings-section-head">
+                      <h4>Tüm Bulgular &amp; Kanıtlar (<span id="tabProblemCount">0</span>)</h4>
+                      <span class="findings-subtext">Ayrıntılar ve öneriler için satıra tıklayın</span>
+                    </div>
+                    <div class="findings-accordion-list" id="findingsAccordionList" role="region" aria-label="Teşhis Bulguları Accordion"></div>
+                  </section>
+                </div>
+
+                <!-- Right 35%: Risk Kaynakları -->
+                <aside class="diagnosis-side-col">
+                  <section class="risk-sources-panel">
+                    <div class="inner-head">
+                      <h4>Risk Kaynakları</h4>
+                      <span title="Yapısal ve çalışma zamanı risk faktörleri">Faktör katkısı</span>
+                    </div>
+                    <div class="risk-sources-list" id="riskSourcesList"></div>
+                  </section>
+                </aside>
               </div>
             </div>
 

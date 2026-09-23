@@ -23,6 +23,7 @@ const { defaultWorkspaceService } = require('../services/workspaceService');
 const { defaultSavedQueriesService } = require('../services/savedQueriesService');
 const { defaultStorage } = require('../services/workspaceStorage');
 const { defaultQueryHistoryService } = require('../services/queryHistoryService');
+const iterativeOptimizer = require('../services/aiOptimizer/iterativeOptimizer');
 const sqlFormatter = require('../services/sqlFormatter');
 const sql = require('mssql');
 const pkg = require('../../package.json');
@@ -254,73 +255,63 @@ router.get('/views/:name/indexes', async (req, res) => {
   }
 });
 
-// 10. AI Refactor candidate proposal with Schema & AST awareness (Sprint 4)
+// 10. AI Iterative Refactor candidate proposal with Deterministic Quality Gates (Sprint 9)
 router.post('/ai/refactor', async (req, res) => {
   try {
-    const { viewName, sql, problems = [], baseTables = [], options = {}, database = null, planContext = null, runtimeContext = null } = req.body;
+    const { viewName, sql, problems = [], baseTables = [], options = {}, database = null } = req.body;
     if (!viewName || !sql) {
       return res.status(400).json({ ok: false, error: 'viewName ve sql alanları zorunludur.' });
     }
 
     const targetDb = database || db.status().primaryDatabase;
 
-    // 1. AST Analysis
-    const ast = astParser.parseSql(sql);
-    const astAnalysis = astAnalyzer.analyzeAst(ast);
-
-    // 2. Identify target tables
-    const astTableNames = (ast.tables || [])
-      .filter(t => t.referenceType === 'BASE_TABLE')
-      .map(t => t.object);
-    const allTableNames = [...new Set([...baseTables, ...astTableNames])];
-
-    // 3. Batched Schema & Index retrieval
-    const schemas = await schemaMetadata.batchGetSchemas(targetDb, allTableNames);
-    const indexes = await indexMetadata.batchGetIndexes(targetDb, allTableNames);
-
-    // 4. Index coverage and implicit conversion risks
-    const coverage = indexMetadata.analyzeIndexCoverage(ast, indexes);
-    const implicitConversions = schemaMetadata.detectImplicitConversions(ast.predicates, schemas);
-    const overlappingIndexes = indexMetadata.analyzeOverlappingIndexes(indexes);
-
-    const enrichedProblems = [
-      ...problems,
-      ...astAnalysis.findings,
-      ...coverage.findings,
-      ...implicitConversions,
-      ...overlappingIndexes
-    ];
-
-    const result = await ai.proposeRefactor({
+    // Run Iterative Optimization Loop with Deterministic Quality Gates
+    const iterResult = await iterativeOptimizer.runIterativeOptimization({
       viewName,
       sql,
       database: targetDb,
-      problems: enrichedProblems,
-      baseTables: allTableNames,
       options,
-      astContext: {
-        analysisSource: ast.analysisSource,
-        status: ast.status,
-        tables: ast.tables,
-        joins: ast.joins,
-        predicates: ast.predicates,
-        ctes: ast.ctes,
-        subqueries: ast.subqueries,
-        windows: ast.windowFunctions,
-        structuralProblems: astAnalysis.findings
-      },
-      schemaContext: schemas,
-      indexContext: indexes,
-      runtimeContext,
-      planContext
+      maxIterations: options.maxIterations || 3,
+      runBenchmark: options.runBenchmark !== false
     });
 
+    const candidateSql = iterResult.bestCandidate?.candidateSql || null;
+    const notes = iterResult.bestCandidate?.hypothesis || iterResult.reasons?.[0] || 'İteratif optimizasyon tamamlandı.';
+    const bulletPoints = iterResult.bestCandidate?.changes?.map(c => c.description) || (iterResult.reasons?.length ? iterResult.reasons : [notes]);
+    const risks = iterResult.bestCandidate?.risks || [];
+
+    const dataPayload = {
+      candidateSql,
+      notes,
+      bulletPoints,
+      risks,
+      status: iterResult.status,
+      primaryCause: iterResult.primaryCause,
+      contributingCauses: iterResult.contributingCauses,
+      confidence: iterResult.bestCandidate?.confidence || iterResult.confidence,
+      evidenceGrade: iterResult.bestCandidate?.evidenceGrade || iterResult.evidenceGrade,
+      iterations: iterResult.iterations,
+      bestCandidate: iterResult.bestCandidate,
+      benchmarkLoadGuard: iterResult.benchmarkLoadGuard,
+      missingIndexEvidence: iterResult.missingIndexEvidence || null
+    };
+
     res.json({
-      ...result,
-      ast,
-      astAnalysis,
-      indexCoverage: coverage.coverageResults,
-      implicitConversions
+      ok: true,
+      status: iterResult.status,
+      primaryCause: iterResult.primaryCause,
+      contributingCauses: iterResult.contributingCauses,
+      candidateSql,
+      notes,
+      bulletPoints,
+      risks,
+      iterations: iterResult.iterations,
+      bestCandidate: iterResult.bestCandidate,
+      benchmarkLoadGuard: iterResult.benchmarkLoadGuard,
+      data: dataPayload,
+      ast: iterResult.contextPack?.ast || null,
+      astAnalysis: iterResult.contextPack?.ast?.structuralFindings || null,
+      indexCoverage: iterResult.contextPack?.indexes || []
     });
   } catch (error) {
     handleSafeError(res, error, 'AI candidate üretilemedi.');
@@ -739,33 +730,27 @@ router.post('/refactor/compare', async (req, res) => {
       }
     }
 
-    // 3. Performance Benchmark (STATISTICS IO / TIME)
-    // If validation strictly failed, we can still run benchmark or skip based on safety
+    // 3. Performance Benchmark (STATISTICS IO / TIME via Alternating A/B/B/A/A/B)
     if (runBenchmark) {
       try {
-        originalBench = await workbench.executeBenchmark({
-          sql: cleanOrig,
+        const altResult = await workbench.executeAlternatingBenchmark({
+          originalSql: cleanOrig,
+          candidateSql: cleanCand,
           database,
           runs: benchmarkRuns,
           warmUp: true
         });
-      } catch (bErr1) {
-        originalBench = { error: bErr1.message, metrics: { medianDurationMs: 0, medianLogicalReads: 0 } };
-      }
 
-      try {
-        candidateBench = await workbench.executeBenchmark({
-          sql: cleanCand,
-          database,
-          runs: benchmarkRuns,
-          warmUp: true
-        });
-      } catch (bErr2) {
-        candidateBench = { error: bErr2.message, metrics: { medianDurationMs: 0, medianLogicalReads: 0 } };
-      }
-
-      if (originalBench && candidateBench) {
-        benchComp = benchmarkComparison.compareBenchmarks(originalBench, candidateBench);
+        if (altResult.ok) {
+          originalBench = altResult.original;
+          candidateBench = altResult.candidate;
+          benchComp = benchmarkComparison.compareBenchmarks(originalBench, candidateBench);
+          benchComp.executionPattern = altResult.executionPattern;
+          benchComp.alternatingRuns = altResult.runs;
+        }
+      } catch (bErr) {
+        originalBench = { error: bErr.message, metrics: { medianDurationMs: 0, medianLogicalReads: 0 } };
+        candidateBench = { error: bErr.message, metrics: { medianDurationMs: 0, medianLogicalReads: 0 } };
       }
     }
 

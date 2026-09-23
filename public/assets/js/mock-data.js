@@ -20,6 +20,7 @@ window.STUDIO_MOCK = {
       dependents: 27,
       reads: '4.1B',
       median: '284s',
+      isRegressed: true,
       modified: '03.09.2026 16:47'
     },
     {
@@ -35,6 +36,7 @@ window.STUDIO_MOCK = {
       dependents: 18,
       reads: '2.7B',
       median: '96s',
+      isRegressed: true,
       modified: '02.09.2026 14:10'
     },
     {

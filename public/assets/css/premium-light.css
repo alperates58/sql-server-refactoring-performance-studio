@@ -205,6 +205,11 @@
 :root[data-theme="light"] :is(.wb-tab-bar, #refactorProviderPill, .risk-bar-track, .bar-track, .val-pane-header) { background: var(--surface2); color: var(--text-secondary); border-color: var(--line); }
 :root[data-theme="light"] .metric-top .trend { font-size: 10px !important; }
 :root[data-theme="light"] .metric-card { padding: 12px; }
+:root[data-theme="light"] .hero-grid.compact-summary { background: linear-gradient(110deg, #ffffff 45%, #f4f0fa); border-color: #e4dfed; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04); }
+:root[data-theme="light"] .kpi-5-grid .metric-card { background: #ffffff; border-color: #e4dfed; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04); }
+:root[data-theme="light"] .risk-row { border-top-color: #ebe7f2; }
+:root[data-theme="light"] .risk-row:hover { background: #f8f6fc; }
+:root[data-theme="light"] .timeseries-empty-compact { background: #f9f8fc !important; border-color: #e0dbe9 !important; }
 :root[data-theme="light"] ::selection { background: #ded3f4; color: #332154; }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #cbd0db; border: 3px solid var(--surface2); border-radius: 10px; }
 :root[data-theme="light"] ::-webkit-scrollbar-track { background: var(--surface2); }

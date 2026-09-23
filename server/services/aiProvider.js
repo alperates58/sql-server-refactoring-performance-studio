@@ -111,6 +111,79 @@ function buildRefactorPrompt(payload) {
     JSON.stringify(payload, null, 2);
 }
 
+function getProviderCapabilities({ provider, model } = {}) {
+  const p = (provider || 'deepseek').toLowerCase();
+  const m = (model || '').toLowerCase();
+  const isDeepSeek = p.includes('deepseek') || m.includes('deepseek');
+  const isOpenAi = p.includes('openai') || m.includes('gpt');
+  const isAnthropic = p.includes('anthropic') || m.includes('claude');
+
+  return {
+    provider: p,
+    model: m,
+    supportsJsonSchema: isDeepSeek || isOpenAi,
+    supportsTemperature: !isAnthropic,
+    supportsSeed: isOpenAi,
+    recommendedTemperature: 0.05
+  };
+}
+
+function buildStructuredRefactorPrompt(contextPack, iterationFeedback = null) {
+  let prompt = `You are a principal Microsoft SQL Server query performance engineer and database architect.\n\n` +
+    `CRITICAL INVARIANTS & SAFETY GUARDRAILS:\n` +
+    `1. Preserve EXACT observable output semantics: column count, ordinal column order, column names, SQL data types, nullability, row multiplicity, and filter predicates.\n` +
+    `2. Never assume that CTEs materialize. SQL Server optimizer inlines CTE definitions unless proven otherwise.\n` +
+    `3. Every rewrite recommendation must include explicit technical rationale in TURKISH (Türkçe).\n` +
+    `4. COSMETIC REWRITE BAN (STRICT): Renaming aliases, reformatting SQL, changing indentation, renaming CTEs, or moving expressions without relational algebraic effect is STRICTLY FORBIDDEN and will be flagged as NO_MEANINGFUL_REWRITE and REJECTED.\n` +
+    `5. FIRST-CLASS REFUSAL STATUSES: You do NOT have to generate candidate SQL on every request! If no safe structural optimization exists, return status "NO_SAFE_OPTIMIZATION_FOUND". If the query is already SARGable and the bottleneck is an unindexed table, return status "NEEDS_INDEX_CHANGE".\n` +
+    `6. STRUCTURED HYPOTHESIS BEFORE SQL: Formulate a concrete hypothesis identifying the exact bottleneck, root cause, proposed change, and target metric (logical_reads, cpu, duration, plan_shape).\n` +
+    `7. PERFORMANCE CLAIMS GUARDRAIL: Strict prohibition of speculative percentages (e.g. "%80 daha hızlı" is FORBIDDEN). Only specify expectedMetric.\n` +
+    `8. Do NOT wrap output in CREATE VIEW or ALTER VIEW. Format as executable query (WITH ... SELECT or SELECT ...).\n\n`;
+
+  if (iterationFeedback) {
+    prompt += `PREVIOUS ITERATION FEEDBACK (CRITICAL - DO NOT REPEAT):\n` +
+      `Previous Strategy: ${iterationFeedback.previousStrategyId || 'UNKNOWN'}\n` +
+      `Measured Results: Reads Delta: ${iterationFeedback.readsDeltaPercent ?? 'N/A'}%, CPU Delta: ${iterationFeedback.cpuDeltaPercent ?? 'N/A'}%, Duration Delta: ${iterationFeedback.durationDeltaPercent ?? 'N/A'}%\n` +
+      `Plan Result: ${iterationFeedback.planSummary || 'Yürütme planı değişmedi, aynı tarama operatörleri korundu.'}\n` +
+      `Unaddressed Findings: ${(iterationFeedback.unaddressedFindings || []).join(', ') || 'Yok'}\n` +
+      `DIRECTIVE: Your previous candidate was ineffective and produced an identical execution plan. Do NOT repeat strategy ${iterationFeedback.previousStrategyId || 'previous approach'}. Formulate a fundamentally different structural hypothesis, or if SQL rewrite cannot resolve this, return status "NEEDS_INDEX_CHANGE" or "NO_SAFE_OPTIMIZATION_FOUND".\n\n`;
+  }
+
+  prompt += `RESPONSE FORMAT (MANDATORY JSON):\n` +
+    `You must respond with a single valid JSON object strictly matching this schema:\n` +
+    `{\n` +
+    `  "status": "CANDIDATE_GENERATED | NO_SAFE_OPTIMIZATION_FOUND | NEEDS_INDEX_CHANGE | NEEDS_STATISTICS_ATTENTION | INSUFFICIENT_EVIDENCE",\n` +
+    `  "strategyId": "STRING_IDENTIFIER_OF_STRATEGY (e.g. SARGABLE_RANGE_REWRITE, PRE_AGGREGATE_CTE, APPLY_TO_JOIN)",\n` +
+    `  "hypothesis": {\n` +
+    `    "bottlenecks": [\n` +
+    `      {\n` +
+    `        "findingId": "F01",\n` +
+    `        "evidence": "Clustered Index Scan on Table",\n` +
+    `        "cause": "Function wrapping column",\n` +
+    `        "proposedChange": "Rewrite to range predicate",\n` +
+    `        "expectedMetric": "logical_reads | cpu | duration | plan_shape"\n` +
+    `      }\n` +
+    `    ]\n` +
+    `  },\n` +
+    `  "candidateSql": "The complete executable T-SQL query (null if status is not CANDIDATE_GENERATED)",\n` +
+    `  "changes": [\n` +
+    `    {\n` +
+    `      "findingId": "F01",\n` +
+    `      "changeId": "C01",\n` +
+    `      "description": "Explanation in Turkish"\n` +
+    `    }\n` +
+    `  ],\n` +
+    `  "addressedFindings": ["F01"],\n` +
+    `  "unaddressedFindings": [],\n` +
+    `  "risks": [],\n` +
+    `  "explanation": "Summary of decision in Turkish"\n` +
+    `}\n\n` +
+    `CONTEXT PACK:\n` +
+    JSON.stringify(contextPack, null, 2);
+
+  return prompt;
+}
+
 function normalizeChatUrl(baseUrl) {
   let url = (baseUrl || 'https://api.deepseek.com').trim().replace(/\/+$/, '');
   if (!url.endsWith('/chat/completions')) {
@@ -383,6 +456,175 @@ async function proposeRefactor(params = {}) {
   };
 }
 
+function extractJsonPayload(content = '') {
+  let clean = (content || '').trim();
+  const jsonBlockMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  if (jsonBlockMatch && jsonBlockMatch[1]) {
+    clean = jsonBlockMatch[1].trim();
+  } else {
+    const firstBrace = clean.indexOf('{');
+    const lastBrace = clean.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      clean = clean.slice(firstBrace, lastBrace + 1).trim();
+    }
+  }
+  return JSON.parse(clean);
+}
+
+async function proposeStructuredRefactor(params = {}) {
+  const {
+    contextPack,
+    iterationFeedback = null,
+    apiKey,
+    baseUrl,
+    model,
+    temperature,
+    maxTokens
+  } = params;
+
+  if (!contextPack) throw new Error('contextPack parametresi zorunludur.');
+
+  const key = apiKey || settings.getApiKey();
+  if (!key) throw new Error('AI API anahtarı eksik. Lütfen Ayarlar sekmesinden API anahtarınızı girin ve kaydedin.');
+  if (!global.fetch) throw new Error('Node.js 20+ fetch API gereklidir.');
+
+  const conf = settings.getConfig().ai;
+  const activeBaseUrl = baseUrl || conf.baseUrl || 'https://api.deepseek.com';
+  const url = normalizeChatUrl(activeBaseUrl);
+  let activeModel = (model || conf.model || 'deepseek-flash').trim();
+  if (!activeModel || activeModel.toLowerCase() === 'deepseek-v4-flash' || activeModel.toLowerCase() === 'deepseek-coder') {
+    activeModel = 'deepseek-flash';
+  }
+
+  const capabilities = getProviderCapabilities({ provider: conf.provider, model: activeModel });
+  const activeTemp = capabilities.supportsTemperature
+    ? (temperature ?? capabilities.recommendedTemperature)
+    : undefined;
+  const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
+
+  const promptContent = buildStructuredRefactorPrompt(contextPack, iterationFeedback);
+
+  const requestBody = {
+    model: activeModel,
+    max_tokens: activeTokens,
+    messages: [
+      {
+        role: 'system',
+        content: 'You are a principal Microsoft SQL Server performance architect. You always respond strictly with a single valid JSON object following the required schema.'
+      },
+      {
+        role: 'user',
+        content: promptContent
+      }
+    ]
+  };
+
+  if (activeTemp !== undefined) {
+    requestBody.temperature = activeTemp;
+  }
+  if (capabilities.supportsJsonSchema) {
+    requestBody.response_format = { type: 'json_object' };
+  }
+
+  let response = await fetchWithTimeout(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`
+    },
+    body: JSON.stringify(requestBody)
+  }, DEFAULT_AI_TIMEOUT_MS);
+
+  if (!response.ok) {
+    const errorBody = await response.text().catch(() => '');
+    throw new Error(parseApiError(response, errorBody, key));
+  }
+
+  const resJson = await response.json();
+  const choice = resJson.choices?.[0];
+  const rawContent = (choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '').trim();
+
+  let parsed = null;
+  try {
+    parsed = extractJsonPayload(rawContent);
+  } catch (parseErr) {
+    // Controlled 1-attempt repair retry
+    try {
+      const repairRes = await fetchWithTimeout(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`
+        },
+        body: JSON.stringify({
+          model: activeModel,
+          max_tokens: 2048,
+          messages: [
+            {
+              role: 'system',
+              content: 'Fix the following invalid JSON string and output ONLY a single valid JSON object with no explanations or markdown wrapping.'
+            },
+            {
+              role: 'user',
+              content: rawContent.slice(0, 4000)
+            }
+          ]
+        })
+      }, 10000);
+
+      if (repairRes.ok) {
+        const repairJson = await repairRes.json();
+        const repairedText = repairJson.choices?.[0]?.message?.content || '';
+        parsed = extractJsonPayload(repairedText);
+      }
+    } catch (_) {}
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    return {
+      ok: false,
+      status: 'AI_RESPONSE_INVALID',
+      error: 'AI geçerli bir JSON yanıtı döndüremedi.',
+      rawContent
+    };
+  }
+
+  // Normalize candidate SQL
+  let candidateSql = parsed.candidateSql ? String(parsed.candidateSql).trim() : null;
+  if (candidateSql) {
+    const viewRegex = /^\s*(?:CREATE|ALTER)\s+VIEW\s+[^\r\n]+?\s+AS\s+([\s\S]+)$/i;
+    const viewMatch = candidateSql.match(viewRegex);
+    if (viewMatch && viewMatch[1]) {
+      candidateSql = viewMatch[1].trim();
+    }
+  }
+
+  const validStatuses = [
+    'CANDIDATE_GENERATED',
+    'NO_SAFE_OPTIMIZATION_FOUND',
+    'NEEDS_INDEX_CHANGE',
+    'NEEDS_STATISTICS_ATTENTION',
+    'INSUFFICIENT_EVIDENCE'
+  ];
+
+  const status = validStatuses.includes(parsed.status) ? parsed.status : (candidateSql ? 'CANDIDATE_GENERATED' : 'INSUFFICIENT_EVIDENCE');
+
+  return {
+    ok: true,
+    status,
+    strategyId: parsed.strategyId || 'GENERAL_REWRITE',
+    hypothesis: parsed.hypothesis || null,
+    candidateSql,
+    changes: Array.isArray(parsed.changes) ? parsed.changes : [],
+    addressedFindings: Array.isArray(parsed.addressedFindings) ? parsed.addressedFindings : [],
+    unaddressedFindings: Array.isArray(parsed.unaddressedFindings) ? parsed.unaddressedFindings : [],
+    risks: Array.isArray(parsed.risks) ? parsed.risks : [],
+    explanation: parsed.explanation || '',
+    model: resJson.model || activeModel,
+    rawContent
+  };
+}
+
 function buildAnalyzePrompt(payload) {
   return `You are a principal Microsoft SQL Server performance architect and query tuning specialist.\n\n` +
     `YOUR MISSION:\n` +
@@ -607,9 +849,12 @@ async function deepAnalyzeQuery(params = {}) {
 
 module.exports = {
   buildRefactorPrompt,
+  buildStructuredRefactorPrompt,
   buildAnalyzePrompt,
   buildDeepAnalyzePrompt,
   proposeRefactor,
+  proposeStructuredRefactor,
+  getProviderCapabilities,
   analyzeQuery,
   deepAnalyzeQuery,
   generateCandidate: proposeRefactor,

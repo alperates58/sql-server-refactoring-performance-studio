@@ -516,7 +516,8 @@ function findTopLevelJoins(fromSection) {
     'FULL JOIN',
     'CROSS JOIN',
     'CROSS APPLY',
-    'OUTER APPLY'
+    'OUTER APPLY',
+    'JOIN'
   ];
 
   const results = [];
@@ -546,7 +547,7 @@ function findTopLevelJoins(fromSection) {
             const isEnd = nextPos >= fromSection.length || /[\s(),;]/.test(fromSection[nextPos]);
             if (isEnd) {
               results.push({
-                type: jt.replace(/\s+OUTER\s+/, ' ').replace(/\s+/, ' '),
+                type: jt === 'JOIN' ? 'INNER JOIN' : jt.replace(/\s+OUTER\s+/, ' ').replace(/\s+/, ' '),
                 start: i,
                 end: nextPos
               });

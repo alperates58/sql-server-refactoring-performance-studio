@@ -206,8 +206,47 @@ function detectImplicitConversions(predicates = [], tableSchemas = {}) {
   return findings;
 }
 
+/**
+ * Fast, non-blocking approximate row count retrieval via sys.partitions
+ * Guardrail: Zero COUNT(*) execution on user tables.
+ */
+async function batchGetApproximateRowCounts(database, tableNames = []) {
+  if (!tableNames || !tableNames.length) return {};
+  const cleanTables = [...new Set(tableNames.map(t => t.replace(/[\[\]]/g, '').trim()))].filter(Boolean);
+  const pool = db.getPool(database || db.status().primaryDatabase);
+  if (!pool) return {};
+
+  try {
+    const tableListSql = cleanTables.map((_, idx) => `@tbl${idx}`).join(', ');
+    const query = `
+      SELECT 
+        t.name AS table_name,
+        SUM(p.rows) AS approx_rows
+      FROM sys.tables t
+      JOIN sys.partitions p ON t.object_id = p.object_id
+      WHERE p.index_id IN (0, 1) AND t.name IN (${tableListSql})
+      GROUP BY t.name;
+    `;
+    const request = pool.request();
+    cleanTables.forEach((tbl, idx) => {
+      request.input(`tbl${idx}`, tbl);
+    });
+    const res = await request.query(query);
+    const result = {};
+    for (const row of res.recordset || []) {
+      result[row.table_name.toLowerCase()] = Number(row.approx_rows) || 0;
+    }
+    return result;
+  } catch (err) {
+    console.warn('[SchemaMetadata] Approximate row counts could not be retrieved:', err.message);
+    return {};
+  }
+}
+
 module.exports = {
   batchGetSchemas,
+  batchGetApproximateRowCounts,
   detectImplicitConversions,
   clearSchemaCache
 };
+

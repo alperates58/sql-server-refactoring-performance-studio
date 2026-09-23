@@ -521,11 +521,161 @@ function clearWorkbenchSessions() {
   return defaultStorage.clearWorkbenchSessions();
 }
 
+/**
+ * Alternating benchmark execution (A/B/B/A/A/B pattern).
+ * Completely eliminates warm-cache bias between original and candidate queries.
+ * Preserves zero-mutation rule (no DBCC DROPCLEANBUFFERS or FREEPROCCACHE).
+ */
+async function executeAlternatingBenchmark({
+  originalSql,
+  candidateSql,
+  database = null,
+  warmUp = true,
+  timeoutMs = 30000
+} = {}) {
+  const vOrig = validateReadOnly(originalSql);
+  if (!vOrig.valid) throw new Error(`Orijinal sorgu kural ihlali: ${vOrig.reason}`);
+  const vCand = validateReadOnly(candidateSql);
+  if (!vCand.valid) throw new Error(`Aday sorgu kural ihlali: ${vCand.reason}`);
+
+  const targetDb = database || db.status().primaryDatabase;
+  const pool = db.getPool(targetDb);
+  if (!pool) throw new Error(`"${targetDb}" veritabanı bağlantı havuzu bulunamadı.`);
+
+  // 1. Warmup
+  if (warmUp) {
+    try {
+      const warmReq1 = pool.request();
+      warmReq1.timeout = timeoutMs;
+      await warmReq1.batch(`SET NOCOUNT ON; ${originalSql};`);
+    } catch (_) {}
+    try {
+      const warmReq2 = pool.request();
+      warmReq2.timeout = timeoutMs;
+      await warmReq2.batch(`SET NOCOUNT ON; ${candidateSql};`);
+    } catch (_) {}
+  }
+
+  // 2. Alternating sequence: A (Orig), B (Cand), B (Cand), A (Orig), A (Orig), B (Cand)
+  const sequence = [
+    { target: 'ORIGINAL', sql: originalSql },
+    { target: 'CANDIDATE', sql: candidateSql },
+    { target: 'CANDIDATE', sql: candidateSql },
+    { target: 'ORIGINAL', sql: originalSql },
+    { target: 'ORIGINAL', sql: originalSql },
+    { target: 'CANDIDATE', sql: candidateSql }
+  ];
+
+  const runs = [];
+
+  for (let idx = 0; idx < sequence.length; idx++) {
+    const item = sequence[idx];
+    const iterReq = pool.request();
+    iterReq.timeout = timeoutMs;
+    const msgs = [];
+    iterReq.on('info', info => {
+      if (info && info.message) msgs.push(info.message);
+    });
+
+    const startTime = process.hrtime.bigint();
+    try {
+      const wrapped = `
+        SET NOCOUNT ON;
+        SET STATISTICS IO ON;
+        SET STATISTICS TIME ON;
+        ${item.sql};
+      `;
+      const res = await iterReq.batch(wrapped);
+      const endTime = process.hrtime.bigint();
+      const durMs = Number((endTime - startTime) / 1000000n);
+
+      if (res.recordsets) {
+        for (const set of res.recordsets) {
+          if (set.messages) for (const m of set.messages) msgs.push(m.message);
+        }
+      }
+
+      const io = parseStatisticsIo(msgs);
+      const time = parseStatisticsTime(msgs);
+
+      runs.push({
+        runIndex: idx + 1,
+        target: item.target,
+        durationMs: durMs,
+        cpuMs: time.cpuMs,
+        logicalReads: io.totalLogicalReads,
+        physicalReads: io.totalPhysicalReads,
+        rowCount: (res.recordset || []).length
+      });
+    } catch (err) {
+      runs.push({
+        runIndex: idx + 1,
+        target: item.target,
+        error: err.message
+      });
+    } finally {
+      try {
+        await pool.request().batch('SET STATISTICS IO OFF; SET STATISTICS TIME OFF;');
+      } catch (_) {}
+    }
+  }
+
+  function compileMetrics(targetRuns = []) {
+    const valid = targetRuns.filter(r => !r.error);
+    const durs = valid.map(r => r.durationMs).sort((a, b) => a - b);
+    const cpus = valid.map(r => r.cpuMs).sort((a, b) => a - b);
+    const reads = valid.map(r => r.logicalReads).sort((a, b) => a - b);
+
+    const medianDur = durs.length ? durs[Math.floor(durs.length / 2)] : 0;
+    const p95Dur = durs.length ? durs[Math.min(durs.length - 1, Math.floor(durs.length * 0.95))] : 0;
+    const minDur = durs.length ? durs[0] : 0;
+    const maxDur = durs.length ? durs[durs.length - 1] : 0;
+    const medianCpu = cpus.length ? cpus[Math.floor(cpus.length / 2)] : 0;
+    const medianReads = reads.length ? reads[Math.floor(reads.length / 2)] : 0;
+    const rows = valid.length ? valid[0].rowCount : 0;
+
+    const durVariance = medianDur > 0 ? (maxDur - minDur) / medianDur : 0;
+
+    return {
+      runs: valid,
+      runsCount: valid.length,
+      medianDurationMs: medianDur,
+      p95DurationMs: p95Dur,
+      minDurationMs: minDur,
+      maxDurationMs: maxDur,
+      medianCpuMs: medianCpu,
+      cpuMs: medianCpu,
+      medianLogicalReads: medianReads,
+      logicalReads: medianReads,
+      rowCount: rows,
+      highVariance: durVariance > 0.5
+    };
+  }
+
+  const origMetrics = compileMetrics(runs.filter(r => r.target === 'ORIGINAL'));
+  const candMetrics = compileMetrics(runs.filter(r => r.target === 'CANDIDATE'));
+
+  return {
+    ok: true,
+    executionPattern: 'A/B/B/A/A/B',
+    runs,
+    original: {
+      metrics: origMetrics,
+      runs: origMetrics.runs
+    },
+    candidate: {
+      metrics: candMetrics,
+      runs: candMetrics.runs
+    }
+  };
+}
+
 module.exports = {
   execute,
   cancelRequest,
   executePlan,
   executeBenchmark,
+  executeAlternatingBenchmark,
   getHistory,
   getWorkbenchSessions,
   saveWorkbenchSessions,

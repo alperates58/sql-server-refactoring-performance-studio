@@ -432,6 +432,12 @@
         throw new Error(data.error || 'AI optimizasyon yanıtı alınamadı.');
       }
 
+      const status = data.status || data.data?.status || 'OPTIMIZED';
+      const primaryCause = data.primaryCause || data.data?.primaryCause || 'QUERY_SHAPE';
+      const iterations = data.iterations || data.data?.iterations || [];
+      const loadGuard = data.benchmarkLoadGuard || data.data?.benchmarkLoadGuard || null;
+      const missingIndexEvidence = data.missingIndexEvidence || data.data?.missingIndexEvidence || [];
+
       const rawCandidate = data.data?.candidateSql || data.candidateSql || studioState.originalSql;
       studioState.candidateSql = extractQueryFromView(rawCandidate);
       studioState.aiSummary = data.data?.bulletPoints || data.bulletPoints || [
@@ -447,7 +453,27 @@
 
       const summaryList = document.getElementById('studioAiSummaryList');
       if (summaryList) {
-        summaryList.innerHTML = studioState.aiSummary.map(s => `<li>${escapeHtml(s)}</li>`).join('');
+        let itemsHtml = '';
+        if (status === 'NEEDS_INDEX_CHANGE') {
+          itemsHtml += `<li style="color:var(--yellow);font-weight:600">⚠️ SQL Yeniden Yazımı Gerekli Değil — Kök Neden: ${escapeHtml(primaryCause)}</li>`;
+          itemsHtml += `<li>Sorgu yapısı zaten SARGable ve sözdizimi uygundur. Performans darboğazı sorgu biçiminden değil, tablodaki eksik indeks erişiminden kaynaklanmaktadır.</li>`;
+          if (missingIndexEvidence && missingIndexEvidence.length > 0) {
+            itemsHtml += `<li><strong>Önerilen İndeksler:</strong> ${escapeHtml(missingIndexEvidence.map(m => m.impact ? `${m.table} (${m.impact}% tahmini etki)` : m.table).join(', '))}</li>`;
+          }
+        } else if (status === 'NO_SAFE_OPTIMIZATION_FOUND') {
+          itemsHtml += `<li style="color:var(--accent);font-weight:600">ℹ️ Güvenli Yapısal Optimizasyon Bulunamadı — Kök Neden: ${escapeHtml(primaryCause)}</li>`;
+          itemsHtml += `<li>Sorgu mevcut şema ve indeksler altında zaten en uygun yürütme biçimindedir. Kozmetik değişiklikler performansı artırmayacağı için reddedildi.</li>`;
+        } else {
+          if (iterations.length > 0) {
+            itemsHtml += `<li style="color:var(--green);font-weight:600">✓ Optimizasyon ${iterations.length}. İterasyonda Sağlandı (Kök Neden: ${escapeHtml(primaryCause)})</li>`;
+          }
+          itemsHtml += studioState.aiSummary.map(s => `<li>${escapeHtml(s)}</li>`).join('');
+        }
+
+        if (loadGuard && loadGuard.safetyLevel !== 'SAFE') {
+          itemsHtml += `<li style="color:var(--text-muted);font-size:11.5px">🛡️ Benchmark Load Guard: ${escapeHtml(loadGuard.reason)}</li>`;
+        }
+        summaryList.innerHTML = itemsHtml;
       }
 
       const risksList = document.getElementById('studioAiRisksList');
@@ -462,7 +488,13 @@
       }
 
       if (typeof helpers.toast === 'function') {
-        helpers.toast('Aday Üretildi', 'Optimize edilmiş V2 SQL hazırlandı. Lütfen doğrulama adımını çalıştırın.', 'success');
+        if (status === 'NEEDS_INDEX_CHANGE') {
+          helpers.toast('İndeks Gerekli', 'Sorgu zaten SARGable. Darboğaz eksik indeksten kaynaklanıyor.', 'warning');
+        } else if (status === 'NO_SAFE_OPTIMIZATION_FOUND') {
+          helpers.toast('Zaten Optimize', 'Sorgu mevcut şema altında zaten optimize durumda.', 'info');
+        } else {
+          helpers.toast('Aday Üretildi', 'Optimize edilmiş V2 SQL hazırlandı. Lütfen doğrulama adımını çalıştırın.', 'success');
+        }
       }
 
       setStudioStep(2);

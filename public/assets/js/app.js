@@ -497,122 +497,274 @@
   }
 
   // --- 2. Overview Page ---
+  // Safe Extraction Helpers for Health, Risk, and Findings (Guards against [object Object])
+  function getSafeHealthScore(v) {
+    if (!v) return 60;
+    const h = v.healthScore != null ? v.healthScore : v.health;
+    if (typeof h === 'object' && h !== null) {
+      const num = Number(h.score);
+      return Number.isFinite(num) ? num : 60;
+    }
+    const num = Number(h);
+    return Number.isFinite(num) ? num : 60;
+  }
+
+  function getSafeRiskScore(v) {
+    if (!v) return 0;
+    const r = v.riskScore != null ? v.riskScore : (v.risk?.score ?? v.risk);
+    if (typeof r === 'object' && r !== null) {
+      const num = Number(r.score);
+      return Number.isFinite(num) ? num : 0;
+    }
+    const num = Number(r);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function isViewRegressed(v) {
+    if (!v) return false;
+    return Boolean(
+      v.isRegressed ||
+      v.isRegression ||
+      v.runtime?.isRegressed ||
+      v.runtime?.isRegression ||
+      v.runtime?.regression?.isRegressed
+    );
+  }
+
+  function getSafeRiskCategory(v) {
+    if (!v) return 'low';
+    if (v.riskCategory) return String(v.riskCategory).toLowerCase();
+    if (v.riskLevel) return String(v.riskLevel).toLowerCase();
+    if (typeof v.risk === 'string') return v.risk.toLowerCase();
+    const score = getSafeRiskScore(v);
+    if (score >= 70) return 'critical';
+    if (score >= 45) return 'high';
+    if (score >= 20) return 'medium';
+    return 'low';
+  }
+
+  function getSafeRiskLabelTr(v) {
+    const cat = getSafeRiskCategory(v);
+    if (cat === 'critical') return 'KRİTİK';
+    if (cat === 'high') return 'YÜKSEK';
+    if (cat === 'medium') return 'ORTA';
+    return 'DÜŞÜK';
+  }
+
+  function getRiskContribution(item) {
+    if (!item) return { label: 'Normal', level: 'normal', width: 10, color: 'var(--text-muted)' };
+    const val = Number(item.value || 0);
+    const penalty = Number(item.penalty || 0);
+    if (val >= 70 || penalty >= 12) {
+      return { label: 'Yüksek', level: 'high', width: Math.min(100, Math.max(65, val)), color: 'var(--red)' };
+    }
+    if (val >= 35 || penalty >= 5) {
+      return { label: 'Orta', level: 'medium', width: Math.min(60, Math.max(35, val)), color: 'var(--yellow)' };
+    }
+    return { label: 'Normal', level: 'normal', width: Math.min(20, Math.max(5, val)), color: 'var(--text-muted)' };
+  }
+
+  function formatRuntimeReads(v) {
+    if (!v) return '—';
+    const r = v.reads;
+    if (r && r !== '—' && r !== '0' && r !== '0 B' && r !== 0) return String(r);
+    if (v.runtime?.totalReads && v.runtime.totalReads > 0) {
+      const tr = v.runtime.totalReads;
+      if (tr >= 1e9) return `${(tr / 1e9).toFixed(1)} Mr`;
+      if (tr >= 1e6) return `${(tr / 1e6).toFixed(1)} Mn`;
+      if (tr >= 1e3) return `${(tr / 1e3).toFixed(1)} B`;
+      return String(tr);
+    }
+    return '—';
+  }
+
+  function formatRuntimeMedian(v) {
+    if (!v) return '—';
+    const m = v.median;
+    if (m && m !== '—' && m !== '0ms' && m !== '0 ms' && m !== 0) return String(m);
+    if (v.runtime?.avgDurationMs != null && v.runtime.avgDurationMs > 0) {
+      return `${v.runtime.avgDurationMs} ms`;
+    }
+    return '—';
+  }
+
+  function getPrimaryFinding(v) {
+    if (!v) {
+      return {
+        title: 'Standart İnceleme',
+        detail: 'Kural ihlali tespit edilmedi',
+        severity: 'low',
+        impact: 'Sistem kaynakları üzerinde bilinen bir darboğaz bulunmuyor.',
+        evidence: 'Statik Katalog & Bağımlılık Denetimi',
+        gradeLabel: 'Normal'
+      };
+    }
+
+    // 1. Active critical regression (Priority 1)
+    if (v.runtime?.regression?.isRegressed || v.isRegressed) {
+      const regInfo = v.runtime?.regression;
+      const ratioStr = regInfo?.ratio ? ` (${regInfo.ratio})` : '';
+      return {
+        title: 'Performans Regresyonu',
+        detail: regInfo?.reason || `Son 24 saatte süre anomalisi tespit edildi${ratioStr}`,
+        severity: 'critical',
+        impact: 'Sorgu yanıt süresi ve kaynak tüketiminde ani artış.',
+        evidence: regInfo?.source || 'Query Store / DMV Cache',
+        gradeLabel: 'Yüksek (Grade A)'
+      };
+    }
+
+    // 2. High/Critical problems from backend static analysis (Priority 2)
+    if (Array.isArray(v.problems) && v.problems.length > 0) {
+      const sevOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+      const sorted = [...v.problems].sort((a, b) => {
+        const sa = typeof a === 'object' && a !== null ? (sevOrder[a.severity] ?? 4) : 4;
+        const sb = typeof b === 'object' && b !== null ? (sevOrder[b.severity] ?? 4) : 4;
+        return sa - sb;
+      });
+      const top = sorted[0];
+      if (typeof top === 'object' && top !== null) {
+        const sev = (top.severity || 'high').toLowerCase();
+        return {
+          title: top.title || top.name || 'Analiz Uyarısı',
+          detail: top.detail || 'Sorgu planında performans riski tespit edildi.',
+          severity: sev,
+          impact: top.why || (window.uiText?.findings?.[top.code]?.why) || 'Gereksiz mantıksal okuma (I/O) ve CPU tüketimi riski.',
+          evidence: top.evidence || 'Statik Bağımlılık Grafiği',
+          gradeLabel: top.evidenceGrade ? `${top.evidenceGrade}` : 'Düşük (Grade D)'
+        };
+      } else if (typeof top === 'string') {
+        return {
+          title: top,
+          detail: 'Sorgu planında yapısal uyarı.',
+          severity: 'high',
+          impact: 'Gereksiz I/O ve işlemci yükü riski.',
+          evidence: 'Statik Bağımlılık Grafiği',
+          gradeLabel: 'Düşük (Grade D)'
+        };
+      }
+    }
+
+    // 3. Repeated Base Table Access (Priority 3)
+    if ((v.repeatedBaseTableCount || 0) > 0 || (v.repeatedBaseTables && v.repeatedBaseTables.length > 0)) {
+      const count = v.repeatedBaseTableCount || v.repeatedBaseTables.length;
+      return {
+        title: 'Mükerrer Temel Tablo Erişimi',
+        detail: `Temel tablolara ${count} farklı mantıksal yoldan mükerrer erişim`,
+        severity: 'high',
+        impact: 'Aynı temel tablonun birden fazla dalda tekrar taranması I/O baskısını katlar.',
+        evidence: 'Statik Bağımlılık Grafiği',
+        gradeLabel: 'Düşük (Grade D)'
+      };
+    }
+
+    // 4. Heavy Logical Reads (Priority 4)
+    if (v.reads && (v.reads.includes('M') || v.reads.includes('B'))) {
+      return {
+        title: 'Yüksek Mantıksal Okuma Baskısı',
+        detail: `${v.reads} mantıksal okuma hacmi kaydedildi`,
+        severity: 'high',
+        impact: 'Buffer Pool bellek sayfaları üzerinde yoğun rotasyon ve churn.',
+        evidence: v.runtime?.source === 'QUERY_STORE' ? 'Query Store' : 'DMV Plan Cache',
+        gradeLabel: 'Orta (Grade B)'
+      };
+    }
+
+    // 5. Deep Dependency Hierarchy (Priority 5)
+    if ((v.depth || 1) > 3) {
+      return {
+        title: 'Derin Bağımlılık Ağacı',
+        detail: `${v.depth} seviyeli derin nesne bağımlılığı`,
+        severity: 'medium',
+        impact: 'Query optimizer derleme karmaşıklığı ve görünmez alt maliyetler.',
+        evidence: 'Statik Bağımlılık Grafiği',
+        gradeLabel: 'Düşük (Grade D)'
+      };
+    }
+
+    // 6. Default Normal
+    return {
+      title: 'Normal Çalışma',
+      detail: 'Kritik kural ihlali tespit edilmedi',
+      severity: 'low',
+      impact: 'Bilinen performans darboğazı veya kural ihlali bulunmuyor.',
+      evidence: 'Statik Katalog Denetimi',
+      gradeLabel: 'Normal'
+    };
+  }
+
+  // --- 2. Overview Page (Redesigned) ---
   function renderOverview() {
     const summary = state.data.summary || {};
     const m = state.data.metrics || {};
     const views = state.data.views || [];
-    const deps = state.data.dependencies || [];
     const duplicates = state.data.duplicates || [];
     const regressions = state.data.regressions || [];
     const pressures = state.data.pressures || [];
 
+    // Compact Kicker & Headline
     const heroKicker = $('#heroKickerText');
     if (heroKicker) {
       heroKicker.textContent = state.isLive
-        ? `${state.connectionInfo?.database || 'SQL'} Canlı · Read-only Denetim Modu`
-        : 'Demo Veritabanı · Read-only Denetim Modu';
+        ? `${state.connectionInfo?.database || 'SQL'} Canlı · Salt-Okunur Denetim`
+        : 'Demo Veritabanı · Salt-Okunur Denetim';
     }
     const heroHeadline = $('#heroHeadline');
     if (heroHeadline) {
-      heroHeadline.innerHTML = `<span>${views.length}</span> view içinden <em>gerçek darboğazı</em> bul.`;
+      heroHeadline.innerHTML = `<span id="heroViewCount">${views.length}</span> view içinden bugün müdahale edilmesi gerekenleri belirle.`;
     }
 
-    // Health Orbit calculation
+    // Global DB Health Calculation & Explanation
     const healthVal = summary.avgHealth != null
       ? summary.avgHealth
       : (m.averageHealth != null
           ? m.averageHealth
-          : (views.length > 0 ? Math.round(views.reduce((acc, v) => acc + (v.healthScore != null ? v.healthScore : 65), 0) / views.length) : 72));
+          : (views.length > 0 ? Math.round(views.reduce((acc, v) => acc + getSafeHealthScore(v), 0) / views.length) : 91));
 
     const orbitHealth = $('#overviewDbHealth');
     if (orbitHealth) orbitHealth.textContent = healthVal;
 
     const orbitTrack = $('#orbitTrackValue');
     if (orbitTrack) {
-      const maxOffset = 452;
-      const offset = maxOffset - (maxOffset * (healthVal / 100));
+      const maxOffset = 301;
+      const offset = maxOffset - (maxOffset * (Math.min(100, Math.max(0, healthVal)) / 100));
       orbitTrack.setAttribute('stroke-dashoffset', Math.max(0, offset));
     }
 
-    const healthChip = $('#overviewHealthChip');
-    if (healthChip) {
-      if (healthVal < 50) {
-        healthChip.className = 'orbit-chip chip-danger';
-        healthChip.textContent = '↓ Kritik Seviye';
-      } else if (healthVal < 75) {
-        healthChip.className = 'orbit-chip chip-danger';
-        healthChip.textContent = '↓ İyileştirme Gerek';
+    const healthStatusText = $('#overviewHealthStatus');
+    if (healthStatusText) {
+      if (healthVal >= 80) {
+        healthStatusText.textContent = 'Genel Sağlık: Sağlıklı';
+        healthStatusText.style.color = 'var(--green)';
+      } else if (healthVal >= 55) {
+        healthStatusText.textContent = 'Genel Sağlık: Dikkat Gerek';
+        healthStatusText.style.color = 'var(--orange)';
       } else {
-        healthChip.className = 'orbit-chip chip-danger';
-        healthChip.style.color = 'var(--green)';
-        healthChip.style.borderColor = 'rgba(67,217,156,0.3)';
-        healthChip.style.background = 'rgba(67,217,156,0.1)';
-        healthChip.textContent = '✓ Sağlıklı';
+        healthStatusText.textContent = 'Genel Sağlık: Kritik Seviye';
+        healthStatusText.style.color = 'var(--red)';
       }
     }
 
-    // Dynamic KPI Metric Cards Calculation
+    // 5 Key KPI Metric Calculations (View Risk is Primary)
     const criticalCount = summary.criticalViews != null
       ? summary.criticalViews
-      : (m.criticalViews != null
-          ? m.criticalViews
-          : views.filter(v => (v.riskCategory === 'critical' || (v.riskScore != null && v.riskScore >= 70) || (v.healthScore != null && v.healthScore < 45))).length);
-
-    const edgesCount = summary.totalEdges != null
-      ? summary.totalEdges
-      : (m.totalEdges != null ? m.totalEdges : deps.length);
-
-    let repeatedCount = summary.repeatedAccessPatterns != null
-      ? summary.repeatedAccessPatterns
-      : (m.repeatedAccessPatterns != null ? m.repeatedAccessPatterns : 0);
-    if (!repeatedCount) {
-      pressures.forEach(p => {
-        if ((p.paths || p.pathCount || 0) > 1) repeatedCount++;
-      });
-      if (!repeatedCount) {
-        views.forEach(v => {
-          if (v.problems && (v.problems.includes('MULTIPLE_ACCESS') || v.problems.includes('REPEATED_TABLE_ACCESS'))) repeatedCount++;
-        });
-      }
-    }
+      : views.filter(v => {
+          const cat = getSafeRiskCategory(v);
+          return cat === 'critical' || getSafeRiskScore(v) >= 70;
+        }).length;
 
     const regressionsCount = regressions.length || m.activeRegressions || 0;
     const duplicatesCount = duplicates.length || m.duplicateCandidates || 0;
 
+    if ($('#stripTotalViews')) $('#stripTotalViews').textContent = views.length.toLocaleString();
     if ($('#metricCritical')) $('#metricCritical').textContent = criticalCount.toLocaleString();
-    if ($('#metricEdges')) $('#metricEdges').textContent = edgesCount.toLocaleString();
-    if ($('#metricRepeated')) $('#metricRepeated').textContent = repeatedCount.toLocaleString();
     if ($('#metricRegressions')) $('#metricRegressions').textContent = regressionsCount.toLocaleString();
     if ($('#metricDuplicates')) $('#metricDuplicates').textContent = duplicatesCount.toLocaleString();
+
+    // Fetch Index Advisor and Stale Stats asynchronously for KPI cards
     fetchOverviewIndexAndStatsCounters();
 
-    // Metric QS Status indicator
-    const metricQs = $('#metricQsStatus');
-    if (metricQs) {
-      if (state.isLive) {
-        if (state.data.runtimeSource === 'QUERY_STORE') {
-          metricQs.textContent = 'Query Store aktif';
-          metricQs.className = 'trend positive-text';
-        } else if (state.data.runtimeSource === 'PLAN_CACHE') {
-          metricQs.textContent = 'Plan Cache fallback';
-          metricQs.className = 'trend warning-text';
-        } else {
-          metricQs.textContent = 'Query Store kapalı';
-          metricQs.className = 'trend danger-text';
-        }
-      } else {
-        metricQs.textContent = 'Demo modu';
-        metricQs.className = 'trend positive-text';
-      }
-    }
-
-    // Update regression callout dynamically
-    if ($('#regressionCalloutName')) {
-      const topRegView = regressions[0]?.name || views.find(v => v.runtime?.regression?.isRegressed)?.name || views.find(v => v.riskScore >= 70)?.name || views[0]?.name || 'En Yüksek Risk';
-      $('#regressionCalloutName').textContent = topRegView;
-    }
-
-    // Update regression pill header
+    // Update Timeseries Pill in Header
     const qsPill = $('#overviewRegressionPill');
     if (qsPill) {
       if (state.isLive) {
@@ -632,7 +784,7 @@
       }
     }
 
-    // Render SVG Timeseries Chart
+    // Render SVG Timeseries Chart or Compact Fallback State
     const chartWrap = $('#overviewChartWrap');
     if (chartWrap) {
       const ts = state.data.timeseries;
@@ -644,8 +796,8 @@
         const totalReads = pts.reduce((acc, p) => acc + (p.totalReads || 0), 0);
         const avgDur = Math.round(pts.reduce((acc, p) => acc + (p.avgDurationMs || 0), 0) / n);
 
-        const w = 600, h = 175;
-        const padL = 48, padR = 20, padT = 24, padB = 28;
+        const w = 600, h = 150;
+        const padL = 48, padR = 20, padT = 18, padB = 24;
         const pw = w - padL - padR;
         const ph = h - padT - padB;
         const getX = i => n > 1 ? padL + (i / (n - 1)) * pw : padL + pw / 2;
@@ -665,11 +817,11 @@
         }).join('');
 
         chartWrap.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;padding:0 4px">
-            <span style="font-size:12px;color:var(--text-muted)">Query Store Yürütme Trendi (${ts.window || '24h'})</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;padding:0 4px">
+            <span style="font-size:11.5px;color:var(--text-muted)">Query Store Yürütme Trendi (${ts.window || '24h'})</span>
             <span style="font-size:11.5px;color:var(--text-secondary)">Ort: <b style="color:var(--text-primary)">${avgDur} ms</b> · Toplam Okuma: <b>${totalReads > 1e6 ? (totalReads / 1e6).toFixed(1) + 'M' : totalReads.toLocaleString()}</b> · Çağrı: <b>${totalExecs.toLocaleString()}</b></span>
           </div>
-          <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:100%;max-height:185px;overflow:visible">
+          <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:100%;max-height:160px;overflow:visible">
             <defs>
               <linearGradient id="qsChartGrad" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stop-color="#7c5cff" stop-opacity="0.35"/>
@@ -685,23 +837,30 @@
             <path d="${areaD}" fill="url(#qsChartGrad)"/>
             <path d="${pathD}" fill="none" stroke="#9b82ff" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
             ${circles}
-            <text x="${padL}" y="${h - 6}" font-size="10.5" fill="#64748b" text-anchor="start">${firstLabel}</text>
-            <text x="${w - padR}" y="${h - 6}" font-size="10.5" fill="#64748b" text-anchor="end">${lastLabel}</text>
+            <text x="${padL}" y="${h - 4}" font-size="10" fill="#64748b" text-anchor="start">${firstLabel}</text>
+            <text x="${w - padR}" y="${h - 4}" font-size="10" fill="#64748b" text-anchor="end">${lastLabel}</text>
           </svg>
         `;
       } else {
         const isFallback = state.isLive && state.data.runtimeSource === 'PLAN_CACHE';
         chartWrap.innerHTML = `
-          <div class="empty-state" style="padding:44px 16px">
-            <div class="empty-icon">📈</div>
-            <h3>Zaman Serisi Verisi Bulunamadı</h3>
-            <p>${state.isLive ? (isFallback ? 'Plan Cache fallback modunda zaman serisi saklanmaz (Query Store kapalı).' : 'Seçili zaman aralığında Query Store performans kaydı tespit edilmedi.') : 'Demo veritabanında zaman serisi kaydı bulunmuyor.'}</p>
+          <div class="timeseries-empty-compact" style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;background:rgba(14,18,26,0.6);border:1px dashed var(--line);border-radius:var(--radius-sm);gap:16px">
+            <div style="display:flex;align-items:center;gap:14px">
+              <span style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:4px;background:rgba(247,200,106,0.12);color:var(--yellow);border:1px solid rgba(247,200,106,0.25);white-space:nowrap">${isFallback ? 'Plan Cache Fallback' : 'Zaman Serisi Yok'}</span>
+              <div>
+                <h4 style="margin:0;font-size:13.5px;font-weight:600;color:var(--text-primary)">Zaman Serisi Verisi Bulunamadı</h4>
+                <p style="margin:2px 0 0;font-size:12px;color:var(--text-muted)">${isFallback ? 'Plan Cache fallback modunda zaman serisi saklanmıyor veya Query Store kapalı.' : 'Seçili aralıkta Query Store çalışma zamanı kaydı bulunmuyor.'}</p>
+              </div>
+            </div>
+            <div>
+              <button class="button ghost small" data-goto="settings" style="white-space:nowrap">Ayarları Aç →</button>
+            </div>
           </div>
         `;
       }
     }
 
-    // Priority List Sorting
+    // Section 4: Priority List Sorting (Deterministic & Actionable)
     const sortMode = state.currentSort || 'risk';
     let sortedViews = [...views];
     if (sortMode === 'reads') {
@@ -711,73 +870,130 @@
           const match = String(v.reads || '0').match(/^([\d.]+)\s*([KMB])?$/i);
           return match ? Number(match[1]) * ({ K: 1e3, M: 1e6, B: 1e9 }[match[2]?.toUpperCase()] || 1) : 0;
         };
-        const aReads = numericReads(a);
-        const bReads = numericReads(b);
-        return bReads - aReads;
+        return numericReads(b) - numericReads(a);
       });
     } else if (sortMode === 'regression') {
       sortedViews.sort((a, b) => {
         const scoreB = b.opportunityScore != null ? b.opportunityScore : (b.runtime?.regression?.severityScore || (b.runtime?.isRegressed ? 50 : 0));
         const scoreA = a.opportunityScore != null ? a.opportunityScore : (a.runtime?.regression?.severityScore || (a.runtime?.isRegressed ? 50 : 0));
         if (scoreB !== scoreA) return scoreB - scoreA;
-        return (b.riskScore || 0) - (a.riskScore || 0);
+        return getSafeRiskScore(b) - getSafeRiskScore(a);
       });
     } else {
-      sortedViews.sort((a, b) => (b.riskScore || 0) - (a.riskScore || 0));
+      // Primary: Risk Score descending
+      sortedViews.sort((a, b) => getSafeRiskScore(b) - getSafeRiskScore(a));
     }
 
-    const riskList = $('#overviewRiskList');
-    if (riskList) {
-      riskList.innerHTML = sortedViews.slice(0, 5).map(v => {
-        const depCount = v.dependentCount != null ? v.dependentCount : (Array.isArray(v.dependents) ? v.dependents.length : (v.dependents || 0));
-        const healthScore = v.health != null ? v.health : (v.healthScore != null ? v.healthScore : 60);
-        const riskLevel = v.risk || v.riskLevel || v.riskCategory || 'low';
-        const riskScore = v.riskScore != null ? v.riskScore : 0;
-        const viewName = v.name || v.view_name;
-        const oppScore = v.opportunityScore != null ? Math.round(v.opportunityScore) : (v.runtime?.regression?.severityScore != null ? Math.round(v.runtime.regression.severityScore) : null);
-        const regInfo = v.runtime?.regression;
-        const regBadge = regInfo?.isRegressed
-          ? `<span class="severity-pill critical" style="font-size:9.5px;padding:1px 5px;margin-left:6px">⚡ ${regInfo.severity || 'KRİTİK'}</span>`
-          : '';
-
-        return `
-          <div class="risk-row" data-view="${viewName}">
-            <i class="risk-level-bar ${severityClass(riskLevel)}"></i>
-            <div class="risk-name">
-              <strong>${viewName}${regBadge}</strong>
-              <small>${v.schema_name || 'dbo'} · depth ${v.depth || 1} · ${depCount} dependents</small>
-            </div>
-            <div class="health-number ${severityClass(riskLevel)}">${healthScore}</div>
-            <div class="risk-cell"><small>Risk</small><strong>${riskScore}</strong></div>
-            ${sortMode === 'regression' ? `
-              <div class="risk-cell"><small>Müdahale</small><strong style="color:${oppScore && oppScore >= 60 ? 'var(--red)' : 'var(--yellow)'}">${oppScore != null ? oppScore + '/100' : '—'}</strong></div>
-            ` : `
-              <div class="risk-cell"><small>24h Reads</small><strong>${v.reads || '—'}</strong></div>
-            `}
-            <div class="risk-cell"><small>Median</small><strong>${v.median || '—'}</strong></div>
-          </div>
+    const riskTableBody = $('#overviewRiskTableBody');
+    if (riskTableBody) {
+      if (sortedViews.length === 0) {
+        riskTableBody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align:center;padding:24px 16px;color:var(--text-muted)">
+              Bugün kritik riskli view bulunmadı. Sistem sağlıklı görünüyor.
+            </td>
+          </tr>
         `;
-      }).join('');
+      } else {
+        riskTableBody.innerHTML = sortedViews.slice(0, 5).map(v => {
+          const depCount = v.dependentCount != null ? v.dependentCount : (Array.isArray(v.dependents) ? v.dependents.length : (v.dependents || 0));
+          const riskLevel = getSafeRiskCategory(v);
+          const riskScore = getSafeRiskScore(v);
+          const viewName = v.name || v.view_name;
+          const schema = v.schema_name || v.schema || 'dbo';
+          const finding = getPrimaryFinding(v);
+          const regInfo = v.runtime?.regression;
+          const isRegressed = regInfo?.isRegressed || v.isRegressed;
 
-      $$('.risk-row').forEach(r => r.addEventListener('click', () => {
-        selectView(r.dataset.view);
-        gotoPage('views');
-      }));
+          return `
+            <tr class="dense-table-row" data-view="${viewName}" style="cursor:pointer">
+              <td>
+                <div class="dense-view-cell">
+                  <strong class="dense-view-name" title="${viewName}">${viewName}</strong>
+                  <small class="dense-view-meta">${schema} · depth ${v.depth || 1} · ${depCount} bağımlı</small>
+                </div>
+              </td>
+              <td>
+                <div class="dense-problem-cell" title="${escapeHtml(finding.detail || '')}">
+                  <span class="problem-dot ${finding.severity || 'info'}"></span>
+                  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(finding.title || '')}</span>
+                </div>
+              </td>
+              <td style="text-align:right">
+                <strong class="${severityClass(riskLevel)}" style="font-family:var(--font-family-mono);font-size:12.5px">${riskScore}</strong>
+              </td>
+              <td style="text-align:right" title="Son 24 saatte Query Store / runtime evidence üzerinden ölçülen mantıksal okumalar.">
+                <span style="font-family:var(--font-family-mono);font-size:11.5px">${v.reads || '—'}</span>
+              </td>
+              <td style="text-align:right">
+                <span style="font-size:11.5px;font-weight:600;color:${isRegressed ? 'var(--red)' : 'var(--text-secondary)'}">${isRegressed ? (regInfo?.severity || 'Kritik') : (v.median || '—')}</span>
+              </td>
+              <td style="text-align:center">
+                <button class="button ghost small btn-inspect" data-view="${viewName}" style="padding:2px 8px;font-size:11px;height:24px;line-height:1">İncele →</button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        // Wire click handlers for priority list rows and inspect buttons
+        $$('#overviewRiskTableBody tr.dense-table-row').forEach(row => {
+          row.addEventListener('click', (e) => {
+            const vName = row.dataset.view;
+            if (vName) {
+              selectView(vName);
+              gotoPage('views');
+            }
+          });
+        });
+      }
     }
 
-    // Pressure List Top 5
+    // Section 4 (Right): Table Pressure List (Top 5)
     const pressureList = $('#pressureList');
     if (pressureList) {
-      pressureList.innerHTML = pressures.slice(0, 5).map(p => `
-        <div class="pressure-item">
-          <strong>${p.name}</strong><span>${p.score}/100</span>
-          <div class="pressure-bar"><i style="width:${p.score}%"></i></div>
-          <div class="pressure-meta"><span>${p.refs} view</span><span>${p.paths} path · ${p.critical || 0} critical</span></div>
-        </div>
-      `).join('') || '<div class="empty-state"><p>Base tablo baskısı tespit edilmedi.</p></div>';
+      if (!pressures || pressures.length === 0) {
+        pressureList.innerHTML = '<div class="empty-state" style="padding:16px 0"><p style="font-size:12px;color:var(--text-muted)">Base tablo baskısı tespit edilmedi.</p></div>';
+      } else {
+        const maxScore = Math.max(...pressures.slice(0, 5).map(p => p.score || 1), 100);
+        pressureList.innerHTML = pressures.slice(0, 5).map((p, idx) => {
+          const barWidth = Math.min(100, Math.max(10, Math.round(((p.score || 0) / maxScore) * 100)));
+          return `
+            <div class="dense-pressure-row" data-table="${p.name}" title="${p.name} tablosunu içeren view'ları göster">
+              <div class="pressure-left">
+                <span class="rank-badge">#${idx + 1}</span>
+                <div class="pressure-info">
+                  <strong class="pressure-name" title="${p.name}">${p.name}</strong>
+                  <span class="pressure-metrics">${p.refs || 0} view · ${p.paths || 0} yol · ${p.critical || 0} kritik</span>
+                </div>
+              </div>
+              <div class="pressure-right">
+                <div class="pressure-mini-bar-wrap" title="Baskı Skoru: ${p.score}/100">
+                  <div class="pressure-mini-bar" style="width:${barWidth}%"></div>
+                </div>
+                <span style="font-family:var(--font-family-mono);font-size:11.5px;font-weight:700;color:var(--text-secondary);min-width:24px;text-align:right">${p.score}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        // Clicking a pressure item filters View Inventory by that table
+        $$('#pressureList .dense-pressure-row').forEach(item => {
+          item.addEventListener('click', () => {
+            const tName = item.dataset.table;
+            if (tName) {
+              const searchInput = $('#viewSearch');
+              if (searchInput) {
+                searchInput.value = tName;
+                searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+              gotoPage('views');
+            }
+          });
+        });
+      }
     }
 
-    // Feed items from findings
+    // Section 5 (Right): Analysis Findings Feed (No penalty numbers, actionable)
     const feed = $('#overviewFeed');
     if (feed) {
       const topProblems = [];
@@ -788,17 +1004,36 @@
           }
         }
       }
-      if (topProblems.length > 0) {
-        feed.innerHTML = topProblems.map(p => `
-          <div class="feed-item">
-            <span class="feed-icon ${p.severity === 'CRITICAL' ? 'danger' : p.severity === 'HIGH' ? 'warning' : 'info'}">${p.symbol || '!'}</span>
-            <div>
-              <strong>${p.title}</strong>
-              <p>${p.detail}</p>
-              <small>${p.viewName} · Ceza: -${p.penalty}</small>
+
+      if (topProblems.length === 0) {
+        feed.innerHTML = '<div class="empty-state" style="padding:16px 0"><p style="font-size:12px;color:var(--text-muted)">Önemli bulgu bulunamadı. Sistem analizinde kritik kural ihlali tespit edilmedi.</p></div>';
+      } else {
+        feed.innerHTML = topProblems.map(p => {
+          const sev = (p.severity || 'INFO').toLowerCase();
+          const dotClass = sev === 'critical' || sev === 'danger' ? 'critical' : (sev === 'high' || sev === 'warning' ? 'high' : 'info');
+          return `
+            <div class="dense-finding-row" data-view="${p.viewName}" title="${p.viewName} detayını incele">
+              <span class="problem-dot ${dotClass}" style="margin-top:4px"></span>
+              <div class="dense-finding-content">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+                  <strong class="dense-finding-title" title="${p.title}">${p.title}</strong>
+                  <small style="font-size:10px;color:var(--purple-light);flex-shrink:0">${p.viewName}</small>
+                </div>
+                <span class="dense-finding-detail" title="${p.detail}">${p.detail}</span>
+              </div>
             </div>
-          </div>
-        `).join('');
+          `;
+        }).join('');
+
+        $$('#overviewFeed .dense-finding-row').forEach(item => {
+          item.addEventListener('click', () => {
+            const vName = item.dataset.view;
+            if (vName) {
+              selectView(vName);
+              gotoPage('views');
+            }
+          });
+        });
       }
     }
   }
@@ -812,6 +1047,60 @@
       renderOverview();
     });
   });
+
+  // Overview Action Links & KPI Card Interactions
+  const btnViewAllPressures = $('#btnViewAllPressures');
+  if (btnViewAllPressures) {
+    btnViewAllPressures.addEventListener('click', () => {
+      const chip = $('button.filter-chip[data-view-filter="tables"]');
+      if (chip) chip.click();
+      gotoPage('views');
+    });
+  }
+
+  const kpiCardCritical = $('#kpiCardCritical');
+  if (kpiCardCritical) {
+    kpiCardCritical.addEventListener('click', () => {
+      const chip = $('button.filter-chip[data-risk="critical"]');
+      if (chip) chip.click();
+      gotoPage('views');
+    });
+  }
+
+  const kpiCardRegressions = $('#kpiCardRegressions');
+  if (kpiCardRegressions) {
+    kpiCardRegressions.addEventListener('click', () => {
+      state.currentSort = 'regression';
+      gotoPage('views');
+    });
+  }
+
+  const kpiCardIndexes = $('#kpiCardIndexes');
+  if (kpiCardIndexes) {
+    kpiCardIndexes.addEventListener('click', () => {
+      gotoPage('dba-tools');
+      const idxBtn = $('button.dba-subtab-btn[data-dba-tab="indexes"]');
+      if (idxBtn) idxBtn.click();
+    });
+  }
+
+  const kpiCardStats = $('#kpiCardStats');
+  if (kpiCardStats) {
+    kpiCardStats.addEventListener('click', () => {
+      gotoPage('dba-tools');
+      const statsBtn = $('button.dba-subtab-btn[data-dba-tab="stats"]');
+      if (statsBtn) statsBtn.click();
+    });
+  }
+
+  const kpiCardDuplicates = $('#kpiCardDuplicates');
+  if (kpiCardDuplicates) {
+    kpiCardDuplicates.addEventListener('click', () => {
+      const chip = $('button.filter-chip[data-view-filter="duplicates"]');
+      if (chip) chip.click();
+      gotoPage('views');
+    });
+  }
 
   const refreshFeedBtn = $('#refreshFeedBtn');
   if (refreshFeedBtn) {
@@ -867,8 +1156,14 @@
     }
 
     const rows = views.filter(v => {
-      const vRisk = String(v.risk || v.riskLevel || '').toLowerCase();
-      const matchesRisk = filter === 'all' || vRisk === filter;
+      const vCat = getSafeRiskCategory(v);
+      const isReg = isViewRegressed(v);
+      let matchesRisk = true;
+      if (filter === 'critical') matchesRisk = vCat === 'critical';
+      else if (filter === 'high') matchesRisk = vCat === 'high';
+      else if (filter === 'regressed') matchesRisk = isReg;
+      else if (filter !== 'all') matchesRisk = vCat === filter;
+
       const vName = String(v.name || v.view_name || '').toLocaleLowerCase('tr');
       const matchesSearch = !q || vName.includes(q) || (v.database && v.database.toLowerCase().includes(q));
       const matchesDb = dbFilter === 'all' || (v.database && v.database.toLowerCase() === dbFilter.toLowerCase());
@@ -883,12 +1178,14 @@
       return matchesRisk && matchesSearch && matchesDb && matchesSpecial;
     });
 
-    const criticalCount = views.filter(v => String(v.risk || v.riskLevel).toLowerCase() === 'critical').length;
-    const highCount = views.filter(v => String(v.risk || v.riskLevel).toLowerCase() === 'high').length;
+    const criticalCount = views.filter(v => getSafeRiskCategory(v) === 'critical').length;
+    const highCount = views.filter(v => getSafeRiskCategory(v) === 'high').length;
+    const regressedCount = views.filter(v => isViewRegressed(v)).length;
 
     if ($('#countAll')) $('#countAll').textContent = views.length;
     if ($('#countCritical')) $('#countCritical').textContent = criticalCount;
     if ($('#countHigh')) $('#countHigh').textContent = highCount;
+    if ($('#countRegressed')) $('#countRegressed').textContent = regressedCount;
     if ($('#inventoryTitle')) $('#inventoryTitle').textContent = `${views.length} View`;
     const navBadge = $('.nav-badge');
     if (navBadge) navBadge.textContent = views.length;
@@ -908,18 +1205,27 @@
       const name = v.name || v.view_name;
       const canonical = v.canonicalId || name;
       const isActive = canonical === state.selectedCanonicalId || name === state.selectedViewName;
-      const risk = v.risk || v.riskLevel || 'low';
+      const riskCategory = getSafeRiskCategory(v);
+      const riskScore = getSafeRiskScore(v);
+      const readsStr = formatRuntimeReads(v);
+      const isReg = isViewRegressed(v);
+      const dbSubtitle = (state.dbFilter === 'all' && v.database)
+        ? `<span class="view-row-db" title="${v.database}">${v.database}</span>`
+        : '';
+
+      const regIcon = isReg
+        ? `<span class="view-row-reg" title="Performans regresyonu saptandı"><svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 3 7 9 5 7 1 11"></polyline><polyline points="9 3 13 3 13 7"></polyline></svg></span>`
+        : `<span class="view-row-reg"></span>`;
+
       return `
-        <div class="view-row ${isActive ? 'active' : ''}" data-view="${name}" data-canonical="${canonical}">
-          <span class="risk-dot ${severityClass(risk)}"></span>
-          <div style="flex:1;min-width:0">
-            <strong style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;font-size:13px;line-height:1.35;margin-bottom:3px" title="${name}">${name}</strong>
-            <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted)">
-              ${v.database ? `<span class="db-badge" style="font-size:9.5px;padding:1px 5px;margin:0">${v.database}</span>` : ''}
-              <small style="font-size:11px">Risk ${v.riskScore || 0} · ${v.reads || '—'} reads</small>
-            </div>
+        <div class="view-row ${isActive ? 'active' : ''}" data-view="${name}" data-canonical="${canonical}" role="option" aria-selected="${isActive ? 'true' : 'false'}" tabindex="0">
+          <div class="view-row-left">
+            <strong class="view-row-name" title="${name}">${name}</strong>
+            ${dbSubtitle}
           </div>
-          <span class="view-health">${v.health || v.healthScore || 60}</span>
+          <span class="view-row-risk ${severityClass(riskCategory)}" title="Risk Skoru">${riskScore}</span>
+          <span class="view-row-reads" title="Mantıksal Okuma">${readsStr}</span>
+          ${regIcon}
         </div>
       `;
     }).join('');
@@ -1005,18 +1311,25 @@
     $$('.view-row').forEach(r => {
       const isMatch = r.dataset.canonical === canonical || r.dataset.view === name;
       r.classList.toggle('active', isMatch);
+      r.setAttribute('aria-selected', isMatch ? 'true' : 'false');
     });
 
-    if ($('#detailViewName')) $('#detailViewName').textContent = name;
-    if ($('#detailViewMeta')) $('#detailViewMeta').textContent = `${v.database || ''} · ${v.schema_name || 'dbo'} · modify ${v.modified || 'Bilinmiyor'}`;
-    if ($('#detailHealth')) $('#detailHealth').textContent = v.health || v.healthScore || 60;
-    const riskLabel = $('#detailRisk');
-    if (riskLabel) {
-      const rLevel = String(v.riskLevel || v.risk || 'LOW').toUpperCase();
-      riskLabel.className = `${severityClass(rLevel)}-text`;
-      riskLabel.textContent = `${rLevel} · ${v.riskScore || 0}`;
-    }
+    const riskCategory = getSafeRiskCategory(v);
+    const riskScore = getSafeRiskScore(v);
+    const riskLabelTr = getSafeRiskLabelTr(v);
 
+    // 1. Header Hero
+    if ($('#detailViewName')) $('#detailViewName').textContent = name;
+    if ($('#detailViewMeta')) $('#detailViewMeta').textContent = `${v.schema_name || 'dbo'} · ${v.database || ''} · Son değişiklik ${v.modified || 'Bilinmiyor'}`;
+    if ($('#detailRisk')) $('#detailRisk').textContent = riskScore;
+    if ($('#detailRiskPill')) {
+      const pill = $('#detailRiskPill');
+      pill.className = `severity-pill ${severityClass(riskCategory)}`;
+      pill.textContent = riskLabelTr;
+    }
+    if ($('#detailHealth')) $('#detailHealth').textContent = v.health || v.healthScore || 60;
+
+    // 2. Metric Strip
     if ($('#statDepth')) $('#statDepth').textContent = v.depth || 1;
     if ($('#statDepthWarn')) {
       $('#statDepthWarn').textContent = (v.depth || 1) > 3 ? '⚠ > 3' : '✓ Normal';
@@ -1029,111 +1342,206 @@
       $('#statTablesWarn').style.color = repCount > 0 ? 'var(--red)' : 'var(--green)';
     }
     if ($('#statDependents')) $('#statDependents').textContent = v.dependents || (v.dependents?.length || 0);
-    if ($('#statReads')) $('#statReads').textContent = v.reads || '—';
-    if ($('#statMedian')) $('#statMedian').textContent = v.median || '—';
 
-    // Risk Breakdown Bars
-    const barsContainer = $('#riskBars');
-    if (barsContainer) {
-      const riskBars = v.riskBars || MOCK.riskBars;
-      barsContainer.innerHTML = riskBars.map(r => `
-        <div class="risk-bar-row">
-          <span>${r.label}</span>
-          <div class="risk-bar-track"><i style="width:${Math.min(100, r.value)}%"></i></div>
-          <b>−${r.penalty}</b>
-        </div>
-      `).join('');
+    const formattedReads = formatRuntimeReads(v);
+    const formattedMedian = formatRuntimeMedian(v);
+    if ($('#statReads')) $('#statReads').textContent = formattedReads;
+    if ($('#statMedian')) $('#statMedian').textContent = formattedMedian;
+
+    const readsCol = $('#statReadsCol');
+    if (readsCol) {
+      readsCol.title = formattedReads !== '—'
+        ? (state.data.runtimeSource === 'QUERY_STORE' ? 'Query Store: Son 24 saatteki mantıksal okuma' : 'Plan Cache: Mantıksal okuma')
+        : 'Çalışma zamanı verisi bulunamadı.';
+    }
+    const medianCol = $('#statMedianCol');
+    if (medianCol) {
+      medianCol.title = formattedMedian !== '—'
+        ? 'Sorgu çalıştırma medyan süresi'
+        : 'Çalışma zamanı verisi bulunamadı.';
     }
 
-    // Problems
-    const problems = v.problems || MOCK.problems;
+    // 3. Primary Diagnosis Box
+    const primaryFinding = getPrimaryFinding(v);
+    const isClean = primaryFinding.severity === 'low' || primaryFinding.title === 'Normal Çalışma';
+
+    const primarySeverityEl = $('#primaryDiagSeverity');
+    const primaryGradeEl = $('#primaryDiagGrade');
+    const primaryTitleEl = $('#primaryDiagTitle');
+    const primaryDescEl = $('#primaryDiagDesc');
+    const primaryImpactEl = $('#primaryDiagImpact');
+    const primaryEvidenceEl = $('#primaryDiagEvidence');
+    const btnPrimaryRefactor = $('#btnPrimaryRefactor');
+
+    if (isClean) {
+      if (primarySeverityEl) {
+        primarySeverityEl.className = 'severity-pill low';
+        primarySeverityEl.textContent = 'DÜŞÜK';
+      }
+      if (primaryGradeEl) primaryGradeEl.textContent = 'Kanıt Gücü: Normal';
+      if (primaryTitleEl) primaryTitleEl.textContent = 'Önemli Performans Riski Tespit Edilmedi';
+      if (primaryDescEl) primaryDescEl.textContent = 'Bu view için kritik yapısal kural ihlali veya aktif çalışma zamanı regresyonu saptanmadı.';
+      if (primaryImpactEl) primaryImpactEl.textContent = 'Sistem kaynakları üzerinde bilinen bir darboğaz bulunmuyor.';
+      if (primaryEvidenceEl) primaryEvidenceEl.textContent = 'Statik Katalog Denetimi';
+      if (btnPrimaryRefactor) btnPrimaryRefactor.style.display = 'none';
+    } else {
+      if (primarySeverityEl) {
+        const sevKey = primaryFinding.severity.toUpperCase();
+        const sevClass = severityClass(primaryFinding.severity);
+        const sevLabel = (window.uiText?.severity?.[sevKey]?.label) || sevKey;
+        primarySeverityEl.className = `severity-pill ${sevClass}`;
+        primarySeverityEl.textContent = sevLabel;
+      }
+      if (primaryGradeEl) primaryGradeEl.textContent = `Kanıt Gücü: ${primaryFinding.gradeLabel || 'Düşük'}`;
+      if (primaryTitleEl) primaryTitleEl.textContent = primaryFinding.title;
+      if (primaryDescEl) primaryDescEl.textContent = primaryFinding.detail;
+      if (primaryImpactEl) primaryImpactEl.textContent = primaryFinding.impact || 'Gereksiz mantıksal okuma (I/O) ve CPU tüketimi riski.';
+      if (primaryEvidenceEl) primaryEvidenceEl.textContent = primaryFinding.evidence || 'Statik Bağımlılık Grafiği';
+      if (btnPrimaryRefactor) btnPrimaryRefactor.style.display = '';
+    }
+
+    if (btnPrimaryRefactor) {
+      btnPrimaryRefactor.onclick = () => {
+        state.selectedViewName = name;
+        state.selectedCanonicalId = canonical;
+        gotoPage('studio');
+        if (window.STUDIO_MODULES?.refactorStudio?.loadView) {
+          window.STUDIO_MODULES.refactorStudio.loadView(canonical || name);
+        }
+      };
+    }
+    const btnPrimarySql = $('#btnPrimarySql');
+    if (btnPrimarySql) {
+      btnPrimarySql.onclick = () => {
+        const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"]`);
+        if (tabBtn) tabBtn.click();
+      };
+    }
+    const btnPrimaryDeps = $('#btnPrimaryDeps');
+    if (btnPrimaryDeps) {
+      btnPrimaryDeps.onclick = () => {
+        const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"]`);
+        if (tabBtn) tabBtn.click();
+        const depsEl = $('#dependenciesContent');
+        if (depsEl) depsEl.scrollIntoView({ behavior: 'smooth' });
+      };
+    }
+
+    // 4. Risk Sources Panel
+    const riskSourcesList = $('#riskSourcesList');
+    if (riskSourcesList) {
+      const riskBars = v.riskBars || MOCK.riskBars;
+      riskSourcesList.innerHTML = riskBars.map(r => {
+        const contrib = getRiskContribution(r);
+        return `
+          <div class="risk-source-row" title="Ham Ceza: -${r.penalty || 0} puan (${r.label})">
+            <span class="risk-source-name">${r.label}</span>
+            <div class="risk-source-right">
+              <span class="risk-source-tag ${contrib.level}">${contrib.label}</span>
+              <span class="risk-source-mini-bar"><i style="width:${contrib.width}%;background:${contrib.color}"></i></span>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // 5. All Findings Accordion
+    const problems = v.problems || (v.hasDuplicatePattern ? [{ title: 'Mükerrer Mantık', detail: 'Benzer SQL gövdesi', severity: 'HIGH' }] : []);
     const tabProblemCount = $('#tabProblemCount');
     if (tabProblemCount) tabProblemCount.textContent = problems.length;
-    const topProblemCountText = $('#topProblemCountText');
-    if (topProblemCountText) topProblemCountText.textContent = `${problems.length} bulgu`;
 
-    const topProblems = $('#topProblems');
-    if (topProblems) {
-      topProblems.innerHTML = problems.slice(0, 4).map(p => `
-        <div class="problem-item">
-          <span class="problem-symbol">${p.symbol || '!'}</span>
-          <div>
-            <strong>${p.title}</strong>
-            <small>${p.detail}</small>
-          </div>
-          <b>−${p.penalty}</b>
-        </div>
-      `).join('') || '<p style="font-size:12px;color:var(--text-muted);margin:8px 0">Bulgu tespit edilmedi.</p>';
-    }
+    const accordionList = $('#findingsAccordionList');
+    if (accordionList) {
+      if (problems.length === 0 || isClean) {
+        accordionList.innerHTML = '<div class="empty-state" style="padding:24px 10px"><p>Bu view için önemli teşhis bulgusu bulunamadı.</p></div>';
+      } else {
+        accordionList.innerHTML = problems.map((p, idx) => {
+          const sevClass = severityClass(p.severity);
+          const sevLabel = (window.uiText?.severity?.[p.severity]?.label) || p.severity;
+          const why = p.why || (window.uiText?.findings?.[p.code]?.why) || 'SQL Server bu işlem sırasında fazladan I/O ve CPU tüketebilir; sorgu planı verimsiz operatörler içerebilir.';
+          const recommendation = p.recommendation || 'İlgili view veya alt sorguları gözden geçirin, execution planı analiz edin ve gereksiz tablo tekrarlarını kaldırın.';
+          const evidence = p.evidence || 'Statik Bağımlılık Grafiği';
+          const grade = p.evidenceGrade || 'Grade D (Heuristik)';
+          const isHighGrade = grade.includes('A') || grade.includes('B');
+          const evidencePower = isHighGrade ? 'Yüksek' : 'Düşük';
 
-    const fullProblems = $('#fullProblemList');
-    if (fullProblems) {
-      fullProblems.innerHTML = problems.map(p => {
-        const sevClass = severityClass(p.severity);
-        const sevLabel = (window.uiText?.severity[p.severity]?.label) || p.severity;
-        const why = p.why || (window.uiText?.findings[p.code]?.why) || 'SQL Server bu işlem sırasında fazladan I/O ve CPU tüketebilir; sorgu planı verimsiz operatörler içerebilir.';
-        const recommendation = p.recommendation || 'İlgili view veya alt sorguları gözden geçirin, execution planı analiz edin ve gereksiz tablo tekrarlarını kaldırın.';
-
-        return `
-          <article class="structured-problem-card">
-            <div class="spc-head">
-              <div>
-                <span class="severity-pill ${sevClass}" style="margin-bottom:6px">${sevLabel}</span>
-                <h4 class="spc-title">${p.title}</h4>
+          return `
+            <div class="accordion-item" data-problem-index="${idx}">
+              <button type="button" class="accordion-trigger" aria-expanded="false" aria-controls="finding_body_${idx}">
+                <div class="accordion-trigger-left">
+                  <span class="severity-pill ${sevClass}">${sevLabel}</span>
+                  <strong class="accordion-trigger-title">${p.title}</strong>
+                  <span class="accordion-trigger-desc">— ${p.detail}</span>
+                </div>
+                <svg class="accordion-chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 6 8 10 12 6"></polyline></svg>
+              </button>
+              <div class="accordion-body" id="finding_body_${idx}">
+                <div class="accordion-sec">
+                  <strong>Neden Önemli?</strong>
+                  <p>${why}</p>
+                </div>
+                <div class="accordion-sec">
+                  <strong>Ne Yapılabilir? (Öneri)</strong>
+                  <p>${recommendation}</p>
+                </div>
+                <div class="accordion-meta">
+                  <span><b>Kanıt:</b> ${evidence}</span>
+                  <span>•</span>
+                  <span title="${grade}">Kanıt Gücü: <b>${evidencePower}</b> <small style="color:var(--text-muted)">(${grade})</small></span>
+                </div>
+                <div class="accordion-actions">
+                  <button type="button" class="button primary mini btn-acc-refactor" data-view="${name}">✦ Refaktör Et</button>
+                  <button type="button" class="button ghost mini btn-acc-sql" data-view="${name}">SQL'i Aç</button>
+                  <button type="button" class="button ghost mini btn-acc-deps" data-view="${name}">Bağımlılıkları Gör</button>
+                </div>
               </div>
-              <b style="color:var(--red);font-size:14px">−${p.penalty || 10} Puan</b>
             </div>
-            <p class="spc-desc">${p.detail}</p>
+          `;
+        }).join('');
 
-            <div class="spc-section why">
-              <strong>Neden Önemli?</strong>
-              <p>${why}</p>
-            </div>
+        // Wire accordion trigger clicks
+        accordionList.querySelectorAll('.accordion-trigger').forEach(trigger => {
+          trigger.addEventListener('click', () => {
+            const item = trigger.closest('.accordion-item');
+            if (item) {
+              const wasExpanded = item.classList.contains('expanded');
+              item.classList.toggle('expanded', !wasExpanded);
+              trigger.setAttribute('aria-expanded', String(!wasExpanded));
+            }
+          });
+        });
 
-            <div class="spc-section">
-              <strong>Ne Yapılabilir? (Öneri)</strong>
-              <p>${recommendation}</p>
-            </div>
+        // Wire accordion action buttons
+        accordionList.querySelectorAll('.btn-acc-refactor').forEach(b => {
+          b.onclick = (e) => {
+            e.stopPropagation();
+            state.selectedViewName = name;
+            state.selectedCanonicalId = canonical;
+            gotoPage('studio');
+            if (window.STUDIO_MODULES?.refactorStudio?.loadView) {
+              window.STUDIO_MODULES.refactorStudio.loadView(canonical || name);
+            }
+          };
+        });
 
-            <div class="spc-evidence">
-              <span><b>Kanıt:</b> ${p.evidence || 'Statik Bağımlılık Grafiği'}</span>
-              <span>•</span>
-              <span class="connected-pill" style="font-size:11px;color:var(--yellow);border-color:rgba(247,200,106,0.3)">${p.evidenceGrade || 'Grade D (Heuristik)'}</span>
-            </div>
+        accordionList.querySelectorAll('.btn-acc-sql').forEach(b => {
+          b.onclick = (e) => {
+            e.stopPropagation();
+            const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"]`);
+            if (tabBtn) tabBtn.click();
+          };
+        });
 
-            <div class="spc-actions">
-              <button class="button ghost mini btn-spc-graph" data-view="${name}">⌁ Bağımlılık Haritasını Aç</button>
-              <button class="button ghost mini btn-spc-sql" data-view="${name}">⚡ SQL'i Gör</button>
-              <button class="button primary mini btn-spc-ai" data-view="${name}">✦ AI ile İncele</button>
-            </div>
-          </article>
-        `;
-      }).join('') || '<div class="empty-state"><p>Tebrikler! Bu view üzerinde riskli pattern saptanmadı.</p></div>';
-
-      // Bind structured problem card action buttons
-      $$('.btn-spc-graph').forEach(b => {
-        b.onclick = () => {
-          gotoPage('graph');
-          const gi = $('#graphSearchInput');
-          if (gi) { gi.value = b.dataset.view; renderGraph(); }
-        };
-      });
-      $$('.btn-spc-sql').forEach(b => {
-        b.onclick = () => {
-          const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"], .detail-tabs button[data-detail-tab="sql"]`);
-          if (tabBtn) tabBtn.click();
-        };
-      });
-      $$('.btn-spc-ai').forEach(b => {
-        b.onclick = () => {
-          if (b.dataset.view) {
-            state.selectedViewName = b.dataset.view;
-            const targetV = (state.data.views || []).find(x => (x.name || x.view_name) === b.dataset.view);
-            if (targetV && targetV.canonicalId) state.selectedCanonicalId = targetV.canonicalId;
-          }
-          gotoPage('refactor');
-        };
-      });
+        accordionList.querySelectorAll('.btn-acc-deps').forEach(b => {
+          b.onclick = (e) => {
+            e.stopPropagation();
+            const tabBtn = $(`.detail-tabs button[data-detail-tab="sql-deps"]`);
+            if (tabBtn) tabBtn.click();
+            const depsEl = $('#dependenciesContent');
+            if (depsEl) depsEl.scrollIntoView({ behavior: 'smooth' });
+          };
+        });
+      }
     }
 
     // Dependencies Tab Content
@@ -1538,10 +1946,63 @@
     if (graphSearch) graphSearch.value = name;
   }
 
-  // Filter Chips in Views (Sprint 9: Risk + Special Filters Tables & Duplicates)
-  $$('.filter-chip').forEach(btn => {
+  // Filter Chips in Views (Quick Filters: all, critical, regressed; Popover: tables, duplicates, high)
+  const filterMoreBtn = $('#btnViewFilterMore');
+  const filterPopover = $('#viewFilterPopover');
+
+  if (filterMoreBtn && filterPopover) {
+    filterMoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isHidden = filterPopover.classList.toggle('hidden');
+      filterMoreBtn.setAttribute('aria-expanded', String(!isHidden));
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!filterPopover.contains(e.target) && e.target !== filterMoreBtn) {
+        filterPopover.classList.add('hidden');
+        filterMoreBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    filterPopover.querySelectorAll('.popover-item').forEach(item => {
+      item.addEventListener('click', () => {
+        filterPopover.classList.add('hidden');
+        filterMoreBtn.setAttribute('aria-expanded', 'false');
+
+        if (item.id === 'btnResetViewFilters' || item.classList.contains('reset')) {
+          state.currentSpecialFilter = null;
+          state.currentRiskFilter = 'all';
+          filterMoreBtn.classList.remove('active');
+          $$('.filter-chip').forEach(b => b.classList.toggle('active', b.dataset.risk === 'all'));
+          filterPopover.querySelectorAll('.popover-item').forEach(pi => pi.classList.remove('active'));
+          viewListLimit = 50;
+          renderViewList($('#viewSearch')?.value || '');
+          return;
+        }
+
+        viewListLimit = 50;
+        if (item.dataset.viewFilter) {
+          state.currentSpecialFilter = item.dataset.viewFilter;
+          state.currentRiskFilter = 'all';
+        } else if (item.dataset.risk) {
+          state.currentSpecialFilter = null;
+          state.currentRiskFilter = item.dataset.risk;
+        }
+
+        $$('.filter-chip').forEach(b => b.classList.remove('active'));
+        filterMoreBtn.classList.add('active');
+        filterPopover.querySelectorAll('.popover-item').forEach(pi => pi.classList.toggle('active', pi === item));
+        renderViewList($('#viewSearch')?.value || '');
+      });
+    });
+  }
+
+  $$('.filter-chip:not(#btnViewFilterMore)').forEach(btn => {
     btn.addEventListener('click', () => {
       viewListLimit = 50;
+      if (filterMoreBtn) filterMoreBtn.classList.remove('active');
+      if (filterPopover) filterPopover.querySelectorAll('.popover-item').forEach(pi => pi.classList.remove('active'));
+
       if (btn.dataset.viewFilter) {
         state.currentSpecialFilter = btn.dataset.viewFilter;
         state.currentRiskFilter = 'all';
