@@ -43,6 +43,22 @@ describe('Workbench Multi-Result & Execution Parsing Tests (Sprint 7)', () => {
       assert.equal(parsed.tableStats[2].table, 'FATURALAR');
     });
 
+    it('parses Turkish locale SQL Server STATISTICS IO messages correctly', () => {
+      const messages = [
+        "Tablo 'STOKLAR'. Tarama sayısı 2, mantıksal okuma 350, fiziksel okuma 5.",
+        "'SIPARISLER' tablosu. Tarama sayısı 1, mantıksal okuma 120, fiziksel okuma 0."
+      ];
+      const parsed = parseStatisticsIo(messages);
+
+      assert.equal(parsed.totalLogicalReads, 470);
+      assert.equal(parsed.totalPhysicalReads, 5);
+      assert.equal(parsed.tableStats.length, 2);
+      assert.equal(parsed.tableStats[0].table, 'STOKLAR');
+      assert.equal(parsed.tableStats[0].logicalReads, 350);
+      assert.equal(parsed.tableStats[1].table, 'SIPARISLER');
+      assert.equal(parsed.tableStats[1].logicalReads, 120);
+    });
+
     it('returns zeroes on empty or non-IO messages', () => {
       const parsed = parseStatisticsIo(['(1 row affected)', 'Execution started', 'Hello world']);
       assert.equal(parsed.totalLogicalReads, 0);
@@ -52,6 +68,16 @@ describe('Workbench Multi-Result & Execution Parsing Tests (Sprint 7)', () => {
   });
 
   describe('STATISTICS TIME Parser', () => {
+    it('parses Turkish locale CPU and elapsed time from messages', () => {
+      const messages = [
+        'SQL Server Yürütme Süreleri:',
+        '   CPU zamanı = 35 ms,  geçen zaman = 50 ms.'
+      ];
+      const parsed = parseStatisticsTime(messages);
+
+      assert.equal(parsed.cpuMs, 35);
+      assert.equal(parsed.elapsedMs, 50);
+    });
     it('parses CPU and elapsed time from messages', () => {
       const messages = [
         'SQL Server Execution Times:',

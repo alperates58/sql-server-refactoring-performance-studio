@@ -21,17 +21,23 @@ const sessionHistory = [];
 
 function parseStatisticsIo(rawMessages = []) {
   const tableStats = [];
-  const ioRegex = /Table '([^']+)'.*?Scan count (\d+), logical reads (\d+), physical reads (\d+)/gi;
+  const patterns = [
+    /(?:Table|Tablo)\s+'([^']+)'.*?(?:Scan count|Tarama say[ıi]s[ıi])\s+(\d+).*?(?:logical reads|mant[ıi]ksal okuma)\s+(\d+).*?(?:physical reads|fiziksel okuma)\s+(\d+)/gi,
+    /'([^']+)'\s+tablosu.*?(?:Tarama say[ıi]s[ıi])\s+(\d+).*?(?:mant[ıi]ksal okuma)\s+(\d+).*?(?:fiziksel okuma)\s+(\d+)/gi
+  ];
 
   for (const msg of rawMessages) {
-    let match;
-    while ((match = ioRegex.exec(msg)) !== null) {
-      tableStats.push({
-        table: match[1],
-        scanCount: parseInt(match[2], 10),
-        logicalReads: parseInt(match[3], 10),
-        physicalReads: parseInt(match[4], 10)
-      });
+    for (const regex of patterns) {
+      regex.lastIndex = 0;
+      let match;
+      while ((match = regex.exec(msg)) !== null) {
+        tableStats.push({
+          table: match[1],
+          scanCount: parseInt(match[2], 10),
+          logicalReads: parseInt(match[3], 10),
+          physicalReads: parseInt(match[4], 10)
+        });
+      }
     }
   }
 
@@ -48,9 +54,10 @@ function parseStatisticsIo(rawMessages = []) {
 function parseStatisticsTime(rawMessages = []) {
   let cpuMs = 0;
   let elapsedMs = 0;
-  const timeRegex = /CPU time = (\d+) ms,?\s+elapsed time = (\d+) ms/gi;
+  const timeRegex = /(?:CPU time|CPU zaman[ıi])\s*=\s*(\d+)\s*ms,?\s*(?:elapsed time|ge[çc]en zaman)\s*=\s*(\d+)\s*ms/gi;
 
   for (const msg of rawMessages) {
+    timeRegex.lastIndex = 0;
     let match;
     while ((match = timeRegex.exec(msg)) !== null) {
       cpuMs += parseInt(match[1], 10);

@@ -27,6 +27,7 @@
   let studioState = {
     activeView: null,
     step: 1, // 1: Diagnosis, 2: Diff, 3: Validation, 4: Result
+    maxUnlockedStep: 1,
     isOptimizing: false,
     isValidating: false,
     originalSql: '',
@@ -146,7 +147,7 @@
     document.querySelectorAll('[data-studio-step-jump]').forEach(btn => {
       btn.addEventListener('click', (e) => {
         const targetStep = parseInt(e.currentTarget.dataset.studioStepJump, 10);
-        if (targetStep <= studioState.step) {
+        if (targetStep <= (studioState.maxUnlockedStep || studioState.step)) {
           setStudioStep(targetStep);
         }
       });
@@ -172,6 +173,7 @@
 
   function setStudioStep(stepNum) {
     studioState.step = Math.max(1, Math.min(4, stepNum));
+    studioState.maxUnlockedStep = Math.max(studioState.maxUnlockedStep || 1, studioState.step);
 
     // Update Step Indicators
     for (let s = 1; s <= 4; s++) {
@@ -179,6 +181,8 @@
       if (stepItem) {
         stepItem.classList.toggle('active', s === studioState.step);
         stepItem.classList.toggle('completed', s < studioState.step);
+        stepItem.style.opacity = (s <= studioState.maxUnlockedStep) ? '1' : '0.5';
+        stepItem.style.cursor = (s <= studioState.maxUnlockedStep) ? 'pointer' : 'not-allowed';
       }
       const section = document.getElementById(`studioSectionStep${s}`);
       if (section) {
@@ -203,6 +207,7 @@
 
     studioState.activeView = v;
     studioState.step = 1;
+    studioState.maxUnlockedStep = 1;
     studioState.candidateSql = '';
     studioState.aiSummary = [];
     studioState.aiRisks = [];
@@ -457,20 +462,37 @@
         })
       });
       const compData = await compRes.json();
+      if (!compRes.ok || compData.ok === false) {
+        throw new Error(compData.error || 'Performans karşılaştırma servisi hata döndü.');
+      }
       const comparison = compData.data || compData;
-      studioState.benchmarkResult = comparison.benchmarks?.comparison || comparison.benchmark || {};
+      const rawBench = comparison.benchmarks || {};
+      const benchComp = rawBench.comparison || comparison.benchmark || {};
+
+      // Ensure original and candidate metrics are available
+      if (!benchComp.original && rawBench.original) {
+        benchComp.original = rawBench.original.metrics || rawBench.original;
+      }
+      if (!benchComp.candidate && rawBench.candidate) {
+        benchComp.candidate = rawBench.candidate.metrics || rawBench.candidate;
+      }
+      studioState.benchmarkResult = benchComp;
       studioState.planComparison = comparison.plans?.comparison || comparison.planComparison || {};
 
       // 3. Evaluate Decision
       const refDecision = (typeof window !== 'undefined' ? window : root)?.STUDIO_MODULES?.refactorDecision;
-      if (comparison.decision) {
-        studioState.decision = comparison.decision;
-      } else if (refDecision) {
+      const valNormalized = {
+        ...val,
+        status: (val.verdict || val.status || '').toUpperCase()
+      };
+      if (refDecision) {
         studioState.decision = refDecision.evaluateRefactorDecision({
-          validation: val,
+          validation: valNormalized,
           benchmark: studioState.benchmarkResult,
           planComparison: studioState.planComparison
         });
+      } else if (comparison.decision) {
+        studioState.decision = comparison.decision;
       } else {
         const isPass = val.verdict === 'PASS' || val.verdict === 'PASS_WITH_WARNING';
         studioState.decision = {
@@ -481,6 +503,9 @@
           description: isPass ? 'Semantik doğrulama başarılı oldu.' : 'Semantik doğrulama başarısız.'
         };
       }
+
+      // Unlock step 4 for navigation
+      studioState.maxUnlockedStep = Math.max(studioState.maxUnlockedStep || 1, 4);
 
       // Render Step 3 and Step 4
       renderStep3ValidationAndPerf();
@@ -502,7 +527,7 @@
     const val = studioState.validationResult || {};
     const bench = studioState.benchmarkResult || {};
     const plan = studioState.planComparison || {};
-    const isPass = val.verdict === 'PASS' || val.verdict === 'PASS_WITH_WARNING';
+    const isPass = val.verdict === 'PASS' || val.verdict === 'PASS_WITH_WARNING' || val.status === 'PASS';
 
     // 1. Semantic Status Badge
     const valBadgeEl = document.getElementById('studioValVerdictBadge');
@@ -510,7 +535,7 @@
     const valWarningBanner = document.getElementById('studioValFailedWarning');
 
     if (valBadgeEl) {
-      valBadgeEl.textContent = val.verdict || (isPass ? 'PASS' : 'FAIL');
+      valBadgeEl.textContent = val.verdict || val.status || (isPass ? 'PASS' : 'FAIL');
       valBadgeEl.className = `status-pill ${isPass ? 'status-ready' : 'status-danger'}`;
     }
     if (valDescEl) {
@@ -519,61 +544,136 @@
         : 'Sorgu çıktısında satır sayısı veya şema uyuşmazlığı tespit edildi.');
     }
 
-    // Strict guardrail: If validation failed, hide performance glory and show stern warning!
+    // Strict guardrail: If validation failed, show stern warning
     if (valWarningBanner) {
       valWarningBanner.classList.toggle('hidden', isPass);
     }
 
     // 2. Metrics comparison
-    const origDur = bench.before?.medianDurationMs ?? bench.beforeDurationMs ?? '—';
-    const candDur = bench.after?.medianDurationMs ?? bench.afterDurationMs ?? '—';
-    const durDelta = bench.durationDeltaPercent != null ? `${bench.durationDeltaPercent > 0 ? '+' : ''}${bench.durationDeltaPercent}%` : '—';
+    const origBench = bench.original?.metrics || bench.original || bench.before?.metrics || bench.before || {};
+    const candBench = bench.candidate?.metrics || bench.candidate || bench.after?.metrics || bench.after || {};
 
-    const origReads = bench.before?.totalLogicalReads ?? bench.beforeReads ?? '—';
-    const candReads = bench.after?.totalLogicalReads ?? bench.afterReads ?? '—';
-    const readsDelta = bench.readsDeltaPercent != null ? `${bench.readsDeltaPercent > 0 ? '+' : ''}${bench.readsDeltaPercent}%` : '—';
+    const origDur = origBench.durationMs ?? origBench.medianDurationMs ?? bench.beforeDurationMs;
+    const candDur = candBench.durationMs ?? candBench.medianDurationMs ?? bench.afterDurationMs;
+
+    const origReads = origBench.logicalReads ?? origBench.medianLogicalReads ?? origBench.totalLogicalReads ?? bench.beforeReads;
+    const candReads = candBench.logicalReads ?? candBench.medianLogicalReads ?? candBench.totalLogicalReads ?? bench.afterReads;
+
+    let durDeltaPct = null;
+    if (bench.deltas?.durationPercent != null) {
+      durDeltaPct = bench.deltas.durationPercent;
+    } else if (bench.improvements?.durationPercent != null) {
+      durDeltaPct = -bench.improvements.durationPercent;
+    } else if (bench.durationDeltaPercent != null) {
+      durDeltaPct = bench.durationDeltaPercent;
+    } else if (origDur != null && candDur != null && origDur > 0) {
+      durDeltaPct = Math.round(((candDur - origDur) / origDur) * 100);
+    }
+
+    let readsDeltaPct = null;
+    if (bench.deltas?.readsPercent != null) {
+      readsDeltaPct = bench.deltas.readsPercent;
+    } else if (bench.improvements?.readsPercent != null) {
+      readsDeltaPct = -bench.improvements.readsPercent;
+    } else if (bench.readsDeltaPercent != null) {
+      readsDeltaPct = bench.readsDeltaPercent;
+    } else if (origReads != null && candReads != null && origReads > 0) {
+      readsDeltaPct = Math.round(((candReads - origReads) / origReads) * 100);
+    }
 
     const durEl = document.getElementById('studioPerfDurationVal');
     const durDeltaEl = document.getElementById('studioPerfDurationDelta');
-    if (durEl) durEl.textContent = `${origDur}ms → ${candDur}ms`;
+    if (durEl) {
+      if (origDur != null && candDur != null) {
+        durEl.textContent = `${formatNum(origDur)}ms → ${formatNum(candDur)}ms`;
+      } else {
+        durEl.textContent = '—';
+      }
+    }
     if (durDeltaEl) {
-      durDeltaEl.textContent = durDelta;
-      durDeltaEl.className = `trend-pill ${parseFloat(durDelta) <= 0 ? 'trend-positive' : 'trend-negative'}`;
+      if (durDeltaPct != null) {
+        durDeltaEl.textContent = `${durDeltaPct > 0 ? '+' : ''}${durDeltaPct}%`;
+        durDeltaEl.className = `trend-pill ${durDeltaPct <= 0 ? 'trend-positive' : 'trend-negative'}`;
+      } else {
+        durDeltaEl.textContent = '—';
+        durDeltaEl.className = 'trend-pill';
+      }
     }
 
     const readsEl = document.getElementById('studioPerfReadsVal');
     const readsDeltaEl = document.getElementById('studioPerfReadsDelta');
-    if (readsEl) readsEl.textContent = `${formatNum(origReads)} → ${formatNum(candReads)}`;
+    if (readsEl) {
+      if (origReads != null && candReads != null) {
+        readsEl.textContent = `${formatNum(origReads)} → ${formatNum(candReads)}`;
+      } else {
+        readsEl.textContent = '—';
+      }
+    }
     if (readsDeltaEl) {
-      readsDeltaEl.textContent = readsDelta;
-      readsDeltaEl.className = `trend-pill ${parseFloat(readsDelta) <= 0 ? 'trend-positive' : 'trend-negative'}`;
+      if (readsDeltaPct != null) {
+        readsDeltaEl.textContent = `${readsDeltaPct > 0 ? '+' : ''}${readsDeltaPct}%`;
+        readsDeltaEl.className = `trend-pill ${readsDeltaPct <= 0 ? 'trend-positive' : 'trend-negative'}`;
+      } else {
+        readsDeltaEl.textContent = '—';
+        readsDeltaEl.className = 'trend-pill';
+      }
     }
 
     // 3. Plan key changes
     const planChangesList = document.getElementById('studioPlanChangesList');
     if (planChangesList) {
       const changes = [];
-      if (plan.scansDelta != null) changes.push(`Tablo Taramaları (Scan): ${plan.scansDelta <= 0 ? plan.scansDelta : '+' + plan.scansDelta}`);
-      if (plan.seeksDelta != null) changes.push(`İndeks Aramaları (Seek): ${plan.seeksDelta >= 0 ? '+' + plan.seeksDelta : plan.seeksDelta}`);
-      if (plan.estimatedCostPercent != null) changes.push(`Tahmini Plan Maliyeti: %${plan.estimatedCostPercent}`);
-      if (changes.length === 0) changes.push('Operatör ağacı optimize edildi; mantıksal okumalar düşürüldü.');
+      if (Array.isArray(plan.changes) && plan.changes.length > 0) {
+        for (const ch of plan.changes) {
+          const text = ch.title ? `${ch.title}: ${ch.detail || ''}` : (ch.detail || ch.code);
+          if (text) changes.push(text);
+        }
+      }
+
+      const pDeltas = plan.deltas || {};
+      const scansDelta = pDeltas.scans ?? plan.scansDelta;
+      const seeksDelta = pDeltas.seeks ?? plan.seeksDelta;
+      const costPct = pDeltas.estimatedCostPercent ?? plan.estimatedCostPercent;
+
+      if (scansDelta != null && scansDelta !== 0) {
+        changes.push(`Tablo Taramaları (Scan): ${scansDelta > 0 ? '+' : ''}${scansDelta}`);
+      }
+      if (seeksDelta != null && seeksDelta !== 0) {
+        changes.push(`İndeks Aramaları (Seek): ${seeksDelta > 0 ? '+' : ''}${seeksDelta}`);
+      }
+      if (costPct != null && costPct !== 0) {
+        changes.push(`Tahmini Plan Maliyeti: %${costPct > 0 ? '+' : ''}${costPct}`);
+      }
+
+      if (changes.length === 0) {
+        if (bench.summary) {
+          changes.push(bench.summary);
+        } else {
+          changes.push('Operatör ağacı optimize edildi; mantıksal okumalar düşürüldü.');
+        }
+      }
 
       planChangesList.innerHTML = changes.map(c => `<li>${escapeHtml(c)}</li>`).join('');
     }
   }
 
   function renderStep4VerdictAndActions() {
-    const dec = studioState.decision || { label: 'Değerlendirildi', color: '#7c5cff', description: '' };
+    const dec = studioState.decision || {};
+    const meta = dec.metadata || dec;
+    const label = meta.label || dec.label || (dec.code === 'SAFE_IMPROVEMENT' ? 'Güvenli İyileştirme' : 'Değerlendirildi');
+    const color = meta.color || dec.color || '#10b981';
+    const description = meta.description || dec.description || 'Aday sorgu semantik doğrulamayı geçti ve kaynak tüketimi değerlendirildi.';
+
     const verdictPill = document.getElementById('studioVerdictPill');
     const verdictDesc = document.getElementById('studioVerdictDescription');
 
     if (verdictPill) {
-      verdictPill.textContent = dec.label;
-      verdictPill.style.borderColor = dec.color;
-      verdictPill.style.color = dec.color;
+      verdictPill.textContent = label;
+      verdictPill.style.borderColor = color;
+      verdictPill.style.color = color;
     }
     if (verdictDesc) {
-      verdictDesc.textContent = dec.description || 'Bu aday uygulanmaya hazırdır.';
+      verdictDesc.textContent = description;
     }
   }
 
@@ -593,7 +693,7 @@
           targetObject: v.name,
           database: targetDb,
           originalSql: studioState.originalSql,
-          notes: `Doğrulama: ${studioState.validationResult?.verdict || 'PASS'}. Süre kazancı: ${studioState.benchmarkResult?.durationDeltaPercent || 0}%`
+          notes: `Doğrulama: ${studioState.validationResult?.verdict || 'PASS'}. Süre kazancı: %${studioState.benchmarkResult?.improvements?.durationPercent || studioState.benchmarkResult?.durationDeltaPercent || 0}`
         })
       });
 
