@@ -947,6 +947,7 @@
         renderViewList($('#viewSearch')?.value || '');
       });
     }
+  }
 
   async function getViewDefinition(identifier) {
     if (!identifier) return '';
