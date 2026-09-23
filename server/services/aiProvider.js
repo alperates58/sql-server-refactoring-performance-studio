@@ -129,39 +129,78 @@ function getProviderCapabilities({ provider, model } = {}) {
 }
 
 function buildStructuredRefactorPrompt(contextPack, iterationFeedback = null) {
-  let prompt = `You are a principal Microsoft SQL Server query performance engineer and database architect.\n\n` +
-    `CRITICAL INVARIANTS & SAFETY GUARDRAILS:\n` +
-    `1. Preserve EXACT observable output semantics: column count, ordinal column order, column names, SQL data types, nullability, row multiplicity, and filter predicates.\n` +
-    `2. Never assume that CTEs materialize. SQL Server optimizer inlines CTE definitions unless proven otherwise.\n` +
-    `3. Every rewrite recommendation must include explicit technical rationale in TURKISH (Türkçe).\n` +
-    `4. COSMETIC REWRITE BAN (STRICT): Renaming aliases, reformatting SQL, changing indentation, renaming CTEs, or moving expressions without relational algebraic effect is STRICTLY FORBIDDEN and will be flagged as NO_MEANINGFUL_REWRITE and REJECTED.\n` +
-    `5. FIRST-CLASS REFUSAL STATUSES: You do NOT have to generate candidate SQL on every request! If no safe structural optimization exists, return status "NO_SAFE_OPTIMIZATION_FOUND". If the query is already SARGable and the bottleneck is an unindexed table, return status "NEEDS_INDEX_CHANGE".\n` +
-    `6. STRUCTURED HYPOTHESIS BEFORE SQL: Formulate a concrete hypothesis identifying the exact bottleneck, root cause, proposed change, and target metric (logical_reads, cpu, duration, plan_shape).\n` +
-    `7. PERFORMANCE CLAIMS GUARDRAIL: Strict prohibition of speculative percentages (e.g. "%80 daha hızlı" is FORBIDDEN). Only specify expectedMetric.\n` +
-    `8. Do NOT wrap output in CREATE VIEW or ALTER VIEW. Format as executable query (WITH ... SELECT or SELECT ...).\n\n`;
+  let prompt = `You are acting as a principal Microsoft SQL Server query performance engineer and database architect with decades of experience optimizing complex ERP workloads.\n\n` +
+    `YOUR CORE MANDATE:\n` +
+    `Your task is not to cosmetically rewrite SQL. You must reason about relational algebra, cardinality, physical access, join shape, aggregation placement, repeated base-table access, predicate placement, and SQL Server optimizer behavior.\n` +
+    `Do not preserve the original query structure merely because it is valid. You are expected and encouraged to consider fundamentally different relational shapes when semantic equivalence can be preserved.\n` +
+    `However, never claim an optimization until deterministic validation and benchmarking confirm it.\n\n` +
+    `CRITICAL PRINCIPLES & GUARDRAILS:\n` +
+    `1. DON'T BE TIMID PRINCIPLE: Do not be unnecessarily conservative in generating hypotheses. Semantic safety is enforced downstream by deterministic validation (dual EXCEPT, row multiplicity, type verification). Your responsibility is to propose meaningful, high-impact structural alternatives. Do not avoid a valid structural rewrite merely because it changes the shape of the query significantly. The validation and benchmark engines, not your intuition, will decide whether the candidate is acceptable.\n` +
+    `2. INDEX_ACCESS IS NOT A HARD STOP: An INDEX_ACCESS bottleneck does NOT mean you should refuse or skip query shape review! Even if an index is missing, you must independently review the relational shape. If there are repeated scans, non-SARGable functions (YEAR, MONTH, FORMAT, CONVERT), late aggregations, redundant joins, or duplicate expressions, you MUST formulate a structural rewrite candidate.\n` +
+    `3. 16-POINT EXPERT RELATIONAL QUESTIONS (EVALUATE EACH):\n` +
+    `   1. Aynı tablo birden fazla kez taranıyor mu? (Consolidate into single CTE / derived set)\n` +
+    `   2. Aynı expression tekrar tekrar hesaplanıyor mu? (Precalculate once via CROSS APPLY / CTE)\n` +
+    `   3. Join'lerden biri gereksiz mi veya dış join fiilen iç joine mi dönüşüyor?\n` +
+    `   4. Predicate daha erken uygulanabilir mi (predicate pushdown)?\n` +
+    `   5. Aggregation daha erken yapılabilir mi (pre-aggregation before join)?\n` +
+    `   6. Correlated subquery set-based (APPLY / JOIN) hale getirilebilir mi?\n` +
+    `   7. Aynı base table erişimi tek CTE veya derived set ile birleştirilebilir mi?\n` +
+    `   8. Projection gereksiz geniş mi (SELECT * veya kullanılmayan kolonlar)?\n` +
+    `   9. DISTINCT semantik olarak gereksiz mi (join row explosion maskesi mi)?\n` +
+    `   10. Join cardinality daha erken azaltılabilir mi?\n` +
+    `   11. SARGability geliştirilebilir mi (fonksiyon sarmalı kolonlar aralık karşılaştırmasına dönüştürülebilir mi)?\n` +
+    `   12. CASE / DATEPART / YEAR / MONTH gibi pahalı ifadeler tekrar ediyor mu?\n` +
+    `   13. Derived table / CTE yapısı optimizer'a daha iyi relational shape verebilir mi?\n` +
+    `   14. OR koşulları erişim planını bozuyor mu?\n` +
+    `   15. Implicit conversion (örtük tip dönüşümü) var mı?\n` +
+    `   16. GROUP BY / window işlemleri daha verimli şekillendirilebilir mi?\n` +
+    `4. NO HALLUCINATION RULE: Aggressive hypothesis does NOT mean inventing schema! You may ONLY reference tables, columns, and datatypes present in the provided CONTEXT PACK. Any candidate referencing invented columns or imaginary tables will be strictly rejected.\n` +
+    `5. STRICT SCHEMA CONTRACT: Preserve exact observable output semantics: column count, ordinal column order, column names, SQL data types, nullability, row multiplicity, and filter predicates.\n` +
+    `6. COSMETIC REWRITE BAN (STRICT): Renaming aliases, reformatting SQL, changing indentation, renaming CTEs, or moving expressions without relational algebraic effect is STRICTLY FORBIDDEN and will be flagged as COSMETIC_REWRITE and REJECTED.\n` +
+    `7. SARGABILITY & RANGE REFACTORING GUARDRAIL (STRICT): When converting a non-SARGable expression like YEAR(DateCol) in (2025, 2026) or CAST(DateCol AS DATE) = [expr] into a SARGable range predicate (DateCol >= StartDate AND DateCol < EndDate): Pre-calculate scalar boundaries ONCE using CTE or CROSS APPLY; never duplicate complex expressions twice in WHERE.\n` +
+    `8. DIVERSE OPTIMIZATION STRATEGIES: You must first formulate at least 2 fundamentally different strategies in optimizationStrategies[], then generate the candidateSql for the most promising strategy.\n` +
+    `9. Do NOT wrap output in CREATE VIEW or ALTER VIEW. Format candidate SQL as an executable query (WITH ... SELECT or SELECT ...).\n` +
+    `10. ALL explanations, rationale, and notes MUST be in TURKISH (Türkçe).\n\n`;
 
   if (iterationFeedback) {
-    prompt += `PREVIOUS ITERATION FEEDBACK (CRITICAL - DO NOT REPEAT):\n` +
+    prompt += `PREVIOUS ITERATION FEEDBACK (CRITICAL - DBA FEEDBACK LOOP):\n` +
       `Previous Strategy: ${iterationFeedback.previousStrategyId || 'UNKNOWN'}\n` +
       `Measured Results: Reads Delta: ${iterationFeedback.readsDeltaPercent ?? 'N/A'}%, CPU Delta: ${iterationFeedback.cpuDeltaPercent ?? 'N/A'}%, Duration Delta: ${iterationFeedback.durationDeltaPercent ?? 'N/A'}%\n` +
       `Plan Result: ${iterationFeedback.planSummary || 'Yürütme planı değişmedi, aynı tarama operatörleri korundu.'}\n` +
       `Unaddressed Findings: ${(iterationFeedback.unaddressedFindings || []).join(', ') || 'Yok'}\n` +
-      `DIRECTIVE: Your previous candidate was ineffective and produced an identical execution plan. Do NOT repeat strategy ${iterationFeedback.previousStrategyId || 'previous approach'}. Formulate a fundamentally different structural hypothesis, or if SQL rewrite cannot resolve this, return status "NEEDS_INDEX_CHANGE" or "NO_SAFE_OPTIMIZATION_FOUND".\n\n`;
+      `DIRECTIVE: Your previous candidate failed to reduce physical work or change the plan shape! Do NOT repeat strategy ${iterationFeedback.previousStrategyId || 'previous approach'}. Formulate a fundamentally different structural hypothesis addressing the specific scan operators.\n\n`;
   }
 
   prompt += `RESPONSE FORMAT (MANDATORY JSON):\n` +
     `You must respond with a single valid JSON object strictly matching this schema:\n` +
     `{\n` +
     `  "status": "CANDIDATE_GENERATED | NO_SAFE_OPTIMIZATION_FOUND | NEEDS_INDEX_CHANGE | NEEDS_STATISTICS_ATTENTION | INSUFFICIENT_EVIDENCE",\n` +
-    `  "strategyId": "STRING_IDENTIFIER_OF_STRATEGY (e.g. SARGABLE_RANGE_REWRITE, PRE_AGGREGATE_CTE, APPLY_TO_JOIN)",\n` +
+    `  "optimizationStrategies": [\n` +
+    `    {\n` +
+    `      "strategyId": "STRATEGY_1_NAME (e.g. SARGABLE_RANGE_PUSHDOWN)",\n` +
+    `      "name": "Strategy Name in Turkish",\n` +
+    `      "hypothesis": "Concrete relational hypothesis in Turkish",\n` +
+    `      "targetBottleneck": "logical_reads | cpu | duration | scan_elimination"\n` +
+    `    },\n` +
+    `    {\n` +
+    `      "strategyId": "STRATEGY_2_NAME (e.g. PRE_AGGREGATE_AND_JOIN_REDUCTION)",\n` +
+    `      "name": "Strategy Name in Turkish",\n` +
+    `      "hypothesis": "Concrete relational hypothesis in Turkish",\n` +
+    `      "targetBottleneck": "logical_reads | cpu | duration | scan_elimination"\n` +
+    `    }\n` +
+    `  ],\n` +
+    `  "selectedStrategyId": "STRATEGY_1_NAME",\n` +
+    `  "whatChanged": "Tam olarak ne değişti (Türkçe, örn: 3 bağımsız STOK_HAREKETLERI taraması tek bir CTE altında birleştirildi)",\n` +
+    `  "why": "Neden fiziksel I/O veya CPU tasarrufu sağlayacağı (Türkçe)",\n` +
+    `  "targetBottleneck": "Hedeflenen darboğaz operatörü veya metriği",\n` +
     `  "hypothesis": {\n` +
     `    "bottlenecks": [\n` +
     `      {\n` +
     `        "findingId": "F01",\n` +
-    `        "evidence": "Clustered Index Scan on Table",\n` +
-    `        "cause": "Function wrapping column",\n` +
-    `        "proposedChange": "Rewrite to range predicate",\n` +
-    `        "expectedMetric": "logical_reads | cpu | duration | plan_shape"\n` +
+    `        "evidence": "Clustered Index Scan on STOK_HAREKETLERI",\n` +
+    `        "cause": "Non-SARGable YEAR() function on date column",\n` +
+    `        "proposedChange": "Convert to range comparison with precalculated boundary",\n` +
+    `        "expectedMetric": "logical_reads"\n` +
     `      }\n` +
     `    ]\n` +
     `  },\n` +
@@ -500,7 +539,7 @@ async function proposeStructuredRefactor(params = {}) {
   const activeTemp = capabilities.supportsTemperature
     ? (temperature ?? capabilities.recommendedTemperature)
     : undefined;
-  const activeTokens = maxTokens ?? conf.maxTokens ?? 4096;
+  const activeTokens = maxTokens ?? conf.maxTokens ?? 8192; // 8192 budget for large ERP views
 
   const promptContent = buildStructuredRefactorPrompt(contextPack, iterationFeedback);
 
@@ -542,6 +581,17 @@ async function proposeStructuredRefactor(params = {}) {
 
   const resJson = await response.json();
   const choice = resJson.choices?.[0];
+
+  // Token Truncation Guard (Item 25)
+  if (choice?.finish_reason === 'length') {
+    return {
+      ok: false,
+      status: 'AI_RESPONSE_TRUNCATED',
+      error: 'AI modeli çıktı belirteç sınırına (maxTokens) takıldı ve SQL yarım kesildi. Candidate reddedildi.',
+      rawContent: choice?.message?.content || ''
+    };
+  }
+
   const rawContent = (choice?.message?.content || choice?.message?.reasoning_content || choice?.text || '').trim();
 
   let parsed = null;
@@ -597,6 +647,34 @@ async function proposeStructuredRefactor(params = {}) {
     if (viewMatch && viewMatch[1]) {
       candidateSql = viewMatch[1].trim();
     }
+
+    // Schema Hallucination Guard (Item 28)
+    // Check referenced tables in candidate against known tables in contextPack
+    if (contextPack.ast?.tables && contextPack.ast.tables.length > 0) {
+      const knownTables = new Set(
+        contextPack.ast.tables.map(t => (t.object || '').toUpperCase()).filter(Boolean)
+      );
+      // Also allow user defined tables in schema
+      if (contextPack.schema) {
+        Object.keys(contextPack.schema).forEach(k => knownTables.add(k.toUpperCase()));
+      }
+      
+      const candAstQuick = astParser.parseSql(candidateSql);
+      const candTables = (candAstQuick.tables || [])
+        .filter(t => t.referenceType === 'BASE_TABLE' || !t.referenceType)
+        .map(t => (t.object || '').toUpperCase());
+
+      // If candidate introduces a table that never existed in original or schema
+      const inventedTables = candTables.filter(t => !knownTables.has(t) && !t.startsWith('#') && !t.startsWith('@'));
+      if (inventedTables.length > 0) {
+        return {
+          ok: false,
+          status: 'REJECTED_HALLUCINATION',
+          error: `Aday sorgu mevcut şemada yer almayan tablo(lar) üretti (${inventedTables.join(', ')}). Aday reddedildi.`,
+          rawContent
+        };
+      }
+    }
   }
 
   const validStatuses = [
@@ -612,14 +690,18 @@ async function proposeStructuredRefactor(params = {}) {
   return {
     ok: true,
     status,
-    strategyId: parsed.strategyId || 'GENERAL_REWRITE',
+    strategyId: parsed.selectedStrategyId || parsed.strategyId || 'GENERAL_REWRITE',
+    optimizationStrategies: Array.isArray(parsed.optimizationStrategies) ? parsed.optimizationStrategies : [],
+    whatChanged: parsed.whatChanged || '',
+    why: parsed.why || '',
+    targetBottleneck: parsed.targetBottleneck || '',
     hypothesis: parsed.hypothesis || null,
     candidateSql,
     changes: Array.isArray(parsed.changes) ? parsed.changes : [],
     addressedFindings: Array.isArray(parsed.addressedFindings) ? parsed.addressedFindings : [],
     unaddressedFindings: Array.isArray(parsed.unaddressedFindings) ? parsed.unaddressedFindings : [],
     risks: Array.isArray(parsed.risks) ? parsed.risks : [],
-    explanation: parsed.explanation || '',
+    explanation: parsed.explanation || parsed.why || '',
     model: resJson.model || activeModel,
     rawContent
   };

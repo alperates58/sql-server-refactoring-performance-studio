@@ -215,6 +215,16 @@
       }
     });
 
+    const btnOpenAdvisor = document.getElementById('btnOpenAdvisorFromStudio');
+    if (btnOpenAdvisor) {
+      btnOpenAdvisor.addEventListener('click', () => {
+        window.location.hash = '#advisor';
+        if (typeof helpers.switchTab === 'function') {
+          helpers.switchTab('advisor');
+        }
+      });
+    }
+
     // Step Navigation Jump Buttons
     document.querySelectorAll('[data-studio-step-jump]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -327,6 +337,16 @@
     const origSqlDiff = document.getElementById('studioOriginalSqlDiff');
     if (origSqlDiff) origSqlDiff.textContent = studioState.originalSql;
 
+    const candidateInput = document.getElementById('studioCandidateSql');
+    if (candidateInput) {
+      candidateInput.value = '';
+      candidateInput.classList.remove('hidden');
+    }
+    const candidateEmptyState = document.getElementById('studioCandidateEmptyState');
+    if (candidateEmptyState) candidateEmptyState.classList.add('hidden');
+    const candidateCombinedNotice = document.getElementById('studioCandidateCombinedNotice');
+    if (candidateCombinedNotice) candidateCombinedNotice.classList.add('hidden');
+
     setStudioStep(1);
   }
 
@@ -438,8 +458,8 @@
       const loadGuard = data.benchmarkLoadGuard || data.data?.benchmarkLoadGuard || null;
       const missingIndexEvidence = data.missingIndexEvidence || data.data?.missingIndexEvidence || [];
 
-      const rawCandidate = data.data?.candidateSql || data.candidateSql || studioState.originalSql;
-      studioState.candidateSql = extractQueryFromView(rawCandidate);
+      const rawCandidate = data.data?.candidateSql || data.candidateSql || null;
+      studioState.candidateSql = rawCandidate ? extractQueryFromView(rawCandidate) : '';
       studioState.aiSummary = data.data?.bulletPoints || data.bulletPoints || [
         'Tekrar eden alt sorgu taramaları küme bazlı CTE veya inline join haline getirildi.',
         'SARGable olmayan filtre koşulları düzeltildi.',
@@ -447,9 +467,38 @@
       ];
       studioState.aiRisks = data.data?.risks || data.risks || [];
 
-      // Populate Step 2 Diff
+      // Populate Step 2 Diff & Candidate View
       const candidateInput = document.getElementById('studioCandidateSql');
-      if (candidateInput) candidateInput.value = studioState.candidateSql;
+      const candidateEmptyState = document.getElementById('studioCandidateEmptyState');
+      const candidateCombinedNotice = document.getElementById('studioCandidateCombinedNotice');
+      const btnValidate = document.getElementById('btnStudioValidate');
+      const btnEditCandidate = document.getElementById('btnStudioEditCandidate');
+
+      if (!studioState.candidateSql) {
+        // No candidate generated (Item 20)
+        if (candidateInput) {
+          candidateInput.value = '';
+          candidateInput.classList.add('hidden');
+        }
+        if (candidateEmptyState) candidateEmptyState.classList.remove('hidden');
+        if (candidateCombinedNotice) candidateCombinedNotice.classList.add('hidden');
+        if (btnValidate) btnValidate.disabled = true;
+        if (btnEditCandidate) btnEditCandidate.classList.add('hidden');
+      } else {
+        // Candidate SQL exists
+        if (candidateInput) {
+          candidateInput.value = studioState.candidateSql;
+          candidateInput.classList.remove('hidden');
+        }
+        if (candidateEmptyState) candidateEmptyState.classList.add('hidden');
+        if (btnValidate) btnValidate.disabled = false;
+        if (btnEditCandidate) btnEditCandidate.classList.remove('hidden');
+
+        // Combined case notice (Item 21)
+        if (candidateCombinedNotice) {
+          candidateCombinedNotice.classList.toggle('hidden', status !== 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED');
+        }
+      }
 
       const summaryList = document.getElementById('studioAiSummaryList');
       if (summaryList) {
@@ -460,6 +509,13 @@
           if (missingIndexEvidence && missingIndexEvidence.length > 0) {
             itemsHtml += `<li><strong>Önerilen İndeksler:</strong> ${escapeHtml(missingIndexEvidence.map(m => m.impact ? `${m.table} (${m.impact}% tahmini etki)` : m.table).join(', '))}</li>`;
           }
+        } else if (status === 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED') {
+          itemsHtml += `<li style="color:var(--blue);font-weight:600">⚡ SQL Yapısı İyileştirildi (Fiziksel İndeks Bekleniyor) — Kök Neden: ${escapeHtml(primaryCause)}</li>`;
+          itemsHtml += `<li>Sorgu biçimi SARGable / küme bazlı hale getirildi. Ancak tablodaki eksik indeks nedeniyle fiziksel okuma kazancının görülmesi için indeks oluşturulması önerilir.</li>`;
+          if (missingIndexEvidence && missingIndexEvidence.length > 0) {
+            itemsHtml += `<li><strong>İlişkili Eksik İndeksler:</strong> ${escapeHtml(missingIndexEvidence.map(m => m.impact ? `${m.table} (${m.impact}% tahmini etki)` : m.table).join(', '))}</li>`;
+          }
+          itemsHtml += studioState.aiSummary.map(s => `<li>${escapeHtml(s)}</li>`).join('');
         } else if (status === 'NO_SAFE_OPTIMIZATION_FOUND') {
           itemsHtml += `<li style="color:var(--accent);font-weight:600">ℹ️ Güvenli Yapısal Optimizasyon Bulunamadı — Kök Neden: ${escapeHtml(primaryCause)}</li>`;
           itemsHtml += `<li>Sorgu mevcut şema ve indeksler altında zaten en uygun yürütme biçimindedir. Kozmetik değişiklikler performansı artırmayacağı için reddedildi.</li>`;
@@ -490,6 +546,8 @@
       if (typeof helpers.toast === 'function') {
         if (status === 'NEEDS_INDEX_CHANGE') {
           helpers.toast('İndeks Gerekli', 'Sorgu zaten SARGable. Darboğaz eksik indeksten kaynaklanıyor.', 'warning');
+        } else if (status === 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED') {
+          helpers.toast('SQL İyileştirildi', 'Sorgu yapısı düzeltildi, eksik indeks önerisini inceleyin.', 'info');
         } else if (status === 'NO_SAFE_OPTIMIZATION_FOUND') {
           helpers.toast('Zaten Optimize', 'Sorgu mevcut şema altında zaten optimize durumda.', 'info');
         } else {

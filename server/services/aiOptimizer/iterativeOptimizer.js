@@ -1,23 +1,26 @@
 /**
  * SQL Server Refactoring & Performance Studio
- * Iterative Optimization Orchestrator (Sprint 9)
+ * Iterative Optimization Orchestrator (Sprint 10 Expert Mode)
  *
  * Implements:
- * - Multi-turn optimization loop (Max 3 iterations)
- * - Benchmark Load Guard (prevents heavy benchmark execution on risky queries)
- * - Candidate Quality Gates:
- *    Gate 1: No-Op Detector (rejects cosmetic alias/whitespace/CTE rewrites)
- *    Gate 2: Validation Lab (rejects semantic failures and row count mismatches)
- *    Gate 3: Plan Equality & Noise Band Evaluation
- *    Gate 4: Alternating Benchmark (A/B/B/A/A/B pattern)
- * - Strategy diversity & feedback pack injection
- * - Early stopping via STRONG_SAFE_IMPROVEMENT
- * - Best candidate deterministic ranking without blind "Seek > Scan" bias
- * - First-class refusal statuses: NO_SAFE_OPTIMIZATION_FOUND, NEEDS_INDEX_CHANGE
+ * - Dual-Track Optimization: Track A (Physical Access) + Track B (Query Shape Review)
+ * - INDEX_ACCESS is NO LONGER a hard stop!
+ * - Strategy Diversity Guard (rejects relationally duplicate candidates via structural fingerprinting)
+ * - Strict Cosmetic Rewrite Ban (via Significance Score >= 2)
+ * - Cost-Aware Candidate Pruning (checks candidate estimated plan before benchmark)
+ * - Second-Pass DBA Feedback Loop with operator details
+ * - Honest Final Status Model:
+ *    * MEASURED_IMPROVEMENT (benchmarked verified gain)
+ *    * SQL_REWRITE_VALID_BUT_INDEX_REQUIRED (semantically validated shape change, waiting for missing index)
+ *    * NEEDS_INDEX_CHANGE (pure missing index, query shape 100% clean)
+ *    * NEEDS_STATISTICS_ATTENTION (cardinality mismatch)
+ *    * NO_SAFE_OPTIMIZATION_FOUND
+ *    * INSUFFICIENT_EVIDENCE
+ *    * MIXED_RESULT
  */
 
 const { buildEnrichedContextPack } = require('./contextPackBuilder');
-const { detectNoOpRewrite } = require('./noOpDetector');
+const { detectNoOpRewrite, isDuplicateStrategy } = require('./noOpDetector');
 const { detectPlanEquality } = require('./planEqualityDetector');
 const { evaluateStrongSafeImprovement, evaluateBenchmarkSafety } = require('./performanceThresholds');
 const validationService = require('../validationService');
@@ -26,6 +29,7 @@ const planParser = require('../planParser');
 const planComparison = require('../../../public/assets/js/modules/planComparison');
 const benchmarkComparison = require('../../../public/assets/js/modules/benchmarkComparison');
 const aiProvider = require('../aiProvider');
+const astParser = require('../ast/astParser');
 
 async function runIterativeOptimization({
   sql = '',
@@ -55,11 +59,12 @@ async function runIterativeOptimization({
 
   const canBenchmark = runBenchmark && loadGuard.canAutoExecute;
 
-  // 3. Root Cause Pre-Check (Cautious Index / Already Optimized Check)
+  // 3. Root Cause Pre-Check (Dual Track Synthesis)
   const rootCause = contextPack.rootCause;
 
-  // Pure SARGable query with missing index bottleneck
-  if (rootCause.suggestedStatus === 'NEEDS_INDEX_CHANGE') {
+  // STRICT GUARD: ONLY stop immediately if Track B has ZERO query shape opportunities
+  // and the query is already verified to be 100% structurally clean and SARGable.
+  if (rootCause.suggestedStatus === 'NEEDS_INDEX_CHANGE' && !rootCause.rewriteOpportunity && !rootCause.trackB?.hasOpportunities) {
     return {
       ok: true,
       status: 'NEEDS_INDEX_CHANGE',
@@ -72,12 +77,12 @@ async function runIterativeOptimization({
       iterations: [],
       bestCandidate: null,
       contextPack,
-      summary: 'Sorgu yapısı zaten SARGable ve biçimsel olarak düzgündür. Ana darboğaz eksik indeks erişimidir.'
+      summary: 'Sorgu yapısı zaten SARGable ve biçimsel olarak düzgündür. Hiçbir ilişkisel rewrite fırsatı (mükerrer tarama, non-SARGable filtre, gereksiz join) bulunmamaktadır. Ana darboğaz salt eksik indeks erişimidir.'
     };
   }
 
   // Already optimal query
-  if (rootCause.suggestedStatus === 'NO_SAFE_OPTIMIZATION_FOUND') {
+  if (rootCause.suggestedStatus === 'NO_SAFE_OPTIMIZATION_FOUND' && !rootCause.trackB?.hasOpportunities) {
     return {
       ok: true,
       status: 'NO_SAFE_OPTIMIZATION_FOUND',
@@ -97,6 +102,7 @@ async function runIterativeOptimization({
   const totalIterations = Math.min(3, Math.max(1, Number(maxIterations) || 3));
   const iterations = [];
   const strategiesUsed = new Set();
+  const candidateAstHistory = [];
   let feedbackPack = null;
   let strongWinnerFound = false;
 
@@ -131,7 +137,7 @@ async function runIterativeOptimization({
     }
 
     // Check if AI explicitly returned a non-rewrite status
-    if (aiResponse.status === 'NO_SAFE_OPTIMIZATION_FOUND' || aiResponse.status === 'NEEDS_INDEX_CHANGE') {
+    if (aiResponse.status === 'NO_SAFE_OPTIMIZATION_FOUND' || (aiResponse.status === 'NEEDS_INDEX_CHANGE' && !rootCause.trackB?.hasOpportunities)) {
       iterations.push({
         iteration: iterNum,
         status: aiResponse.status,
@@ -139,7 +145,6 @@ async function runIterativeOptimization({
         explanation: aiResponse.explanation || 'AI güvenli bir yapısal iyileştirme bulunmadığını bildirdi.'
       });
       if (iterations.length === 1) {
-        // Honor first-round refusal immediately
         return {
           ok: true,
           status: aiResponse.status,
@@ -162,6 +167,9 @@ async function runIterativeOptimization({
       iteration: iterNum,
       strategyId: stratId,
       hypothesis: aiResponse.hypothesis,
+      whatChanged: aiResponse.whatChanged,
+      why: aiResponse.why,
+      targetBottleneck: aiResponse.targetBottleneck,
       changes: aiResponse.changes,
       candidateSql: candSql,
       validation: null,
@@ -170,12 +178,42 @@ async function runIterativeOptimization({
       status: 'IN_PROGRESS'
     };
 
-    // B. Gate 1: No-Op Candidate Detector
+    if (!candSql) {
+      iterRecord.status = 'NO_SQL_CANDIDATE';
+      iterRecord.rejectionReason = 'AI yanıtında geçerli bir T-SQL sorgu metni üretilmedi.';
+      iterations.push(iterRecord);
+      break;
+    }
+
+    // B. Strategy Diversity Gate: check if candidate is relationally identical to previous
+    const candAst = astParser.parseSql(candSql);
+    const isDup = candidateAstHistory.some(prevAst => isDuplicateStrategy(prevAst, candAst));
+    if (isDup) {
+      iterRecord.status = 'REJECTED_DUPLICATE_STRATEGY';
+      iterRecord.rejectionReason = 'Aday sorgu önceki iterasyondaki adayla aynı ilişkisel stratejiyi (aynı tablolar, joinler, filtreler) içermektedir; çeşitlilik sağlanamadı.';
+      iterations.push(iterRecord);
+
+      feedbackPack = {
+        previousStrategyId: stratId,
+        readsDeltaPercent: 0,
+        cpuDeltaPercent: 0,
+        durationDeltaPercent: 0,
+        planSummary: 'Önceki aday ile aynı ilişkisel yapı tekrar önerildi. Lütfen fundamentally farklı bir strateji formüle edin.',
+        unaddressedFindings: contextPack.queryShapeOpportunities?.map(f => f.title) || []
+      };
+      continue;
+    }
+    candidateAstHistory.push(candAst);
+
+    // C. Gate 1: No-Op & Significance Detector (Score >= 2 required)
     const noOpResult = detectNoOpRewrite({
       originalSql: cleanSql,
-      candidateSql: candSql
+      candidateSql: candSql,
+      candidateAst: candAst
     });
     iterRecord.noOpResult = noOpResult;
+    iterRecord.significanceScore = noOpResult.significanceScore;
+    iterRecord.diffReport = noOpResult.diffReport;
 
     if (!noOpResult.isMeaningful) {
       iterRecord.status = 'REJECTED_COSMETIC';
@@ -187,13 +225,13 @@ async function runIterativeOptimization({
         readsDeltaPercent: 0,
         cpuDeltaPercent: 0,
         durationDeltaPercent: 0,
-        planSummary: 'Aday sorguda yalnızca kozmetik değişiklik yapıldı (alias/whitespace/format); yürütme planı ve maliyet değişmedi.',
-        unaddressedFindings: contextPack.ast.structuralFindings.map(f => f.title)
+        planSummary: 'Aday sorguda yalnızca kozmetik düzenleme yapıldı (Önem skoru < 2); yürütme planı ve maliyet değişmedi.',
+        unaddressedFindings: contextPack.queryShapeOpportunities?.map(f => f.title) || []
       };
       continue;
     }
 
-    // C. Gate 2: Semantic Validation Lab
+    // D. Gate 2: Semantic Validation Lab
     let valResult = null;
     if (aiResponse.simulatedValidation) {
       valResult = aiResponse.simulatedValidation;
@@ -223,13 +261,13 @@ async function runIterativeOptimization({
         readsDeltaPercent: 'N/A',
         cpuDeltaPercent: 'N/A',
         durationDeltaPercent: 'N/A',
-        planSummary: `Aday sorgu semantik doğrulamadan geçemedi (${valResult.reason}).`,
-        unaddressedFindings: contextPack.ast.structuralFindings.map(f => f.title)
+        planSummary: `Aday sorgu semantik doğrulamadan geçemedi (${valResult.reason}). Satır tekilliğini ve filtre mantığını koruyun.`,
+        unaddressedFindings: contextPack.queryShapeOpportunities?.map(f => f.title) || []
       };
       continue;
     }
 
-    // D. Gate 3: Estimated Plan Execution & Plan Equality Check
+    // E. Gate 2.5: Estimated Plan Execution & Cost-Aware Candidate Pruning (Item 30)
     let candPlan = null;
     let planComp = null;
     let origPlanParsed = null;
@@ -247,9 +285,30 @@ async function runIterativeOptimization({
     if (origPlanParsed && candPlan) {
       planComp = planComparison.comparePlans(origPlanParsed, candPlan);
       iterRecord.planComparison = planComp;
+
+      // Cost-aware pruning: detect severe plan degradation before benchmark
+      const hasCartesian = (candPlan.warnings || []).some(w => /NO_JOIN_PREDICATE|Cartesian/i.test(w.message || ''));
+      const origCost = origPlanParsed.totalSubTreeCost || 0;
+      const candCost = candPlan.totalSubTreeCost || 0;
+
+      if (hasCartesian || (origCost > 0 && candCost > origCost * 5 && candPlan.scans > origPlanParsed.scans)) {
+        iterRecord.status = 'REJECTED_COST_AWARE_PRUNING';
+        iterRecord.rejectionReason = 'Aday sorgu tahmini planında kartezyen çarpım veya aşırı maliyet patlaması (>5x) tespit edildi; canlı benchmark iptal edildi.';
+        iterations.push(iterRecord);
+
+        feedbackPack = {
+          previousStrategyId: stratId,
+          readsDeltaPercent: 'N/A',
+          cpuDeltaPercent: 'N/A',
+          durationDeltaPercent: 'N/A',
+          planSummary: 'Aday sorgu yürütme planında beklenmeyen bir kartezyen join veya yüksek maliyet patlaması yarattı. Join ilişkilerini kontrol edin.',
+          unaddressedFindings: contextPack.queryShapeOpportunities?.map(f => f.title) || []
+        };
+        continue;
+      }
     }
 
-    // E. Gate 4: Alternating Benchmark (A/B/B/A/A/B)
+    // F. Gate 4: Alternating Benchmark (A/B/B/A/A/B)
     let benchComp = null;
     let measuredMetrics = null;
 
@@ -292,7 +351,7 @@ async function runIterativeOptimization({
       iterRecord.benchmarkComparison = benchComp;
     }
 
-    // F. Gate 5: Plan Equality & Noise Band Evaluation
+    // G. Gate 5: Plan Equality & Noise Band Evaluation
     const planEquality = detectPlanEquality({
       originalPlan: origPlanParsed || {},
       candidatePlan: candPlan || {},
@@ -300,7 +359,7 @@ async function runIterativeOptimization({
     });
     iterRecord.planEquality = planEquality;
 
-    // G. Strong Safe Improvement Check (Early Stopping)
+    // H. Strong Safe Improvement Check (Early Stopping)
     const strongCheck = evaluateStrongSafeImprovement({
       validation: valResult,
       benchmarkComparison: benchComp || {},
@@ -309,73 +368,85 @@ async function runIterativeOptimization({
     });
 
     if (strongCheck.isStrong) {
-      iterRecord.status = 'STRONG_SAFE_IMPROVEMENT';
+      iterRecord.status = 'MEASURED_IMPROVEMENT';
       iterRecord.rationale = strongCheck.rationale;
       iterations.push(iterRecord);
       strongWinnerFound = true;
-      break; // Early stop!
+      break; // Early stop on verified improvement!
     }
 
-    // Normal evaluation
-    if (planEquality.status === 'NO_MEANINGFUL_PLAN_CHANGE') {
-      iterRecord.status = 'NO_MEANINGFUL_CHANGE';
-      iterRecord.rejectionReason = 'Plan yapısı ve kaynak tüketimi orijinal ile aynı kaldı.';
-    } else if (benchComp && benchComp.winner === 'ORIGINAL') {
+    // Benchmark comparison evaluation
+    const readsImpr = benchComp?.improvements?.readsPercent ?? 0;
+    const cpuImpr = benchComp?.improvements?.cpuPercent ?? 0;
+
+    const hasSargOrShapeGain = (noOpResult.diffReport && noOpResult.diffReport.origNonSargCount > noOpResult.diffReport.candNonSargCount) ||
+      (noOpResult.significanceScore >= 2) ||
+      rootCause.trackA?.hasIndexDeficiency ||
+      (rootCause.missingIndexEvidence && rootCause.missingIndexEvidence.length > 0);
+
+    if (benchComp && benchComp.winner === 'ORIGINAL' && (readsImpr <= -15 || cpuImpr <= -25)) {
       iterRecord.status = 'REGRESSION';
       iterRecord.rejectionReason = 'Aday sorguda kaynak tüketimi regresyonu oluştu.';
+    } else if (readsImpr >= 10 || cpuImpr >= 15) {
+      iterRecord.status = 'MEASURED_IMPROVEMENT';
+    } else if (valResult.status === 'PASS' && hasSargOrShapeGain) {
+      // Meaningful rewrite achieved semantically, but physical reads remain high because index is missing
+      iterRecord.status = 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED';
     } else {
       iterRecord.status = 'POTENTIAL_IMPROVEMENT';
     }
 
     iterations.push(iterRecord);
 
-    // Prepare Feedback Pack for next iteration
+    // Prepare Second-Pass DBA Feedback Pack for next iteration (Item 22)
+    const primaryScannedTable = origPlanParsed?.topOperators?.find(o => o.isScan)?.targetObject || 'ana tablo';
     feedbackPack = {
       previousStrategyId: stratId,
-      readsDeltaPercent: benchComp?.improvements?.readsPercent ?? 0,
-      cpuDeltaPercent: benchComp?.improvements?.cpuPercent ?? 0,
+      readsDeltaPercent: readsImpr,
+      cpuDeltaPercent: cpuImpr,
       durationDeltaPercent: benchComp?.improvements?.durationPercent ?? 0,
-      planSummary: planEquality.summary,
+      planSummary: `Plan Analizi: Orijinal ile aynı ${primaryScannedTable} taraması korundu. Mantıksal Okuma: ${measuredMetrics?.origReads?.toLocaleString() || 'N/A'} -> ${measuredMetrics?.candReads?.toLocaleString() || 'N/A'}. Neden önceki yapısal hipoteziniz fiziksel okuma sayısını düşüremedi? Lütfen farklı bir ilişkisel biçim deneyin.`,
       unaddressedFindings: (aiResponse.unaddressedFindings && aiResponse.unaddressedFindings.length > 0)
         ? aiResponse.unaddressedFindings
-        : contextPack.ast.structuralFindings.map(f => f.title)
+        : contextPack.queryShapeOpportunities?.map(f => f.title) || []
     };
   }
 
   // 5. Best Candidate Selection Engine (Deterministic Ranking)
-  // Hard gates: validation PASS, not cosmetic, no severe regression
   const eligibleCandidates = iterations.filter(it =>
     it.candidateSql &&
     it.status !== 'REJECTED_COSMETIC' &&
     it.status !== 'REJECTED_SEMANTIC_FAIL' &&
+    it.status !== 'REJECTED_DUPLICATE_STRATEGY' &&
+    it.status !== 'REJECTED_COST_AWARE_PRUNING' &&
     it.status !== 'REGRESSION' &&
-    it.status !== 'AI_ERROR'
+    it.status !== 'AI_ERROR' &&
+    it.status !== 'NO_SQL_CANDIDATE'
   );
 
   let bestCandidate = null;
 
   if (eligibleCandidates.length > 0) {
     // Sort ranking:
-    // 1. STRONG_SAFE_IMPROVEMENT priority
+    // 1. MEASURED_IMPROVEMENT priority
     // 2. Highest logical reads improvement
-    // 3. Lowest CPU
-    // 4. Lowest Duration
-    // Note: User Guardrail 3 respected - no blind "Seek > Scan" bias
+    // 3. Significance score (highest structural depth)
+    // 4. Lowest CPU
     eligibleCandidates.sort((a, b) => {
-      if (a.status === 'STRONG_SAFE_IMPROVEMENT' && b.status !== 'STRONG_SAFE_IMPROVEMENT') return -1;
-      if (b.status === 'STRONG_SAFE_IMPROVEMENT' && a.status !== 'STRONG_SAFE_IMPROVEMENT') return 1;
+      if (a.status === 'MEASURED_IMPROVEMENT' && b.status !== 'MEASURED_IMPROVEMENT') return -1;
+      if (b.status === 'MEASURED_IMPROVEMENT' && a.status !== 'MEASURED_IMPROVEMENT') return 1;
 
       const readsA = a.benchmarkComparison?.improvements?.readsPercent ?? 0;
       const readsB = b.benchmarkComparison?.improvements?.readsPercent ?? 0;
       if (readsB !== readsA) return readsB - readsA;
 
+      const scoreA = a.significanceScore || 0;
+      const scoreB = b.significanceScore || 0;
+      if (scoreB !== scoreA) return scoreB - scoreA;
+
       const cpuA = a.benchmarkComparison?.improvements?.cpuPercent ?? 0;
       const cpuB = b.benchmarkComparison?.improvements?.cpuPercent ?? 0;
-      if (cpuB !== cpuA) return cpuB - cpuA;
-
-      const durA = a.benchmarkComparison?.improvements?.durationPercent ?? 0;
-      const durB = b.benchmarkComparison?.improvements?.durationPercent ?? 0;
-      return durB - durA;
+      return cpuB - cpuA;
     });
 
     const top = eligibleCandidates[0];
@@ -385,13 +456,33 @@ async function runIterativeOptimization({
     // Detect MIXED_RESULT (e.g. reads improved by 30% but CPU regressed by 50%)
     const isMixed = (readsImpr >= 15 && cpuImpr <= -25) || (cpuImpr >= 20 && readsImpr <= -15);
 
+    let finalCandStatus = top.status;
+    if (isMixed) {
+      finalCandStatus = 'MIXED_RESULT';
+    } else if (readsImpr >= 10 || cpuImpr >= 15 || top.status === 'MEASURED_IMPROVEMENT') {
+      finalCandStatus = 'MEASURED_IMPROVEMENT';
+    } else if (top.validation?.status === 'PASS' && (
+      top.status === 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED' ||
+      (top.diffReport && top.diffReport.origNonSargCount > top.diffReport.candNonSargCount) ||
+      (top.significanceScore >= 2) ||
+      rootCause.trackA?.hasIndexDeficiency ||
+      (rootCause.missingIndexEvidence && rootCause.missingIndexEvidence.length > 0)
+    )) {
+      finalCandStatus = 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED';
+    }
+
     bestCandidate = {
       iteration: top.iteration,
       strategyId: top.strategyId,
-      status: isMixed ? 'MIXED_RESULT' : top.status,
+      status: finalCandStatus,
       candidateSql: top.candidateSql,
       hypothesis: top.hypothesis,
+      whatChanged: top.whatChanged,
+      why: top.why,
+      targetBottleneck: top.targetBottleneck,
       changes: top.changes,
+      significanceScore: top.significanceScore,
+      diffReport: top.diffReport,
       validation: top.validation,
       planComparison: top.planComparison,
       benchmarkComparison: top.benchmarkComparison,
@@ -399,12 +490,15 @@ async function runIterativeOptimization({
     };
   }
 
-  // 6. Overall Result Determination
+  // 6. Overall Result Determination (Item 19)
   let overallStatus = 'NO_SAFE_OPTIMIZATION_FOUND';
+
   if (bestCandidate) {
-    overallStatus = bestCandidate.status === 'STRONG_SAFE_IMPROVEMENT'
-      ? 'OPTIMIZED'
-      : (bestCandidate.isMixedResult ? 'MIXED_RESULT' : 'POTENTIAL_IMPROVEMENT');
+    overallStatus = bestCandidate.status;
+  } else if (rootCause.suggestedStatus === 'NEEDS_INDEX_CHANGE') {
+    overallStatus = 'NEEDS_INDEX_CHANGE';
+  } else if (rootCause.suggestedStatus === 'NEEDS_STATISTICS_ATTENTION') {
+    overallStatus = 'NEEDS_STATISTICS_ATTENTION';
   }
 
   return {
@@ -412,10 +506,13 @@ async function runIterativeOptimization({
     status: overallStatus,
     primaryCause: rootCause.primaryCause,
     contributingCauses: rootCause.contributingCauses,
+    rewriteOpportunity: rootCause.rewriteOpportunity,
+    indexStillRecommended: rootCause.indexStillRecommended,
     iterationsCount: iterations.length,
     iterations,
     bestCandidate,
     benchmarkLoadGuard: loadGuard,
+    missingIndexEvidence: rootCause.missingIndexEvidence,
     contextPack
   };
 }

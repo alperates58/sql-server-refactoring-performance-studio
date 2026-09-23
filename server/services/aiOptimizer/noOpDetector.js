@@ -1,16 +1,19 @@
 /**
  * SQL Server Refactoring & Performance Studio
- * Conservative No-Op Candidate Detector
+ * Expert No-Op Detector & Structural Significance Engine (Sprint 10)
  *
  * Implements:
- * - Structural AST comparison between Original and Candidate SQL
- * - Boundary handling for AST_AVAILABLE, AST_PARTIAL, and AST_FAILED
- * - Token-level and object-level normalization fallback
- * - Candidate Classification:
- *    A) COSMETIC_REWRITE (alias renames, formatting, CTE renaming, harmless reordering) -> NO_MEANINGFUL_REWRITE
- *    B) STRUCTURAL_REWRITE (subquery flattening, pre-aggregation, distinct removal)
- *    C) ACCESS_PATH_IMPROVEMENT (SARGable range rewrite, function unwrapping)
- *    D) PLAN_AFFECTING_REWRITE (join order, spool elimination)
+ * - Strict Cosmetic Rewrite Ban (alias rename, formatting, capitalization, CTE rename,
+ *   column reorder, comments, whitespace, harmless derived table wrapping)
+ * - Internal Structural Significance Score (0 to 5):
+ *   0: text only
+ *   1: expression cleanup
+ *   2: predicate structural change (SARGable range rewrite)
+ *   3: join / subquery restructuring
+ *   4: base-table access consolidation
+ *   5: relational shape redesign
+ * - Query Shape Difference Report (Original vs Candidate)
+ * - Strategy Diversity Fingerprinting (prevents duplicate candidates under different aliases)
  */
 
 const astParser = require('../ast/astParser');
@@ -20,7 +23,7 @@ function normalizeExpression(expr = '') {
   return expr
     .replace(/\s+/g, ' ')
     .replace(/[\[\]]/g, '')
-    .replace(/\b[a-zA-Z0-9_#]+\.([a-zA-Z0-9_#]+)\b/g, '$1') // Strip alias prefixes (e.g. s.col -> col)
+    .replace(/\b[a-zA-Z0-9_#]+\.([a-zA-Z0-9_#]+)\b/g, '$1') // Strip alias prefixes
     .trim()
     .toLowerCase();
 }
@@ -30,7 +33,6 @@ function normalizeExpression(expr = '') {
  */
 function tokenizeAndNormalize(sql = '') {
   if (!sql) return [];
-  // Strip block and line comments
   const clean = sql
     .replace(/--.*$/gm, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -59,58 +61,158 @@ function extractNormalizedPredicates(ast) {
 }
 
 /**
- * Checks for SARGable transformations (e.g. YEAR(col) = 2026 -> col >= '20260101' AND col < '20270101')
+ * Generates an architectural difference report between Original and Candidate query shapes.
  */
-function detectAccessPathImprovement(origAst, candAst) {
-  const origPreds = (origAst.predicates || []).map(p => (p.expression || '').toUpperCase());
-  const candPreds = (candAst.predicates || []).map(p => (p.expression || '').toUpperCase());
+function generateQueryShapeDiffReport(origAst, candAst) {
+  const origJoins = origAst?.joins || [];
+  const candJoins = candAst?.joins || [];
+  const origSubs = origAst?.subqueries || [];
+  const candSubs = candAst?.subqueries || [];
+  const origCtes = origAst?.ctes || [];
+  const candCtes = candAst?.ctes || [];
 
-  // Check if non-SARGable date/convert function was present in original but replaced by range in candidate
-  const origHasDateFunc = origPreds.some(p => /\b(YEAR|MONTH|DAY|DATEPART|CONVERT|CAST)\s*\(/.test(p));
-  const candHasRange = candPreds.some(p => />=|<=|>|</.test(p));
-
-  if (origHasDateFunc && candHasRange) {
-    return true;
+  // Base table access paths
+  const origTablePaths = {};
+  for (const t of origAst?.tables || []) {
+    const name = (t.object || '').toUpperCase();
+    if (name) origTablePaths[name] = (origTablePaths[name] || 0) + 1;
   }
-  return false;
+
+  const candTablePaths = {};
+  for (const t of candAst?.tables || []) {
+    const name = (t.object || '').toUpperCase();
+    if (name) candTablePaths[name] = (candTablePaths[name] || 0) + 1;
+  }
+
+  // Correlated subqueries
+  const origCorrelated = origSubs.filter(s => s.isCorrelated).length;
+  const candCorrelated = candSubs.filter(s => s.isCorrelated).length;
+
+  // Non-SARGable date functions
+  const origPredStr = (origAst?.predicates || []).map(p => p.expression || '').join(' ');
+  const candPredStr = (candAst?.predicates || []).map(p => p.expression || '').join(' ');
+  const sargRegex = /\b(YEAR|MONTH|DAY|DATEPART|FORMAT|LEFT|CONVERT)\s*\(/gi;
+  const origNonSargCount = (origPredStr.match(sargRegex) || []).length;
+  const candNonSargCount = (candPredStr.match(sargRegex) || []).length;
+
+  // Distinct
+  const origDistinct = Boolean(origAst?.hasDistinct);
+  const candDistinct = Boolean(candAst?.hasDistinct);
+
+  // Consolidated table access count
+  let consolidatedTablesCount = 0;
+  for (const [tbl, origCount] of Object.entries(origTablePaths)) {
+    const candCount = candTablePaths[tbl] || 0;
+    if (origCount > 1 && candCount < origCount) {
+      consolidatedTablesCount += (origCount - candCount);
+    }
+  }
+
+  const hasStructuralChange = (
+    origJoins.length !== candJoins.length ||
+    origCorrelated !== candCorrelated ||
+    origNonSargCount !== candNonSargCount ||
+    consolidatedTablesCount > 0 ||
+    origDistinct !== candDistinct ||
+    (origCtes.length !== candCtes.length && candJoins.length !== origJoins.length)
+  );
+
+  const originalSummary = [
+    `${origJoins.length} joins`,
+    `${Object.keys(origTablePaths).length} unique base tables (${Object.values(origTablePaths).reduce((a, b) => a + b, 0)} access paths)`,
+    `${origCorrelated} correlated subqueries`,
+    `${origNonSargCount} function-wrapped predicates`
+  ];
+
+  const candidateSummary = [
+    `${candJoins.length} joins`,
+    `${Object.keys(candTablePaths).length} unique base tables (${Object.values(candTablePaths).reduce((a, b) => a + b, 0)} access paths)`,
+    `${candCorrelated} correlated subqueries`,
+    `${candNonSargCount} function-wrapped predicates`
+  ];
+
+  return {
+    hasStructuralChange,
+    consolidatedTablesCount,
+    origJoinsCount: origJoins.length,
+    candJoinsCount: candJoins.length,
+    origCorrelatedCount: origCorrelated,
+    candCorrelatedCount: candCorrelated,
+    origNonSargCount,
+    candNonSargCount,
+    origDistinct,
+    candDistinct,
+    origTablePaths,
+    candTablePaths,
+    originalSummary: originalSummary.join(', '),
+    candidateSummary: candidateSummary.join(', ')
+  };
 }
 
 /**
- * Detects structural changes (e.g. correlated subquery converted to JOIN / APPLY or CTE)
+ * Calculates internal Rewrite Significance Score (0 to 5)
  */
-function detectStructuralRewrite(origAst, candAst) {
-  const origSubs = origAst.subqueries || [];
-  const candSubs = candAst.subqueries || [];
-  const origCtes = origAst.ctes || [];
-  const candCtes = candAst.ctes || [];
-  const origJoins = origAst.joins || [];
-  const candJoins = candAst.joins || [];
+function calculateSignificanceScore({
+  origAst,
+  candAst,
+  diffReport,
+  isLiteralMatch,
+  isTokenMatch
+}) {
+  if (isLiteralMatch) return 0;
+  if (isTokenMatch) return 0;
 
-  // Correlated subquery eliminated or flattened
-  const origCorrelated = origSubs.filter(s => s.isCorrelated).length;
-  const candCorrelated = candSubs.filter(s => s.isCorrelated).length;
-  if (origCorrelated > candCorrelated) {
-    return { isStructural: true, reason: `${origCorrelated - candCorrelated} adet ilişkili (correlated) alt sorgu düzleştirildi.` };
+  if (!diffReport.hasStructuralChange) {
+    // If no structural change, check if predicates changed at all
+    const origPreds = extractNormalizedPredicates(origAst);
+    const candPreds = extractNormalizedPredicates(candAst);
+    if (origPreds.join(' ') === candPreds.join(' ')) {
+      return 1; // Pure alias or cosmetic change
+    }
   }
 
-  // Pre-aggregated CTE introduced
-  if (candCtes.length > origCtes.length && candJoins.length !== origJoins.length) {
-    return { isStructural: true, reason: 'Küme bazlı ön toplama (pre-aggregation) CTE ve join yapısı oluşturuldu.' };
+  // Score 4 or 5: Base-table access consolidation or full relational redesign
+  if (diffReport.consolidatedTablesCount >= 2 || (diffReport.origJoinsCount >= 6 && diffReport.candJoinsCount <= diffReport.origJoinsCount - 2)) {
+    return 5; // Full relational redesign
+  }
+  if (diffReport.consolidatedTablesCount >= 1) {
+    return 4; // Base-table access consolidation
   }
 
-  // DISTINCT safely removed
-  if (origAst.hasDistinct && !candAst.hasDistinct) {
-    return { isStructural: true, reason: 'Gereksiz DISTINCT kaldırıldı.' };
+  // Score 3: Join or subquery restructuring
+  if (diffReport.origCorrelatedCount > diffReport.candCorrelatedCount || Math.abs(diffReport.origJoinsCount - diffReport.candJoinsCount) >= 1) {
+    return 3;
   }
 
-  // UNION converted to UNION ALL
-  const origUnions = (origAst.unions || []).filter(u => u.type === 'UNION').length;
-  const candUnions = (candAst.unions || []).filter(u => u.type === 'UNION').length;
-  if (origUnions > candUnions) {
-    return { isStructural: true, reason: 'UNION operatörü UNION ALL haline getirildi.' };
+  // Score 2: Predicate structural change (SARGability)
+  if (diffReport.origNonSargCount > diffReport.candNonSargCount) {
+    return 2;
   }
 
-  return { isStructural: false };
+  // Fallback for general structural difference
+  return diffReport.hasStructuralChange ? 2 : 1;
+}
+
+/**
+ * Structural Fingerprint Generator for Strategy Diversity Comparison
+ */
+function generateStructuralFingerprint(ast) {
+  if (!ast) return '';
+  const tables = (ast.tables || []).map(t => `${t.referenceType || 'BASE'}:${t.object}`.toUpperCase()).sort().join('|');
+  const joins = (ast.joins || []).map(j => `${j.type}:${j.table?.object}`.toUpperCase()).sort().join('|');
+  const predicates = extractNormalizedPredicates(ast).join('|');
+  const cteCount = (ast.ctes || []).length;
+  const subCount = (ast.subqueries || []).length;
+  return `T:${tables}#J:${joins}#P:${predicates}#C:${cteCount}#S:${subCount}`;
+}
+
+/**
+ * Checks whether two candidates represent the duplicate strategy (alias renaming).
+ */
+function isDuplicateStrategy(candAst1, candAst2) {
+  const fp1 = generateStructuralFingerprint(candAst1);
+  const fp2 = generateStructuralFingerprint(candAst2);
+  return Boolean(fp1 && fp2 && fp1 === fp2);
 }
 
 /**
@@ -129,10 +231,12 @@ function detectNoOpRewrite({
   if (origTrimmed === candTrimmed) {
     return {
       isMeaningful: false,
+      significanceScore: 0,
       status: 'NO_MEANINGFUL_REWRITE',
       classification: 'COSMETIC_REWRITE',
       reason: 'Aday sorgu orijinal SQL ile karakteri karakterine aynıdır.',
-      differences: []
+      differences: [],
+      diffReport: null
     };
   }
 
@@ -142,10 +246,12 @@ function detectNoOpRewrite({
   if (origTokens.join(' ') === candTokens.join(' ')) {
     return {
       isMeaningful: false,
+      significanceScore: 0,
       status: 'NO_MEANINGFUL_REWRITE',
       classification: 'COSMETIC_REWRITE',
       reason: 'Yalnızca boşluk, yorum satırları veya harf büyüklüğü değiştirildi (kozmetik düzenleme).',
-      differences: ['WHITESPACE_OR_COMMENT_ONLY']
+      differences: ['WHITESPACE_OR_COMMENT_ONLY'],
+      diffReport: null
     };
   }
 
@@ -153,108 +259,53 @@ function detectNoOpRewrite({
   const origAst = originalAst || astParser.parseSql(origTrimmed);
   const candAst = candidateAst || astParser.parseSql(candTrimmed);
 
-  // 4. Handle AST_FAILED / AST_PARTIAL Gracefully
-  const isAstComplete = origAst.status === 'AST_AVAILABLE' && candAst.status === 'AST_AVAILABLE';
+  // 4. Generate Query Shape Difference Report
+  const diffReport = generateQueryShapeDiffReport(origAst, candAst);
 
-  if (!isAstComplete) {
-    // Conservative fallback when parser fails or is partial:
-    // Compare referenced tables and basic token set
-    const origTables = new Set((origAst.tables || []).map(t => t.object.toLowerCase()));
-    const candTables = new Set((candAst.tables || []).map(t => t.object.toLowerCase()));
-    const tablesIdentical = origTables.size === candTables.size && [...origTables].every(t => candTables.has(t));
+  // 5. Calculate Significance Score
+  const score = calculateSignificanceScore({
+    origAst,
+    candAst,
+    diffReport,
+    isLiteralMatch: false,
+    isTokenMatch: false
+  });
 
-    // If tables are identical and token length differs by less than 5%, check if tokens are just alias renames
-    const tokenLenDelta = Math.abs(origTokens.length - candTokens.length);
-    if (tablesIdentical && tokenLenDelta <= 2) {
-      // High likelihood of cosmetic rewrite
-      const origKeywords = origTokens.filter(t => ['SELECT', 'FROM', 'WHERE', 'JOIN', 'GROUP', 'ORDER'].includes(t));
-      const candKeywords = candTokens.filter(t => ['SELECT', 'FROM', 'WHERE', 'JOIN', 'GROUP', 'ORDER'].includes(t));
-      if (origKeywords.join(' ') === candKeywords.join(' ')) {
-        return {
-          isMeaningful: false,
-          status: 'NO_MEANINGFUL_REWRITE',
-          classification: 'COSMETIC_REWRITE',
-          reason: 'AST ayrıştırması kısmi olmasına rağmen sorgu iskeleti ve erişilen tabloların birebir aynı olduğu tespit edildi.',
-          differences: ['ALIAS_OR_FORMATTING_CHANGE']
-        };
-      }
-    }
-
-    // When in doubt with partial AST, give benefit of doubt to avoid false rejection
-    return {
-      isMeaningful: true,
-      status: 'MEANINGFUL_REWRITE',
-      classification: 'STRUCTURAL_REWRITE',
-      reason: 'Kısmi AST durumunda konservatif doğrulama uygulandı; aday benchmark aşamasına aktarılıyor.',
-      differences: ['UNPARSED_DIFFERENCE']
-    };
-  }
-
-  // 5. Complete AST Structural Analysis
-  const differences = [];
-
-  // A. Access Path Improvement (SARGability)
-  const isAccessPathImproved = detectAccessPathImprovement(origAst, candAst);
-  if (isAccessPathImproved) {
-    differences.push('SARGABLE_PREDICATE_TRANSFORMATION');
-    return {
-      isMeaningful: true,
-      status: 'MEANINGFUL_REWRITE',
-      classification: 'ACCESS_PATH_IMPROVEMENT',
-      reason: 'Non-SARGable fonksiyon veya filtre indekse uygun aralık (SARGable) haline getirildi.',
-      differences
-    };
-  }
-
-  // B. Structural Rewrite (Subqueries, Aggregations, Joins)
-  const structuralCheck = detectStructuralRewrite(origAst, candAst);
-  if (structuralCheck.isStructural) {
-    differences.push('STRUCTURAL_QUERY_TRANSFORMATION');
-    return {
-      isMeaningful: true,
-      status: 'MEANINGFUL_REWRITE',
-      classification: 'STRUCTURAL_REWRITE',
-      reason: structuralCheck.reason,
-      differences
-    };
-  }
-
-  // C. Predicate & Table Comparison
-  const origPreds = extractNormalizedPredicates(origAst);
-  const candPreds = extractNormalizedPredicates(candAst);
-  const predsIdentical = origPreds.length === candPreds.length && origPreds.every((p, idx) => p === candPreds[idx]);
-
-  const origTables = (origAst.tables || []).map(t => `${t.referenceType}:${t.object}`.toLowerCase()).sort();
-  const candTables = (candAst.tables || []).map(t => `${t.referenceType}:${t.object}`.toLowerCase()).sort();
-  const tablesIdentical = origTables.length === candTables.length && origTables.every((t, idx) => t === candTables[idx]);
-
-  const origJoins = (origAst.joins || []).map(j => `${j.type}:${j.table?.object}`.toLowerCase()).sort();
-  const candJoins = (candAst.joins || []).map(j => `${j.type}:${j.table?.object}`.toLowerCase()).sort();
-  const joinsIdentical = origJoins.length === candJoins.length && origJoins.every((j, idx) => j === candJoins[idx]);
-
-  if (predsIdentical && tablesIdentical && joinsIdentical && origAst.hasDistinct === candAst.hasDistinct) {
+  // Stricter Cosmetic Rejection: Score < 2 is rejected as COSMETIC_REWRITE
+  if (score < 2) {
     return {
       isMeaningful: false,
+      significanceScore: score,
       status: 'NO_MEANINGFUL_REWRITE',
       classification: 'COSMETIC_REWRITE',
-      reason: 'Aday sorguda tablolar, join bağlantıları ve filtre koşulları yapısal olarak birebir aynıdır; yalnızca alias veya format değişikliği yapılmıştır.',
-      differences: ['COSMETIC_ALIAS_OR_LAYOUT']
+      reason: 'Aday sorguda yalnızca alias, formatlama veya yüzeysel isim değişiklikleri yapılmıştır; ilişkisel sorgu yapısında anlamlı bir optimizasyon bulunmamaktadır.',
+      differences: ['COSMETIC_ALIAS_OR_LAYOUT'],
+      diffReport
     };
   }
 
-  // Default: Meaningful change detected
-  differences.push('GENERAL_STRUCTURAL_CHANGE');
+  // Classification based on score
+  let classification = 'STRUCTURAL_REWRITE';
+  if (score === 2) classification = 'ACCESS_PATH_IMPROVEMENT';
+  else if (score >= 4) classification = 'RELATIONAL_SHAPE_REDESIGN';
+
   return {
     isMeaningful: true,
+    significanceScore: score,
     status: 'MEANINGFUL_REWRITE',
-    classification: 'PLAN_AFFECTING_REWRITE',
-    reason: 'Sorgu yapısında veya filtre topolojisinde anlamlı değişiklik tespit edildi.',
-    differences
+    classification,
+    reason: `Anlamlı yapısal değişiklik saptandı (Önem skoru: ${score}/5). Orijinal: [${diffReport.originalSummary}] → Aday: [${diffReport.candidateSummary}].`,
+    differences: ['STRUCTURAL_QUERY_TRANSFORMATION'],
+    diffReport
   };
 }
 
 module.exports = {
   detectNoOpRewrite,
   tokenizeAndNormalize,
-  extractNormalizedPredicates
+  extractNormalizedPredicates,
+  generateQueryShapeDiffReport,
+  calculateSignificanceScore,
+  generateStructuralFingerprint,
+  isDuplicateStrategy
 };

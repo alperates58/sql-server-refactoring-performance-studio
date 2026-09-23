@@ -16,6 +16,13 @@
 }(typeof self !== 'undefined' ? self : this, function () {
 
   const DECISIONS = {
+    MEASURED_IMPROVEMENT: {
+      code: 'MEASURED_IMPROVEMENT',
+      label: 'Ölçülen İyileştirme',
+      badgeClass: 'badge-success',
+      color: '#10b981',
+      description: 'Semantik doğrulama başarılı, kaynak tüketimi azaldı ve planda iyileşme doğrulandı.'
+    },
     SAFE_IMPROVEMENT: {
       code: 'SAFE_IMPROVEMENT',
       label: 'Güvenli İyileştirme',
@@ -23,12 +30,26 @@
       color: '#10b981',
       description: 'Semantik doğrulama başarılı, kaynak tüketimi azaldı ve planda risk tespit edilmedi.'
     },
+    SQL_REWRITE_VALID_BUT_INDEX_REQUIRED: {
+      code: 'SQL_REWRITE_VALID_BUT_INDEX_REQUIRED',
+      label: 'SQL Yapısı Doğrulandı (İndeks Bekleniyor)',
+      badgeClass: 'badge-info',
+      color: '#8b5cf6',
+      description: 'Sorgu yapısı ve SARGability semantik olarak iyileştirildi; fiziksel I/O kazancı için önerilen indeks gereklidir.'
+    },
     POTENTIAL_IMPROVEMENT: {
       code: 'POTENTIAL_IMPROVEMENT',
       label: 'Potansiyel İyileştirme',
       badgeClass: 'badge-info',
       color: '#3b82f6',
       description: 'Planda veya metriklerde olumlu sinyaller var, ancak bazı uyarılar veya eksik testler mevcut.'
+    },
+    NEEDS_INDEX_CHANGE: {
+      code: 'NEEDS_INDEX_CHANGE',
+      label: 'İndeks Değişikliği Gerekli',
+      badgeClass: 'badge-warning',
+      color: '#f59e0b',
+      description: 'Sorgu biçimi zaten temiz; ana darboğaz tablodaki eksik indekstir.'
     },
     NO_MEANINGFUL_CHANGE: {
       code: 'NO_MEANINGFUL_CHANGE',

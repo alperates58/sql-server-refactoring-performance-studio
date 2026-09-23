@@ -722,10 +722,35 @@
               </div>
               <div>
                 <div class="code-toolbar" style="margin-bottom:4px">
-                  <span style="font-size:12px;font-weight:600;color:var(--accent)">Aday Refaktör SQL (V2)</span>
-                  <small style="color:var(--text-muted);font-size:11px">Düzenlenebilir</small>
+                  <span id="studioCandidateTitle" style="font-size:12px;font-weight:600;color:var(--accent)">Aday Refaktör SQL (V2)</span>
+                  <small id="studioCandidateSub" style="color:var(--text-muted);font-size:11px">Düzenlenebilir</small>
                 </div>
                 <textarea id="studioCandidateSql" class="code-editor tall" style="width:100%;height:380px;background:rgba(0,0,0,0.3);color:var(--text-primary);border:1px solid var(--border);border-radius:6px;resize:vertical" readonly placeholder="Aday SQL henüz üretilmedi..."></textarea>
+
+                <!-- Dedicated Empty State Container for NEEDS_INDEX_CHANGE without candidate (Item 20) -->
+                <div id="studioCandidateEmptyState" class="hidden" style="height:380px;border:1px dashed var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;background:rgba(255,255,255,0.02)">
+                  <span style="font-size:32px;margin-bottom:10px">⚡</span>
+                  <strong style="font-size:15px;color:var(--text-primary);margin-bottom:6px">SQL rewrite adayı oluşturulmadı.</strong>
+                  <p style="font-size:13px;color:var(--text-secondary);max-width:320px;margin:0 0 16px;line-height:1.4">
+                    Ana darboğaz: Eksik erişim yolu / indeks.<br>
+                    <small style="color:var(--text-muted)">Sorgu biçimi zaten temizdir; SQL düzeyinde kozmetik rewrite performansı artırmaz.</small>
+                  </p>
+                  <button type="button" class="button primary small" id="btnOpenAdvisorFromStudio">
+                    🔍 İndeks Önerisini Aç (İndeks Danışmanı)
+                  </button>
+                </div>
+
+                <!-- Combined Case Notice Banner (Item 21) -->
+                <div id="studioCandidateCombinedNotice" class="hidden note-banner" style="margin-top:8px;background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);padding:10px 14px;border-radius:6px">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <span style="color:var(--blue);font-weight:700">✓ SQL Yapısı İyileştirildi</span>
+                    <span style="color:var(--text-muted)">+</span>
+                    <span style="color:var(--yellow);font-weight:700">Fiziksel erişim yolu hâlâ eksik.</span>
+                  </div>
+                  <p style="margin:4px 0 0;font-size:12px;color:var(--text-secondary);line-height:1.4">
+                    Bu rewrite semantik olarak doğrulandı ancak mevcut indeks yapısıyla ölçülebilir performans kazancı üretmedi. Önerilen index mevcut olursa erişim yolu değişebilir.
+                  </p>
+                </div>
               </div>
             </div>
 
