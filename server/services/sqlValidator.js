@@ -175,6 +175,39 @@ function isWhitelistedSetStatement(stmtText) {
 }
 
 /**
+ * Extracts the underlying SELECT or WITH ... SELECT query from a view definition.
+ * Strips comments, markdown code blocks, and CREATE/ALTER VIEW headers.
+ */
+function extractExecutableQueryFromView(rawSql) {
+  if (!rawSql || typeof rawSql !== 'string') return '';
+  let sql = rawSql.trim();
+
+  // Strip markdown code fences if present (e.g. ```sql ... ```)
+  sql = sql.replace(/^```(?:sql)?\s*[\r\n]+/i, '').replace(/[\r\n]+```\s*$/i, '').trim();
+
+  // Strip trailing batch separators (GO)
+  sql = sql.replace(/[\r\n]+\s*GO\s*;?\s*$/i, '').trim();
+
+  // Match optional leading comments, then CREATE [OR ALTER] VIEW ..., up to the keyword AS
+  // followed by a SELECT or WITH token
+  const viewRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE\s+OR\s+ALTER\s+VIEW|CREATE\s+VIEW|ALTER\s+VIEW)\s+(?:\[?[a-zA-Z0-9_@#$]+\]?\.)?\[?[a-zA-Z0-9_@#$]+\]?\s*(?:\([^\)]*\))?\s*(?:WITH\s+[^\r\n]+?\s+)?AS\s+(?=(?:SELECT|WITH)\b)/i;
+
+  const match = viewRegex.exec(sql);
+  if (match) {
+    sql = sql.slice(match[0].length).trim();
+  } else {
+    // Secondary fallback: find the first AS followed by SELECT or WITH
+    const fallbackRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE|ALTER)\s+VIEW\b[\s\S]*?\bAS\s+(?=(?:SELECT|WITH)\b)/i;
+    const match2 = fallbackRegex.exec(sql);
+    if (match2) {
+      sql = sql.slice(match2[0].length).trim();
+    }
+  }
+
+  return sql.replace(/;+\s*$/, '').trim();
+}
+
+/**
  * Validates whether a SQL query is safe and strictly read-only.
  * Returns { valid: true } or { valid: false, reason: string, keyword?: string }
  */
@@ -292,5 +325,6 @@ module.exports = {
   stripCommentsAndLiterals,
   PROHIBITED_KEYWORDS,
   SAFE_SET_STATEMENTS,
-  isWhitelistedSetStatement
+  isWhitelistedSetStatement,
+  extractExecutableQueryFromView
 };

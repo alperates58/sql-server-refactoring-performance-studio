@@ -18,10 +18,11 @@
     module.exports = factory();
   } else {
     root.STUDIO_MODULES = root.STUDIO_MODULES || {};
-    root.STUDIO_MODULES.refactorStudio = factory();
+    root.STUDIO_MODULES.refactorStudio = factory(root);
   }
-}(typeof self !== 'undefined' ? self : this, function () {
+}(typeof self !== 'undefined' ? self : this, function (root) {
   'use strict';
+  root = root || (typeof window !== 'undefined' ? window : (typeof globalThis !== 'undefined' ? globalThis : this));
 
   let studioState = {
     activeView: null,
@@ -377,6 +378,25 @@
     }
   }
 
+  function extractQueryFromView(rawSql) {
+    if (!rawSql || typeof rawSql !== 'string') return '';
+    let sql = rawSql.trim();
+    sql = sql.replace(/^```(?:sql)?\s*[\r\n]+/i, '').replace(/[\r\n]+```\s*$/i, '').trim();
+    sql = sql.replace(/[\r\n]+\s*GO\s*;?\s*$/i, '').trim();
+    const viewRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE\s+OR\s+ALTER\s+VIEW|CREATE\s+VIEW|ALTER\s+VIEW)\s+(?:\[?[a-zA-Z0-9_@#$]+\]?\.)?\[?[a-zA-Z0-9_@#$]+\]?\s*(?:\([^\)]*\))?\s*(?:WITH\s+[^\r\n]+?\s+)?AS\s+(?=(?:SELECT|WITH)\b)/i;
+    const match = viewRegex.exec(sql);
+    if (match) {
+      sql = sql.slice(match[0].length).trim();
+    } else {
+      const fallbackRegex = /^(?:[\s\r\n]|--[^\r\n]*[\r\n]|\/\*[\s\S]*?\*\/)*(?:CREATE|ALTER)\s+VIEW\b[\s\S]*?\bAS\s+(?=(?:SELECT|WITH)\b)/i;
+      const match2 = fallbackRegex.exec(sql);
+      if (match2) {
+        sql = sql.slice(match2[0].length).trim();
+      }
+    }
+    return sql.replace(/;+\s*$/, '').trim();
+  }
+
   async function runValidateAndBenchmark() {
     if (studioState.isValidating) return;
     studioState.isValidating = true;
@@ -393,21 +413,31 @@
     if (progressEl) progressEl.classList.remove('hidden');
 
     try {
-      const v = studioState.activeView;
-      const targetDb = v.database || appStateRef.primaryDatabase;
+      const v = studioState.activeView || {};
+      const targetDb = v.database || appStateRef?.activeDatabase || appStateRef?.primaryDatabase || appStateRef?.connectionInfo?.database;
+
+      const origClean = extractQueryFromView(studioState.originalSql);
+      const candClean = extractQueryFromView(studioState.candidateSql);
+
+      if (!origClean || !candClean) {
+        throw new Error('Doğrulanacak orijinal veya aday SQL sorgusu boş.');
+      }
 
       // 1. Semantic Validation
       const valRes = await fetch('/api/validation/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          originalSql: studioState.originalSql,
-          candidateSql: studioState.candidateSql,
+          originalSql: origClean,
+          candidateSql: candClean,
           database: targetDb,
           sampleLimit: 1000
         })
       });
       const valData = await valRes.json();
+      if (!valRes.ok || valData.ok === false) {
+        throw new Error(valData.error || 'Doğrulama servisi hata döndü.');
+      }
       const val = valData.data || valData;
       studioState.validationResult = val;
 
@@ -416,23 +446,27 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          originalSql: studioState.originalSql,
-          candidateSql: studioState.candidateSql,
+          originalSql: origClean,
+          candidateSql: candClean,
           database: targetDb,
+          runValidation: false,
           benchmarkRuns: 3
         })
       });
       const compData = await compRes.json();
       const comparison = compData.data || compData;
-      studioState.benchmarkResult = comparison.benchmark || {};
-      studioState.planComparison = comparison.planComparison || {};
+      studioState.benchmarkResult = comparison.benchmarks?.comparison || comparison.benchmark || {};
+      studioState.planComparison = comparison.plans?.comparison || comparison.planComparison || {};
 
-      // 3. Evaluate Decision using refactorDecision module
-      if (root.STUDIO_MODULES?.refactorDecision) {
-        studioState.decision = root.STUDIO_MODULES.refactorDecision.evaluateRefactorDecision({
+      // 3. Evaluate Decision
+      const refDecision = (typeof window !== 'undefined' ? window : root)?.STUDIO_MODULES?.refactorDecision;
+      if (comparison.decision) {
+        studioState.decision = comparison.decision;
+      } else if (refDecision) {
+        studioState.decision = refDecision.evaluateRefactorDecision({
           validation: val,
-          benchmark: comparison.benchmark || {},
-          planComparison: comparison.planComparison || {}
+          benchmark: studioState.benchmarkResult,
+          planComparison: studioState.planComparison
         });
       } else {
         const isPass = val.verdict === 'PASS' || val.verdict === 'PASS_WITH_WARNING';

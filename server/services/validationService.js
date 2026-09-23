@@ -15,7 +15,7 @@
  */
 
 const db = require('./sqlServer');
-const { validateReadOnly } = require('./sqlValidator');
+const { validateReadOnly, extractExecutableQueryFromView } = require('./sqlValidator');
 
 /**
  * Checks if a column data type is comparable and sortable (non-LOB).
@@ -147,8 +147,8 @@ function buildBoundedTableScript(sql, tableName, limit, orderByClause = '', useT
  *   - INCONCLUSIVE: LOB/XML types or unbounded dataset without comparable columns
  */
 async function validateEquivalence({ originalSql, candidateSql, database = null, sampleLimit = 1000 }) {
-  const cleanOrig = String(originalSql || '').trim().replace(/;+\s*$/, '');
-  const cleanCand = String(candidateSql || '').trim().replace(/;+\s*$/, '');
+  const cleanOrig = extractExecutableQueryFromView(originalSql);
+  const cleanCand = extractExecutableQueryFromView(candidateSql);
 
   // 1. Validate both queries are read-only
   const valOrig = validateReadOnly(cleanOrig);
@@ -391,5 +391,6 @@ module.exports = {
   buildCountProbeScript,
   buildDeterministicOrderBy,
   isComparableColumn,
-  getComparableColumns
+  getComparableColumns,
+  extractExecutableQueryFromView
 };

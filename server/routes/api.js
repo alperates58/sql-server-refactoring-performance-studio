@@ -689,6 +689,9 @@ router.post('/refactor/compare', async (req, res) => {
       });
     }
 
+    const cleanOrig = validation.extractExecutableQueryFromView(originalSql);
+    const cleanCand = validation.extractExecutableQueryFromView(candidateSql);
+
     let validationResult = null;
     let originalPlan = null;
     let candidatePlan = null;
@@ -701,8 +704,8 @@ router.post('/refactor/compare', async (req, res) => {
     if (runValidation) {
       try {
         validationResult = await validation.validateEquivalence({
-          originalSql,
-          candidateSql,
+          originalSql: cleanOrig,
+          candidateSql: cleanCand,
           database,
           sampleLimit
         });
@@ -718,14 +721,14 @@ router.post('/refactor/compare', async (req, res) => {
     // 2. Execution Plans (Estimated)
     if (runPlan) {
       try {
-        const origPlanRes = await workbench.executePlan({ sql: originalSql, database, mode: 'estimated' });
+        const origPlanRes = await workbench.executePlan({ sql: cleanOrig, database, mode: 'estimated' });
         originalPlan = planParser.parseShowPlanXML(origPlanRes.rawXml);
       } catch (pErr1) {
         originalPlan = { error: pErr1.message, totalSubTreeCost: 0, operators: [], warnings: [] };
       }
 
       try {
-        const candPlanRes = await workbench.executePlan({ sql: candidateSql, database, mode: 'estimated' });
+        const candPlanRes = await workbench.executePlan({ sql: cleanCand, database, mode: 'estimated' });
         candidatePlan = planParser.parseShowPlanXML(candPlanRes.rawXml);
       } catch (pErr2) {
         candidatePlan = { error: pErr2.message, totalSubTreeCost: 0, operators: [], warnings: [] };
@@ -741,7 +744,7 @@ router.post('/refactor/compare', async (req, res) => {
     if (runBenchmark) {
       try {
         originalBench = await workbench.executeBenchmark({
-          sql: originalSql,
+          sql: cleanOrig,
           database,
           runs: benchmarkRuns,
           warmUp: true
@@ -752,7 +755,7 @@ router.post('/refactor/compare', async (req, res) => {
 
       try {
         candidateBench = await workbench.executeBenchmark({
-          sql: candidateSql,
+          sql: cleanCand,
           database,
           runs: benchmarkRuns,
           warmUp: true

@@ -5,7 +5,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { validateReadOnly, stripCommentsAndLiterals, PROHIBITED_KEYWORDS } = require('../server/services/sqlValidator');
+const { validateReadOnly, stripCommentsAndLiterals, PROHIBITED_KEYWORDS, extractExecutableQueryFromView } = require('../server/services/sqlValidator');
 
 describe('SQL Validator - Read-Only Enforcement', () => {
 
@@ -208,6 +208,65 @@ describe('SQL Validator - Read-Only Enforcement', () => {
       const res = validateReadOnly('SET NOCOUNT ON;');
       assert.strictEqual(res.valid, false);
       assert.match(res.reason, /SELECT veya WITH/);
+    });
+  });
+
+  describe('View Definition Query Extraction (extractExecutableQueryFromView)', () => {
+    it('extracts query from basic CREATE VIEW statement', () => {
+      const sql = 'CREATE VIEW dbo.V1 AS SELECT 1 AS num;';
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'SELECT 1 AS num');
+    });
+
+    it('extracts query from bracketed schema and view name with comments', () => {
+      const sql = `
+        -- Author: DBA Team
+        /* View header */
+        CREATE VIEW [dbo].[AA_URETIM_PLANI]
+        AS
+        SELECT sto_kod, sto_isim FROM dbo.STOKLAR;
+      `;
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'SELECT sto_kod, sto_isim FROM dbo.STOKLAR');
+    });
+
+    it('extracts query from ALTER VIEW with SCHEMABINDING option', () => {
+      const sql = 'ALTER VIEW [dbo].[AA_KAYIT] WITH SCHEMABINDING AS SELECT a, b FROM dbo.T;';
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'SELECT a, b FROM dbo.T');
+    });
+
+    it('extracts query when body starts with WITH (CTE)', () => {
+      const sql = `
+        CREATE OR ALTER VIEW [dbo].[AA_CTE_VIEW] AS
+        WITH CTE_Temp AS (
+          SELECT 1 AS x
+        )
+        SELECT * FROM CTE_Temp;
+      `;
+      assert.strictEqual(
+        extractExecutableQueryFromView(sql),
+        'WITH CTE_Temp AS (\n          SELECT 1 AS x\n        )\n        SELECT * FROM CTE_Temp'
+      );
+    });
+
+    it('leaves pure SELECT queries untouched', () => {
+      const sql = 'SELECT * FROM dbo.STOKLAR;';
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'SELECT * FROM dbo.STOKLAR');
+    });
+
+    it('leaves pure WITH ... SELECT queries untouched', () => {
+      const sql = 'WITH CTE AS (SELECT 1 AS x) SELECT * FROM CTE;';
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'WITH CTE AS (SELECT 1 AS x) SELECT * FROM CTE');
+    });
+
+    it('strips markdown code blocks and trailing GO', () => {
+      const sql = '```sql\nCREATE VIEW dbo.V AS SELECT 1 AS Col;\nGO\n```';
+      assert.strictEqual(extractExecutableQueryFromView(sql), 'SELECT 1 AS Col');
+    });
+
+    it('allows the extracted query to pass validateReadOnly', () => {
+      const viewDef = 'CREATE VIEW [dbo].[AA_VIEW] AS SELECT sto_kod FROM dbo.STOKLAR;';
+      const extracted = extractExecutableQueryFromView(viewDef);
+      const res = validateReadOnly(extracted);
+      assert.strictEqual(res.valid, true);
     });
   });
 
