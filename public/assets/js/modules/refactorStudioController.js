@@ -143,6 +143,78 @@
       btnGenScript.addEventListener('click', () => showDeploymentScriptModal());
     }
 
+    // Step 2, 3, 4: Live Side-by-Side Comparison Launchers
+    const btnLiveStep2 = document.getElementById('btnStudioCompareLiveStep2');
+    if (btnLiveStep2) {
+      btnLiveStep2.addEventListener('click', () => openLiveCompareModal());
+    }
+
+    const btnLiveStep3 = document.getElementById('btnStudioCompareLiveStep3');
+    if (btnLiveStep3) {
+      btnLiveStep3.addEventListener('click', () => openLiveCompareModal());
+    }
+
+    const btnLiveStep4 = document.getElementById('btnStudioCompareLiveStep4');
+    if (btnLiveStep4) {
+      btnLiveStep4.addEventListener('click', () => openLiveCompareModal());
+    }
+
+    // Live Compare Modal Controls
+    const btnRunBoth = document.getElementById('btnLiveCompareRunBoth');
+    if (btnRunBoth) {
+      btnRunBoth.addEventListener('click', () => runLiveComparison({ runOrig: true, runCand: true }));
+    }
+
+    const btnRunOrig = document.getElementById('btnLiveCompareRunOrig');
+    if (btnRunOrig) {
+      btnRunOrig.addEventListener('click', () => runLiveComparison({ runOrig: true, runCand: false }));
+    }
+
+    const btnRunCand = document.getElementById('btnLiveCompareRunCand');
+    if (btnRunCand) {
+      btnRunCand.addEventListener('click', () => runLiveComparison({ runOrig: false, runCand: true }));
+    }
+
+    const btnToggleOrig = document.getElementById('btnToggleOrigSqlPreview');
+    if (btnToggleOrig) {
+      btnToggleOrig.addEventListener('click', () => {
+        document.getElementById('liveCompareOrigSqlWrap')?.classList.toggle('collapsed');
+      });
+    }
+
+    const btnToggleCand = document.getElementById('btnToggleCandSqlPreview');
+    if (btnToggleCand) {
+      btnToggleCand.addEventListener('click', () => {
+        document.getElementById('liveCompareCandSqlWrap')?.classList.toggle('collapsed');
+      });
+    }
+
+    const btnToWb = document.getElementById('btnLiveCompareToWorkbench');
+    if (btnToWb) {
+      btnToWb.addEventListener('click', () => exportBothToWorkbench());
+    }
+
+    const btnCloseLive = document.getElementById('btnCloseLiveCompareModal');
+    if (btnCloseLive) {
+      btnCloseLive.addEventListener('click', () => closeLiveCompareModal());
+    }
+
+    const liveModalEl = document.getElementById('studioLiveCompareModal');
+    if (liveModalEl) {
+      liveModalEl.addEventListener('click', (e) => {
+        if (e.target === liveModalEl) closeLiveCompareModal();
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const modal = document.getElementById('studioLiveCompareModal');
+        if (modal && !modal.classList.contains('hidden')) {
+          closeLiveCompareModal();
+        }
+      }
+    });
+
     // Step Navigation Jump Buttons
     document.querySelectorAll('[data-studio-step-jump]').forEach(btn => {
       btn.addEventListener('click', (e) => {
@@ -816,6 +888,443 @@ GO
     return n.toLocaleString('tr-TR');
   }
 
+  // =========================================================================
+  // LIVE SIDE-BY-SIDE QUERY EXECUTION & RESULT COMPARISON (Sprint 9 Extended)
+  // =========================================================================
+
+  let lastLiveCompareOrig = null;
+  let lastLiveCompareCand = null;
+
+  function openLiveCompareModal() {
+    const modalEl = document.getElementById('studioLiveCompareModal');
+    if (!modalEl) return;
+
+    // Get current raw SQLs
+    const candidateInput = document.getElementById('studioCandidateSql');
+    const rawOrig = studioState.originalSql || '';
+    const rawCand = candidateInput?.value?.trim() || studioState.candidateSql || rawOrig;
+
+    // Strip CREATE VIEW to get pure executable SELECT query
+    const origSelect = extractQueryFromView(rawOrig);
+    const candSelect = extractQueryFromView(rawCand);
+
+    const origSqlArea = document.getElementById('liveCompareOrigSqlText');
+    const candSqlArea = document.getElementById('liveCompareCandSqlText');
+    if (origSqlArea) origSqlArea.value = origSelect;
+    if (candSqlArea) candSqlArea.value = candSelect;
+
+    // Populate database select
+    const dbSelect = document.getElementById('liveCompareDbSelect');
+    if (dbSelect) {
+      const activeDb = studioState.activeView?.database || appStateRef?.activeDatabase || appStateRef?.primaryDatabase || '';
+      const allDbs = new Set();
+      if (activeDb) allDbs.add(activeDb);
+      if (appStateRef?.primaryDatabase) allDbs.add(appStateRef.primaryDatabase);
+      if (Array.isArray(appStateRef?.selectedDatabases)) {
+        appStateRef.selectedDatabases.forEach(d => allDbs.add(d));
+      }
+      if (Array.isArray(appStateRef?.data?.databases)) {
+        appStateRef.data.databases.forEach(d => {
+          const name = typeof d === 'string' ? d : d.name;
+          if (name) allDbs.add(name);
+        });
+      }
+      if (allDbs.size === 0) allDbs.add('MikroDB_V16_LIDER25');
+
+      dbSelect.innerHTML = Array.from(allDbs).map(db =>
+        `<option value="${escapeHtml(db)}"${db === activeDb ? ' selected' : ''}>${escapeHtml(db)}</option>`
+      ).join('');
+    }
+
+    // Set View Badge
+    const viewBadge = document.getElementById('liveCompareViewBadge');
+    if (viewBadge) {
+      viewBadge.textContent = studioState.activeView?.canonicalId || studioState.activeView?.name || 'Seçili View';
+    }
+
+    // Reset results on open
+    resetLiveCompareState();
+
+    modalEl.classList.remove('hidden');
+  }
+
+  function closeLiveCompareModal() {
+    const modalEl = document.getElementById('studioLiveCompareModal');
+    if (modalEl) modalEl.classList.add('hidden');
+  }
+
+  function resetLiveCompareState() {
+    lastLiveCompareOrig = null;
+    lastLiveCompareCand = null;
+
+    // Reset summary cards
+    const valRows = document.getElementById('valCompareRows');
+    const subRows = document.getElementById('subCompareRows');
+    const valCols = document.getElementById('valCompareCols');
+    const subCols = document.getElementById('subCompareCols');
+    const valDur = document.getElementById('valCompareDuration');
+    const subDur = document.getElementById('subCompareDuration');
+    const valReads = document.getElementById('valCompareReads');
+    const subReads = document.getElementById('subCompareReads');
+
+    if (valRows) valRows.textContent = '—';
+    if (subRows) subRows.textContent = 'Henüz çalıştırılmadı';
+    if (valCols) valCols.textContent = '—';
+    if (subCols) subCols.textContent = 'Kolon listesi bekleniyor';
+    if (valDur) valDur.textContent = '—';
+    if (subDur) subDur.textContent = 'Orijinal vs Aday';
+    if (valReads) valReads.textContent = '—';
+    if (subReads) subReads.textContent = 'Buffer cache sayfa okuması';
+
+    // Reset panes
+    const origEmpty = document.getElementById('liveCompareOrigEmpty');
+    const origGrid = document.getElementById('liveCompareOrigGrid');
+    const candEmpty = document.getElementById('liveCompareCandEmpty');
+    const candGrid = document.getElementById('liveCompareCandGrid');
+
+    if (origEmpty) origEmpty.classList.remove('hidden');
+    if (origGrid) origGrid.classList.add('hidden');
+    if (candEmpty) candEmpty.classList.remove('hidden');
+    if (candGrid) candGrid.classList.add('hidden');
+
+    const origPill = document.getElementById('liveCompareOrigPill');
+    const candPill = document.getElementById('liveCompareCandPill');
+    if (origPill) {
+      origPill.textContent = 'Bekliyor';
+      origPill.className = 'status-pill status-ready';
+    }
+    if (candPill) {
+      candPill.textContent = 'Bekliyor';
+      candPill.className = 'status-pill status-ready';
+    }
+
+    const origStats = document.getElementById('liveCompareOrigStats');
+    const candStats = document.getElementById('liveCompareCandStats');
+    if (origStats) origStats.textContent = '—';
+    if (candStats) candStats.textContent = '—';
+  }
+
+  async function runLiveComparison({ runOrig = true, runCand = true } = {}) {
+    const origSqlArea = document.getElementById('liveCompareOrigSqlText');
+    const candSqlArea = document.getElementById('liveCompareCandSqlText');
+    const dbSelect = document.getElementById('liveCompareDbSelect');
+    const limitSelect = document.getElementById('liveCompareRowLimit');
+
+    const origSql = extractQueryFromView(origSqlArea?.value?.trim() || '');
+    const candSql = extractQueryFromView(candSqlArea?.value?.trim() || '');
+    const database = dbSelect?.value || appStateRef?.primaryDatabase || '';
+    const maxRows = parseInt(limitSelect?.value || '500', 10);
+
+    const btnRunBoth = document.getElementById('btnLiveCompareRunBoth');
+    const btnRunOrig = document.getElementById('btnLiveCompareRunOrig');
+    const btnRunCand = document.getElementById('btnLiveCompareRunCand');
+
+    if (btnRunBoth) {
+      btnRunBoth.disabled = true;
+      btnRunBoth.innerHTML = '<span>⏳</span> Çalıştırılıyor...';
+    }
+    if (btnRunOrig) btnRunOrig.disabled = true;
+    if (btnRunCand) btnRunCand.disabled = true;
+
+    const origPill = document.getElementById('liveCompareOrigPill');
+    const candPill = document.getElementById('liveCompareCandPill');
+    const origStats = document.getElementById('liveCompareOrigStats');
+    const candStats = document.getElementById('liveCompareCandStats');
+
+    if (runOrig && origPill) {
+      origPill.textContent = 'Çalışıyor...';
+      origPill.className = 'status-pill status-running';
+    }
+    if (runCand && candPill) {
+      candPill.textContent = 'Çalışıyor...';
+      candPill.className = 'status-pill status-running';
+    }
+
+    const tasks = [];
+
+    // Task 1: Original
+    if (runOrig) {
+      tasks.push(
+        fetch('/api/workbench/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: origSql, database, maxRows })
+        }).then(async r => {
+          const json = await r.json();
+          if (!r.ok || json.ok === false) throw new Error(json.error || 'Orijinal sorgu yürütülemedi.');
+          return json;
+        })
+      );
+    } else {
+      tasks.push(Promise.resolve(lastLiveCompareOrig));
+    }
+
+    // Task 2: Candidate
+    if (runCand) {
+      tasks.push(
+        fetch('/api/workbench/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: candSql, database, maxRows })
+        }).then(async r => {
+          const json = await r.json();
+          if (!r.ok || json.ok === false) throw new Error(json.error || 'Aday sorgu yürütülemedi.');
+          return json;
+        })
+      );
+    } else {
+      tasks.push(Promise.resolve(lastLiveCompareCand));
+    }
+
+    try {
+      const [origRes, candRes] = await Promise.allSettled(tasks);
+
+      // Handle Original
+      if (runOrig) {
+        const origEmpty = document.getElementById('liveCompareOrigEmpty');
+        const origGrid = document.getElementById('liveCompareOrigGrid');
+
+        if (origRes.status === 'fulfilled' && origRes.value) {
+          lastLiveCompareOrig = origRes.value;
+          if (origEmpty) origEmpty.classList.add('hidden');
+          if (origGrid) origGrid.classList.remove('hidden');
+
+          const cols = lastLiveCompareOrig.columns || [];
+          const rows = lastLiveCompareOrig.rows || [];
+          renderGrid(origGrid, cols, rows);
+
+          const dur = lastLiveCompareOrig.metrics?.durationMs ?? 0;
+          const reads = lastLiveCompareOrig.metrics?.logicalReads ?? 0;
+          const totalRows = lastLiveCompareOrig.rowsReturned ?? rows.length;
+          if (origStats) origStats.textContent = `⏱️ ${dur}ms | 📖 ${formatNum(reads)} reads | 🔢 ${totalRows} satır`;
+          if (origPill) {
+            origPill.textContent = '● Tamamlandı';
+            origPill.className = 'status-pill status-ready';
+          }
+        } else {
+          lastLiveCompareOrig = null;
+          if (origEmpty) {
+            origEmpty.classList.remove('hidden');
+            origEmpty.innerHTML = `<span style="color:var(--danger)">✕ Hata: ${escapeHtml(origRes.reason?.message || 'Bilinmeyen hata')}</span>`;
+          }
+          if (origGrid) origGrid.classList.add('hidden');
+          if (origPill) {
+            origPill.textContent = '✕ Hata';
+            origPill.className = 'status-pill status-danger';
+          }
+          if (origStats) origStats.textContent = '—';
+        }
+      }
+
+      // Handle Candidate
+      if (runCand) {
+        const candEmpty = document.getElementById('liveCompareCandEmpty');
+        const candGrid = document.getElementById('liveCompareCandGrid');
+
+        if (candRes.status === 'fulfilled' && candRes.value) {
+          lastLiveCompareCand = candRes.value;
+          if (candEmpty) candEmpty.classList.add('hidden');
+          if (candGrid) candGrid.classList.remove('hidden');
+
+          const cols = lastLiveCompareCand.columns || [];
+          const rows = lastLiveCompareCand.rows || [];
+          renderGrid(candGrid, cols, rows);
+
+          const dur = lastLiveCompareCand.metrics?.durationMs ?? 0;
+          const reads = lastLiveCompareCand.metrics?.logicalReads ?? 0;
+          const totalRows = lastLiveCompareCand.rowsReturned ?? rows.length;
+          if (candStats) candStats.textContent = `⏱️ ${dur}ms | 📖 ${formatNum(reads)} reads | 🔢 ${totalRows} satır`;
+          if (candPill) {
+            candPill.textContent = '● Tamamlandı';
+            candPill.className = 'status-pill status-ready';
+          }
+        } else {
+          lastLiveCompareCand = null;
+          if (candEmpty) {
+            candEmpty.classList.remove('hidden');
+            candEmpty.innerHTML = `<span style="color:var(--danger)">✕ Hata: ${escapeHtml(candRes.reason?.message || 'Bilinmeyen hata')}</span>`;
+          }
+          if (candGrid) candGrid.classList.add('hidden');
+          if (candPill) {
+            candPill.textContent = '✕ Hata';
+            candPill.className = 'status-pill status-danger';
+          }
+          if (candStats) candStats.textContent = '—';
+        }
+      }
+
+      // Update Summary Ribbon
+      updateLiveSummaryRibbon(lastLiveCompareOrig, lastLiveCompareCand);
+    } catch (err) {
+      if (typeof helpers.toast === 'function') helpers.toast('Yürütme Hatası', err.message, 'error');
+    } finally {
+      if (btnRunBoth) {
+        btnRunBoth.disabled = false;
+        btnRunBoth.innerHTML = '<span>▶</span> İkisini Aynı Anda Çalıştır';
+      }
+      if (btnRunOrig) btnRunOrig.disabled = false;
+      if (btnRunCand) btnRunCand.disabled = false;
+    }
+  }
+
+  function updateLiveSummaryRibbon(origRes, candRes) {
+    const valRows = document.getElementById('valCompareRows');
+    const subRows = document.getElementById('subCompareRows');
+    const valCols = document.getElementById('valCompareCols');
+    const subCols = document.getElementById('subCompareCols');
+    const valDur = document.getElementById('valCompareDuration');
+    const subDur = document.getElementById('subCompareDuration');
+    const valReads = document.getElementById('valCompareReads');
+    const subReads = document.getElementById('subCompareReads');
+
+    if (!origRes && !candRes) return;
+
+    // 1. Satır Sayısı Eşleşmesi
+    if (origRes && candRes) {
+      const origCount = origRes.rowsReturned ?? origRes.rows?.length ?? 0;
+      const candCount = candRes.rowsReturned ?? candRes.rows?.length ?? 0;
+      const isMatch = origCount === candCount;
+      if (valRows) {
+        valRows.innerHTML = isMatch
+          ? `<span style="color:var(--green)">✓ ${origCount} = ${candCount}</span>`
+          : `<span style="color:var(--danger)">⚠ ${origCount} ≠ ${candCount}</span>`;
+      }
+      if (subRows) {
+        subRows.textContent = isMatch ? 'Satır sayıları birebir eşleşti' : 'DİKKAT: Satır sayısı farkı saptandı';
+      }
+
+      // 2. Kolon Sayısı ve Şema
+      const origCols = origRes.columns || [];
+      const candCols = candRes.columns || [];
+      const colCountMatch = origCols.length === candCols.length;
+      const colNamesMatch = colCountMatch && origCols.every((c, i) => c.toLowerCase() === (candCols[i] || '').toLowerCase());
+
+      if (valCols) {
+        if (colNamesMatch) {
+          valCols.innerHTML = `<span style="color:var(--green)">✓ ${origCols.length} Kolon</span>`;
+        } else if (colCountMatch) {
+          valCols.innerHTML = `<span style="color:var(--yellow)">⚠ ${origCols.length} Kolon (İsim Farkı)</span>`;
+        } else {
+          valCols.innerHTML = `<span style="color:var(--danger)">✕ ${origCols.length} vs ${candCols.length} Kolon</span>`;
+        }
+      }
+      if (subCols) {
+        subCols.textContent = colNamesMatch ? 'Şema ve kolon sırası tam uyumlu' : 'Kolon sıralaması veya adları farklı';
+      }
+
+      // 3. Yürütme Süresi
+      const origMs = origRes.metrics?.durationMs ?? 0;
+      const candMs = candRes.metrics?.durationMs ?? 0;
+      const diffMs = origMs - candMs;
+      const speedup = origMs > 0 ? ((diffMs / origMs) * 100).toFixed(1) : 0;
+      if (valDur) {
+        if (candMs < origMs) {
+          valDur.innerHTML = `<span style="color:var(--green)">${candMs}ms <small>(%${speedup} Hızlı)</small></span>`;
+        } else if (candMs === origMs) {
+          valDur.innerHTML = `<span>${candMs}ms = ${origMs}ms</span>`;
+        } else {
+          valDur.innerHTML = `<span style="color:var(--yellow)">${candMs}ms <small>(+${candMs - origMs}ms)</small></span>`;
+        }
+      }
+      if (subDur) {
+        subDur.textContent = `Orijinal: ${origMs}ms → Aday: ${candMs}ms`;
+      }
+
+      // 4. Mantıksal Okuma (IO)
+      const origReads = origRes.metrics?.logicalReads ?? 0;
+      const candReads = candRes.metrics?.logicalReads ?? 0;
+      const readDiff = origReads - candReads;
+      const readSave = origReads > 0 ? ((readDiff / origReads) * 100).toFixed(1) : 0;
+      if (valReads) {
+        if (candReads < origReads) {
+          valReads.innerHTML = `<span style="color:var(--green)">${formatNum(candReads)} <small>(%${readSave} Tasarruf)</small></span>`;
+        } else if (candReads === origReads) {
+          valReads.innerHTML = `<span>${formatNum(candReads)}</span>`;
+        } else {
+          valReads.innerHTML = `<span style="color:var(--yellow)">${formatNum(candReads)} <small>(+${formatNum(candReads - origReads)})</small></span>`;
+        }
+      }
+      if (subReads) {
+        subReads.textContent = `Orijinal: ${formatNum(origReads)} → Aday: ${formatNum(candReads)}`;
+      }
+    } else if (origRes) {
+      if (valRows) valRows.textContent = `${origRes.rowsReturned || 0} satır`;
+      if (subRows) subRows.textContent = 'Yalnız orijinal yürütüldü';
+      if (valCols) valCols.textContent = `${(origRes.columns || []).length} kolon`;
+      if (valDur) valDur.textContent = `${origRes.metrics?.durationMs ?? 0}ms`;
+      if (valReads) valReads.textContent = formatNum(origRes.metrics?.logicalReads ?? 0);
+    } else if (candRes) {
+      if (valRows) valRows.textContent = `${candRes.rowsReturned || 0} satır`;
+      if (subRows) subRows.textContent = 'Yalnız aday yürütüldü';
+      if (valCols) valCols.textContent = `${(candRes.columns || []).length} kolon`;
+      if (valDur) valDur.textContent = `${candRes.metrics?.durationMs ?? 0}ms`;
+      if (valReads) valReads.textContent = formatNum(candRes.metrics?.logicalReads ?? 0);
+    }
+  }
+
+  function renderGrid(container, columns = [], rows = []) {
+    if (!container) return;
+    if (window.VirtualGrid) {
+      let grid = container.__virtualGridInstance;
+      if (!grid) {
+        grid = new window.VirtualGrid(container, { rowHeight: 28, buffer: 15 });
+        container.__virtualGridInstance = grid;
+      }
+      grid.setData(columns, rows);
+    } else {
+      renderFallbackTable(container, columns, rows);
+    }
+  }
+
+  function renderFallbackTable(container, columns = [], rows = []) {
+    container.innerHTML = `
+      <div style="overflow:auto;height:100%">
+        <table class="wb-virtual-table">
+          <thead>
+            <tr>
+              <th style="width:40px">#</th>
+              ${columns.map(c => `<th>${escapeHtml(c)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.slice(0, 500).map((r, i) => `
+              <tr>
+                <td style="color:var(--text-muted);font-size:11px">${i + 1}</td>
+                ${columns.map(c => {
+                  const val = r[c];
+                  if (val === null || val === undefined) return `<td><span class="null-pill">NULL</span></td>`;
+                  return `<td>${escapeHtml(String(val))}</td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function exportBothToWorkbench() {
+    closeLiveCompareModal();
+    const origSqlArea = document.getElementById('liveCompareOrigSqlText');
+    const candSqlArea = document.getElementById('liveCompareCandSqlText');
+    const dbSelect = document.getElementById('liveCompareDbSelect');
+
+    const origSql = extractQueryFromView(origSqlArea?.value?.trim() || studioState.originalSql || '');
+    const candSql = extractQueryFromView(candSqlArea?.value?.trim() || studioState.candidateSql || '');
+    const targetDb = dbSelect?.value || studioState.activeView?.database || appStateRef?.primaryDatabase;
+    const viewName = studioState.activeView?.name || 'View';
+
+    if (typeof helpers.openWorkbenchSql === 'function') {
+      helpers.openWorkbenchSql(origSql, targetDb, `${viewName}_Orijinal`);
+      setTimeout(() => {
+        helpers.openWorkbenchSql(candSql, targetDb, `${viewName}_Aday_V2`);
+      }, 120);
+      if (typeof helpers.toast === 'function') {
+        helpers.toast('Workbench Aktarıldı', 'Her iki sorgu da SQL Workbench sekmelerine aktarıldı.', 'success');
+      }
+    }
+  }
+
   return {
     init: initRefactorStudio,
     initRefactorStudio,
@@ -826,6 +1335,9 @@ GO
     runValidateAndBenchmark,
     setStudioStep,
     saveStudioToWorkspace,
-    showDeploymentScriptModal
+    showDeploymentScriptModal,
+    openLiveCompare: openLiveCompareModal,
+    closeLiveCompare: closeLiveCompareModal,
+    runLiveComparison
   };
 }));

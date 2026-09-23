@@ -184,7 +184,7 @@
 :root[data-theme="light"] .detail-tabs button.active { color: var(--purple2); }
 :root[data-theme="light"] :is(.detail-tabs button span, .wb-query-tab.active, .candidate-tab-btn.active) { background: #eee8f8; color: var(--purple2); }
 :root[data-theme="light"] :is(.code-editor, .sql-code, .val-sql-input, .val-code-input, .val-editor-textarea, .wb-terminal, .source-sql-code, .refactor-sql-preview, .wb-table-wrap) { background: var(--surface2); color: #30394b; border-color: var(--line); }
-:root[data-theme="light"] :is(#refactorSourceCode, #valOrigSql, #valCandSql, #wsOriginalSqlPre, #wsCandSqlPre, #wsActiveScriptPre, #activityPermissionScript, #dbScopeCheckboxList, #studioCandidateSql, #studioOriginalSqlDiff) { background: var(--surface2) !important; color: var(--text-primary); border-color: var(--line); }
+:root[data-theme="light"] :is(#refactorSourceCode, #valOrigSql, #valCandSql, #wsOriginalSqlPre, #wsCandSqlPre, #wsActiveScriptPre, #activityPermissionScript, #dbScopeCheckboxList, #studioCandidateSql, #studioOriginalSqlDiff, #liveCompareOrigSqlText, #liveCompareCandSqlText) { background: var(--surface2) !important; color: var(--text-primary); border-color: var(--line); }
 :root[data-theme="light"] :is(.val-editor-pane, .val-split-wrap, .validation-step, .benchmark-compare > div, .permission-box, .explain-card, .wb-editor-wrapper) { background: var(--surface); border-color: var(--line); }
 :root[data-theme="light"] :is(.studio-table th, .data-table th, .wb-table th) { background: var(--surface2); color: var(--text-secondary); border-color: var(--line); }
 :root[data-theme="light"] :is(.studio-table td, .data-table td, .wb-table td) { color: var(--text-primary); border-color: var(--line); }

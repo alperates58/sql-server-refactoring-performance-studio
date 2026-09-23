@@ -563,6 +563,7 @@
                 <p style="font-size:12.5px;color:var(--text-muted);margin:0">Orijinal tanım ile optimize edilen sorguyu karşılaştırın. Gerekirse sağ panelden sorguyu elle düzenleyebilirsiniz.</p>
               </div>
               <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="button ghost small" id="btnStudioCompareLiveStep2" title="Her iki sorguyu canlı veritabanında aynı anda çalıştırıp dönen tablo sonuçlarını yan yana kıyaslayın">⚖️ Yan Yana Çalıştır &amp; Kıyasla</button>
                 <button type="button" class="button ghost small" id="btnStudioEditCandidate">✎ Düzenle</button>
                 <button type="button" class="button primary" id="btnStudioValidate">✓ Doğrula ve Karşılaştır (İleri) →</button>
               </div>
@@ -603,7 +604,10 @@
                 <h3 style="font-size:15px;margin:0 0 4px">Adım 3: Anlamsal Doğrulama &amp; Performans Kanıtı</h3>
                 <p style="font-size:12.5px;color:var(--text-muted);margin:0">Orijinal sorgu ile aday sorgunun satır doğruluğu ve kaynak tüketimi karşılaştırıldı.</p>
               </div>
-              <button type="button" class="button primary" data-studio-step-jump="4">Sonuç ve Eylemler (İleri) →</button>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button type="button" class="button ghost small" id="btnStudioCompareLiveStep3" title="Sonuç tablolarını canlı çalıştırıp görsel olarak inceleyin">⚖️ Canlı Tablo Sonuçlarını Kıyasla</button>
+                <button type="button" class="button primary" data-studio-step-jump="4">Sonuç ve Eylemler (İleri) →</button>
+              </div>
             </div>
 
             <!-- Stern Validation Failure Banner -->
@@ -673,6 +677,7 @@
 
             <!-- Action Buttons Strip -->
             <div style="display:flex;gap:10px;flex-wrap:wrap;padding:16px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)">
+              <button type="button" class="button ghost" id="btnStudioCompareLiveStep4" title="Orijinal ve aday sorgu sonuçlarını yan yana çalıştırarak canlı verileri inceleyin">⚖️ Yan Yana Canlı Kıyasla &amp; Sonuçları Gör</button>
               <button type="button" class="button ghost" id="btnStudioOpenWorkbench">⚡ SQL Workbench'te Aç</button>
               <button type="button" class="button ghost" id="btnStudioSaveWorkspace">💾 Çalışma Alanına Kaydet</button>
               <button type="button" class="button primary" id="btnStudioGenerateScript">📜 Dağıtım Betiğini İndir (.sql)</button>
@@ -2261,6 +2266,140 @@ ORDER BY IslemAdedi DESC;"></textarea>
           <button type="button" class="button ghost" id="btnCloseStudioScriptModal">Kapat</button>
           <button type="button" class="button ghost" id="btnStudioCopyScript">Metni Kopyala</button>
           <button type="button" class="button primary" id="btnStudioDownloadScript">📥 .sql Olarak İndir</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: YAN YANA CANLI SORGULAMA VE SONUÇ KIYASLAMA EKRANI (Sprint 9 Extended) -->
+  <div class="modal-backdrop hidden" id="studioLiveCompareModal" role="dialog" aria-modal="true" aria-labelledby="liveCompareHeading">
+    <div class="modal studio-compare-modal">
+      <!-- HEADER -->
+      <div class="studio-compare-header">
+        <div class="studio-compare-brand">
+          <div class="brand-mark"><span></span><span></span><span></span></div>
+          <div>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="panel-kicker">CANLI SORGULAMA &amp; TABLO KIYASLAMA</span>
+              <span class="wb-safety-badge" title="Salt-okunur koruma devrede">🛡️ READ-ONLY</span>
+            </div>
+            <h2 id="liveCompareHeading" style="margin:2px 0 0;font-size:16px;display:flex;align-items:center;gap:8px">
+              <span>⚖️ Yan Yana Canlı Yürütme &amp; Sonuç Kıyaslama</span>
+              <span id="liveCompareViewBadge" class="status-pill status-ready" style="font-size:11px;font-weight:600">dbo.View</span>
+            </h2>
+          </div>
+        </div>
+
+        <!-- Center Controls: Database, Row Limit, Run Button -->
+        <div class="studio-compare-controls">
+          <div class="field-inline" style="display:flex;align-items:center;gap:6px">
+            <label for="liveCompareDbSelect" style="font-size:12px;color:var(--text-muted);white-space:nowrap">Veritabanı:</label>
+            <select id="liveCompareDbSelect" class="setting-input select-styled" style="height:30px;min-width:160px;font-size:12px;padding:2px 8px"></select>
+          </div>
+
+          <div class="field-inline" style="display:flex;align-items:center;gap:6px">
+            <label for="liveCompareRowLimit" style="font-size:12px;color:var(--text-muted);white-space:nowrap">Satır Sınırı:</label>
+            <select id="liveCompareRowLimit" class="setting-input select-styled" style="height:30px;font-size:12px;padding:2px 8px">
+              <option value="100">TOP 100</option>
+              <option value="500" selected>TOP 500 (Önerilen)</option>
+              <option value="1000">TOP 1000</option>
+              <option value="5000">TOP 5000</option>
+              <option value="10000">Limitsiz (Maks 10K)</option>
+            </select>
+          </div>
+
+          <button type="button" class="button primary" id="btnLiveCompareRunBoth" style="font-weight:600;padding:6px 16px" title="Her iki sorguyu SQL Server'da eş zamanlı çalıştır">
+            <span>▶</span> İkisini Aynı Anda Çalıştır
+          </button>
+        </div>
+
+        <!-- Right Actions: Workbench export, close -->
+        <div style="display:flex;gap:8px;align-items:center">
+          <button type="button" class="button ghost small" id="btnLiveCompareToWorkbench" title="Her iki sorguyu SQL Workbench'te iki ayrı sekme olarak aç">
+            <span>⚡</span> Workbench'e Aktar
+          </button>
+          <button type="button" class="icon-button" id="btnCloseLiveCompareModal" aria-label="Kapat" style="font-size:20px;width:32px;height:32px">×</button>
+        </div>
+      </div>
+
+      <!-- COMPARISON SUMMARY RIBBON -->
+      <div id="liveCompareSummaryRibbon" class="studio-compare-summary">
+        <div class="compare-metric-card" id="cardCompareRows">
+          <span class="compare-metric-label">SATIR SAYISI EŞLEŞMESİ</span>
+          <div class="compare-metric-val" id="valCompareRows">—</div>
+          <small class="compare-metric-sub" id="subCompareRows">Henüz çalıştırılmadı</small>
+        </div>
+        <div class="compare-metric-card" id="cardCompareCols">
+          <span class="compare-metric-label">KOLON SAYISI &amp; ŞEMA</span>
+          <div class="compare-metric-val" id="valCompareCols">—</div>
+          <small class="compare-metric-sub" id="subCompareCols">Kolon listesi bekleniyor</small>
+        </div>
+        <div class="compare-metric-card" id="cardCompareDuration">
+          <span class="compare-metric-label">YÜRÜTME SÜRESİ</span>
+          <div class="compare-metric-val" id="valCompareDuration">—</div>
+          <small class="compare-metric-sub" id="subCompareDuration">Orijinal vs Aday</small>
+        </div>
+        <div class="compare-metric-card" id="cardCompareReads">
+          <span class="compare-metric-label">MANTIKSAL OKUMA (IO)</span>
+          <div class="compare-metric-val" id="valCompareReads">—</div>
+          <small class="compare-metric-sub" id="subCompareReads">Buffer cache sayfa okuması</small>
+        </div>
+      </div>
+
+      <!-- SPLIT VIEW CONTAINER (50 / 50) -->
+      <div class="studio-compare-split">
+        <!-- LEFT PANE: ORIGINAL QUERY -->
+        <div class="studio-compare-pane" id="liveCompareOrigPane">
+          <div class="studio-compare-pane-header">
+            <div style="display:flex;align-items:center;gap:8px">
+              <strong style="font-size:13px;color:var(--text-primary)">Orijinal View Sorgusu</strong>
+              <span class="status-pill status-ready" id="liveCompareOrigPill" style="font-size:11px">Bekliyor</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="liveCompareOrigStats" style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-family-mono)">—</span>
+              <button type="button" class="button ghost mini" id="btnLiveCompareRunOrig" title="Yalnız bu sorguyu çalıştır">▶ Tekil</button>
+              <button type="button" class="button ghost mini" id="btnToggleOrigSqlPreview" title="SQL Editörünü Daralt/Genişlet">SQL ↕</button>
+            </div>
+          </div>
+          <!-- SQL Preview Box -->
+          <div class="studio-compare-sql-box" id="liveCompareOrigSqlWrap">
+            <textarea id="liveCompareOrigSqlText" class="code-editor mono-text" spellcheck="false" placeholder="Orijinal SQL..."></textarea>
+          </div>
+          <!-- Data Table / Grid Container -->
+          <div class="studio-compare-grid-wrap" id="liveCompareOrigGridWrap">
+            <div class="live-compare-placeholder" id="liveCompareOrigEmpty">
+              <span>📋 Orijinal sorgu henüz çalıştırılmadı.</span>
+              <small style="color:var(--text-muted)">Yukarıdaki 'İkisini Aynı Anda Çalıştır' butonuna basın.</small>
+            </div>
+            <div id="liveCompareOrigGrid" class="wb-virtual-grid-container hidden" style="height:100%"></div>
+          </div>
+        </div>
+
+        <!-- RIGHT PANE: CANDIDATE REFACTOR (V2) -->
+        <div class="studio-compare-pane" id="liveCompareCandPane">
+          <div class="studio-compare-pane-header">
+            <div style="display:flex;align-items:center;gap:8px">
+              <strong style="font-size:13px;color:var(--accent)">Aday Refaktör Sorgusu (V2)</strong>
+              <span class="status-pill status-ready" id="liveCompareCandPill" style="font-size:11px">Bekliyor</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span id="liveCompareCandStats" style="font-size:11.5px;color:var(--text-muted);font-family:var(--font-family-mono)">—</span>
+              <button type="button" class="button ghost mini" id="btnLiveCompareRunCand" title="Yalnız bu sorguyu çalıştır">▶ Tekil</button>
+              <button type="button" class="button ghost mini" id="btnToggleCandSqlPreview" title="SQL Editörünü Daralt/Genişlet">SQL ↕</button>
+            </div>
+          </div>
+          <!-- SQL Edit Box -->
+          <div class="studio-compare-sql-box" id="liveCompareCandSqlWrap">
+            <textarea id="liveCompareCandSqlText" class="code-editor mono-text" spellcheck="false" placeholder="Aday SQL..."></textarea>
+          </div>
+          <!-- Data Table / Grid Container -->
+          <div class="studio-compare-grid-wrap" id="liveCompareCandGridWrap">
+            <div class="live-compare-placeholder" id="liveCompareCandEmpty">
+              <span>📋 Aday sorgu henüz çalıştırılmadı.</span>
+              <small style="color:var(--text-muted)">Yukarıdaki 'İkisini Aynı Anda Çalıştır' butonuna basın.</small>
+            </div>
+            <div id="liveCompareCandGrid" class="wb-virtual-grid-container hidden" style="height:100%"></div>
+          </div>
         </div>
       </div>
     </div>
